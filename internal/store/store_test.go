@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -135,17 +136,26 @@ func TestLoadMigrationsValidation(t *testing.T) {
 func TestMigrateFailureRollsBack(t *testing.T) {
 	db, _ := openTemp(t)
 	ctx := context.Background()
-	fsys := fstest.MapFS{
-		"0001_audit_log.sql": {Data: []byte("SELECT 1")}, // already applied, skipped
-		"0002_ok.sql":        {Data: []byte("CREATE TABLE t2 (x INTEGER)")},
-		"0003_broken.sql":    {Data: []byte("CREATE TABLE t3 (x INTEGER); NOT SQL")},
+	// The real migrations are already applied and are skipped; the two
+	// test migrations come after them.
+	ms, err := loadMigrations(migrationFiles)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := db.migrate(ctx, fsys); err == nil || !strings.Contains(err.Error(), "0003_broken.sql") {
-		t.Fatalf("got %v, want failure in 0003", err)
+	fsys := fstest.MapFS{}
+	for _, m := range ms {
+		fsys[m.name] = &fstest.MapFile{Data: []byte("SELECT 1")}
+	}
+	n := len(ms)
+	okName, brokenName := fmt.Sprintf("%04d_ok.sql", n+1), fmt.Sprintf("%04d_broken.sql", n+2)
+	fsys[okName] = &fstest.MapFile{Data: []byte("CREATE TABLE t2 (x INTEGER)")}
+	fsys[brokenName] = &fstest.MapFile{Data: []byte("CREATE TABLE t3 (x INTEGER); NOT SQL")}
+	if err := db.migrate(ctx, fsys); err == nil || !strings.Contains(err.Error(), brokenName) {
+		t.Fatalf("got %v, want failure in %s", err, brokenName)
 	}
 	var v int
-	if err := db.QueryRowContext(context.Background(), `SELECT MAX(version) FROM schema_migrations`).Scan(&v); err != nil || v != 2 {
-		t.Fatalf("version %d (%v), want 2", v, err)
+	if err := db.QueryRowContext(context.Background(), `SELECT MAX(version) FROM schema_migrations`).Scan(&v); err != nil || v != n+1 {
+		t.Fatalf("version %d (%v), want %d", v, err, n+1)
 	}
 	if _, err := db.ExecContext(context.Background(), `SELECT * FROM t3`); err == nil {
 		t.Error("table from failed migration exists")
@@ -159,5 +169,25 @@ func TestMigrateRefusesNewerSchema(t *testing.T) {
 	}
 	if err := db.migrate(context.Background(), migrationFiles); err == nil {
 		t.Fatal("accepted a schema newer than the binary")
+	}
+}
+
+func TestSettings(t *testing.T) {
+	db, _ := openTemp(t)
+	ctx := context.Background()
+	if _, ok, err := db.Setting(ctx, "home.layout"); ok || err != nil {
+		t.Fatalf("unset: %v %v", ok, err)
+	}
+	for _, v := range []string{`{"order":["cpu"]}`, `{"order":["mem"]}`} {
+		if err := db.SetSetting(ctx, "home.layout", []byte(v)); err != nil {
+			t.Fatal(err)
+		}
+		got, ok, err := db.Setting(ctx, "home.layout")
+		if !ok || err != nil || string(got) != v {
+			t.Fatalf("got %s %v %v", got, ok, err)
+		}
+	}
+	if err := db.SetSetting(ctx, "home.layout", []byte(`{nope`)); err == nil {
+		t.Fatal("invalid JSON stored")
 	}
 }

@@ -5,6 +5,8 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -517,5 +519,61 @@ func TestPowerInSample(t *testing.T) {
 	}
 	if pts["battery.pct:BAT1"] != 87.5 || pts["battery.rate:BAT1"] != 12.4 {
 		t.Fatalf("points %v", pts)
+	}
+}
+
+func TestLiveSeries(t *testing.T) {
+	t0 := time.UnixMilli(1_700_000_000_000)
+	smp := func(sec int, usage float64, ifaces ...string) Sample {
+		s := Sample{Time: t0.Add(time.Duration(sec) * time.Second), CPU: CPU{Usage: usage}}
+		for _, n := range ifaces {
+			s.Net = append(s.Net, NetIf{Name: n, RxBps: 100})
+		}
+		return s
+	}
+	samples := []Sample{smp(0, 10, "eth0"), smp(1, 20, "eth0", "wlp3s0"), smp(2, 30, "wlp3s0")}
+	samples[0].Partial = true // no CPU usage or rates in a partial sample
+
+	got := liveSeries(samples, []string{"cpu.usage", "net.rx:"}, time.Time{})
+	if len(got.T) != 3 || got.T[0] != t0.UnixMilli() {
+		t.Fatalf("t %v", got.T)
+	}
+	vals := func(name string) string {
+		var parts []string
+		for _, v := range got.Series[name] {
+			if v == nil {
+				parts = append(parts, "-")
+			} else {
+				parts = append(parts, strconv.FormatFloat(*v, 'f', -1, 64))
+			}
+		}
+		return strings.Join(parts, ",")
+	}
+	if vals("cpu.usage") != "-,20,30" || vals("net.rx:eth0") != "-,100,-" || vals("net.rx:wlp3s0") != "-,100,100" {
+		t.Fatalf("series cpu=%s eth0=%s wlp3s0=%s", vals("cpu.usage"), vals("net.rx:eth0"), vals("net.rx:wlp3s0"))
+	}
+	if _, ok := got.Series["mem.used"]; ok || len(got.Series) != 3 {
+		t.Fatalf("unrequested series: %v", got.Series)
+	}
+	got = liveSeries(samples, []string{"cpu.usage"}, t0.Add(time.Second))
+	if len(got.T) != 1 || vals("cpu.usage") != "30" {
+		t.Fatalf("since: %v %s", got.T, vals("cpu.usage"))
+	}
+}
+
+func TestHandleLiveValidation(t *testing.T) {
+	s := New(Config{Log: discard()})
+	for _, q := range []string{"", "?since=1", "?m=cpu.usage&since=yesterday", "?m=" + strings.Repeat("a", 201),
+		"?" + strings.Repeat("m=a&", 33)} {
+		rec := httptest.NewRecorder()
+		s.HandleLive(rec, httptest.NewRequest(http.MethodGet, "/api/v1/metrics/live"+q, nil))
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%.40q: %d", q, rec.Code)
+		}
+	}
+	rec := httptest.NewRecorder()
+	s.HandleLive(rec, httptest.NewRequest(http.MethodGet, "/api/v1/metrics/live?m=cpu.usage", nil))
+	if rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != `{"t":[],"series":{}}` {
+		t.Fatalf("empty ring: %d %s", rec.Code, rec.Body)
 	}
 }

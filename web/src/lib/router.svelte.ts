@@ -22,9 +22,15 @@ export const routes: Route[] = [
   { id: 'settings', label: 'nav.settings', icon: 'sliders', phase: 4 },
 ];
 
+export function routeId(hash: string): string {
+  const id = hash.replace(/^#\/?/, '');
+  // "#k=<key>" is the session hand-off from /auth (session.ts strips it with
+  // replaceState, which fires no hashchange): it means Home.
+  return id === '' || id.startsWith('k=') ? 'home' : id;
+}
+
 function current(): string {
-  const id = location.hash.replace(/^#\/?/, '');
-  return id === '' ? 'home' : id;
+  return routeId(location.hash);
 }
 
 export const router = $state({ id: current() });

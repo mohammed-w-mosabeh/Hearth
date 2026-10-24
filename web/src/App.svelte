@@ -11,6 +11,7 @@
 
   let key = $state(loadKey({ location, history, storage: localStorage }));
   let status = $state<WsState>('connecting');
+  let live = $state.raw<Live | null>(null);
 
   setSession(
     () => key,
@@ -22,8 +23,12 @@
     // A stored key dies when hearthd restarts; a 401 here clears it and
     // shows the "open from the launcher" screen.
     api('/session').catch(() => {});
-    const live = new Live(key, (s) => (status = s));
-    return () => live.close();
+    const l = new Live(key, (s) => (status = s));
+    live = l;
+    return () => {
+      l.close();
+      live = null;
+    };
   });
 
   const route = $derived(routes.find((r) => r.id === router.id));
@@ -38,7 +43,7 @@
     <Sidebar {status} />
     <main>
       {#if route?.id === 'home'}
-        <Home />
+        {#if live}<Home {live} />{/if}
       {:else if route}
         <Placeholder {route} />
       {:else}

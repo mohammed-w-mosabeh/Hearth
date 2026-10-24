@@ -13,7 +13,7 @@ coverage.*
 /.tools/
 
 # Web
-/web/node_modules/
+node_modules/
 /web/dist/
 /web/.svelte-kit/
 /web/coverage/
