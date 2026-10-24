@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mohammed-w-mosabeh/hearth/internal/power"
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
 )
 
@@ -497,3 +498,24 @@ func waitFor(t *testing.T, cond func() bool) {
 }
 
 func discard() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
+
+func TestPowerInSample(t *testing.T) {
+	f := newFixture(t)
+	st := power.State{Batteries: []power.Battery{{ID: "BAT1", Pct: 87.5, RateW: 12.4, State: "discharging"}}}
+	s := New(Config{ProcRoot: f.proc, SysRoot: f.sys, Log: discard(), Statfs: fakeStatfs,
+		Power: func() power.State { return st }})
+	got, err := s.Collect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Power.Batteries) != 1 || got.Power.Batteries[0].ID != "BAT1" {
+		t.Fatalf("power %+v", got.Power)
+	}
+	pts := map[string]float64{}
+	for _, p := range got.Points() {
+		pts[p.Metric] = p.Value
+	}
+	if pts["battery.pct:BAT1"] != 87.5 || pts["battery.rate:BAT1"] != 12.4 {
+		t.Fatalf("points %v", pts)
+	}
+}

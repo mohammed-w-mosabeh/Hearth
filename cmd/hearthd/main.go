@@ -24,6 +24,8 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/api"
 	"github.com/mohammed-w-mosabeh/hearth/internal/auth"
 	"github.com/mohammed-w-mosabeh/hearth/internal/collect"
+	"github.com/mohammed-w-mosabeh/hearth/internal/dbusx"
+	"github.com/mohammed-w-mosabeh/hearth/internal/power"
 	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
 	"github.com/mohammed-w-mosabeh/hearth/web"
@@ -92,13 +94,22 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		return err
 	}
 
+	pw := power.NewWatcher(func(ctx context.Context) (dbusx.Bus, error) { return dbusx.SystemBus(ctx) }, log)
+	powerCtx, stopPower := context.WithCancel(ctx)
+	powerDone := make(chan struct{})
+	go func() { pw.Run(powerCtx); close(powerDone) }()
+	defer func() { stopPower(); <-powerDone }()
+	srv.API.HandleFunc("GET /api/v1/power", pw.HandleGet)
+	srv.API.HandleFunc("POST /api/v1/power/profile", pw.HandleSetProfile(db))
+
 	ds, err := store.NewDownsampler(ctx, db, log, nil)
 	if err != nil {
 		return err
 	}
 	sampler := collect.New(collect.Config{
-		Pub: srv.Hub,
-		Log: log,
+		Pub:   srv.Hub,
+		Log:   log,
+		Power: pw.Snapshot,
 		// The sampler goroutine owns ds; it is flushed after the sampler stops.
 		OnSample: func(s collect.Sample) { ds.Add(ctx, s.Time, s.Points()) },
 	})

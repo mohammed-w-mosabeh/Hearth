@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/mohammed-w-mosabeh/hearth/internal/power"
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
 )
 
@@ -33,6 +34,8 @@ type Sample struct {
 	Temps  []Temp    `json:"temps"`
 	Fans   []Fan     `json:"fans"`
 	GPUs   []GPU     `json:"gpus"`
+	// Power is batteries, AC and power profile (empty without UPower).
+	Power power.State `json:"power"`
 	// CPUTempC is the sensor that best represents the CPU package, if any.
 	CPUTempC *float64 `json:"cpu_temp_c,omitempty"`
 	// Partial is set on the first sample, which has no CPU deltas yet.
@@ -97,6 +100,11 @@ func (s Sample) Points() []store.Point {
 			}
 		}
 	}
+	for _, b := range s.Power.Batteries {
+		pts = append(pts,
+			store.Point{Metric: "battery.pct:" + b.ID, Value: b.Pct},
+			store.Point{Metric: "battery.rate:" + b.ID, Value: b.RateW})
+	}
 	return append(pts,
 		store.Point{Metric: "load1", Value: s.CPU.Load1},
 		store.Point{Metric: "load5", Value: s.CPU.Load5},
@@ -134,6 +142,9 @@ type Config struct {
 	// refreshed; usage changes slowly and statfs can be slow on FUSE.
 	// Default SlowInterval; negative refreshes every sample.
 	DiskEvery time.Duration
+	// Power, if set, returns the current power state (power.Watcher's
+	// Snapshot); it must not block.
+	Power func() power.State
 	// OnSample, if set, is called with every sample on the sampler
 	// goroutine (e.g. to feed the downsampler).
 	OnSample func(Sample)
@@ -336,6 +347,9 @@ func (s *Sampler) Collect() (Sample, error) {
 		Temps:  temps,
 		Fans:   fans,
 		GPUs:   gpus,
+	}
+	if s.cfg.Power != nil {
+		sample.Power = s.cfg.Power()
 	}
 	if c, ok := cpuTemp(temps); ok {
 		sample.CPUTempC = &c
