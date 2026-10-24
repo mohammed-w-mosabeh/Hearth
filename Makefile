@@ -28,6 +28,7 @@ GO_BUILD_FLAGS := -trimpath -buildvcs=true
 
 # Empty until the first Go package lands; go vet/test fail on "./..." matching nothing.
 GO_PKGS = $(shell $(GO) list ./... 2>/dev/null)
+WEB     = $(wildcard web/package.json)
 
 stub = @echo "make $@: not implemented yet ($(1))"
 
@@ -56,13 +57,18 @@ test: ## go test + vitest
 	$(if $(GO_PKGS),$(GO) test ./...,@echo "go test: no Go packages yet")
 
 .PHONY: lint
-lint: ## gofmt, go vet (golangci-lint, gosec, svelte-check, eslint added in 0.2)
+lint: ## golangci-lint (incl. gosec, depguard), gosec, forbidden patterns, svelte-check, eslint
 	@out=$$(git ls-files -z '*.go' | xargs -0 -r gofmt -l); if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
+	./scripts/check-forbidden.sh
 	$(if $(GO_PKGS),$(GO) vet ./...,@echo "go vet: no Go packages yet")
+	$(if $(GO_PKGS),$(GOLANGCI_LINT) run ./...,@echo "golangci-lint: no Go packages yet")
+	$(if $(GO_PKGS),$(GOSEC) -quiet ./...,@echo "gosec: no Go packages yet")
+	$(if $(WEB),cd web && npx --no-install svelte-check --fail-on-warnings && npx --no-install eslint .,@echo "svelte-check/eslint: no web/ yet")
 
 .PHONY: vuln
 vuln: ## govulncheck + npm audit
-	$(call stub,ROADMAP 0.2)
+	$(if $(GO_PKGS),$(GOVULNCHECK) ./...,@echo "govulncheck: no Go packages yet")
+	$(if $(WEB),cd web && npm audit --audit-level=high,@echo "npm audit: no web/ yet")
 
 .PHONY: check
 check: lint test vuln ## lint + test + vuln
