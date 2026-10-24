@@ -23,6 +23,7 @@ import (
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/api"
 	"github.com/mohammed-w-mosabeh/hearth/internal/auth"
+	"github.com/mohammed-w-mosabeh/hearth/internal/collect"
 	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
 	"github.com/mohammed-w-mosabeh/hearth/web"
@@ -91,6 +92,12 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		return err
 	}
 
+	sampler := collect.New(collect.Config{Pub: srv.Hub, Log: log})
+	samplerCtx, stopSampler := context.WithCancel(ctx)
+	samplerDone := make(chan struct{})
+	go func() { sampler.Run(samplerCtx); close(samplerDone) }()
+	defer func() { stopSampler(); <-samplerDone }()
+
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve() }()
 	log.Info("hearthd started", "version", version(), "port", srv.Port(), "first_run", firstRun)
@@ -109,9 +116,9 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	case <-ctx.Done():
 	}
 	log.Info("shutting down")
-	sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	if err := srv.Shutdown(sctx); err != nil {
+	if err := srv.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("hearthd: shutdown: %w", err)
 	}
 	return <-errc

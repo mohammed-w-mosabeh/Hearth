@@ -123,10 +123,17 @@ func (s *Server) Serve() error {
 }
 
 // Shutdown stops accepting requests, closes WebSockets and waits for
-// in-flight handlers until ctx expires.
+// in-flight handlers until ctx expires, then force-closes what is left.
+// Forcing matters because connections that were opened but never used
+// (browser preconnects, client dial races) delay a graceful shutdown by 5 s.
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.Hub.closeAll()
-	return s.srv.Shutdown(ctx)
+	err := s.srv.Shutdown(ctx)
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		s.log.Warn("graceful shutdown timed out; closing remaining connections")
+		return s.srv.Close()
+	}
+	return err
 }
 
 func staticHandler(static fs.FS) http.Handler {

@@ -39,8 +39,9 @@ type serverMsg struct {
 type Hub struct {
 	log *slog.Logger
 
-	mu      sync.Mutex
-	clients map[*wsClient]struct{}
+	mu       sync.Mutex
+	clients  map[*wsClient]struct{}
+	watchers map[string][]chan struct{}
 }
 
 type wsClient struct {
@@ -51,7 +52,7 @@ type wsClient struct {
 }
 
 func newHub(log *slog.Logger) *Hub {
-	return &Hub{log: log, clients: make(map[*wsClient]struct{})}
+	return &Hub{log: log, clients: make(map[*wsClient]struct{}), watchers: make(map[string][]chan struct{})}
 }
 
 // Publish sends data (marshalled as JSON) to every client subscribed to
@@ -96,6 +97,27 @@ func (h *Hub) Subscribers(topic string) int {
 	return n
 }
 
+// Watch returns a channel that receives a value whenever the number of
+// subscribers to topic changes, so a collector can switch sampling rate
+// without polling. Sends never block; a pending signal is coalesced.
+func (h *Hub) Watch(topic string) <-chan struct{} {
+	ch := make(chan struct{}, 1)
+	h.mu.Lock()
+	h.watchers[topic] = append(h.watchers[topic], ch)
+	h.mu.Unlock()
+	return ch
+}
+
+// notifyLocked signals watchers of topic; h.mu must be held.
+func (h *Hub) notifyLocked(topic string) {
+	for _, ch := range h.watchers[topic] {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
+}
+
 func (h *Hub) closeAll() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -129,6 +151,9 @@ func (h *Hub) serveWS(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		h.mu.Lock()
 		delete(h.clients, c)
+		for t := range c.topics {
+			h.notifyLocked(t)
+		}
 		h.mu.Unlock()
 		_ = conn.CloseNow()
 	}()
@@ -165,11 +190,15 @@ func (h *Hub) readLoop(ctx context.Context, c *wsClient) {
 		h.mu.Lock()
 		switch m.Op {
 		case "sub":
-			if len(c.topics) < wsMaxTopics {
+			if _, dup := c.topics[m.Topic]; !dup && len(c.topics) < wsMaxTopics {
 				c.topics[m.Topic] = struct{}{}
+				h.notifyLocked(m.Topic)
 			}
 		case "unsub":
-			delete(c.topics, m.Topic)
+			if _, ok := c.topics[m.Topic]; ok {
+				delete(c.topics, m.Topic)
+				h.notifyLocked(m.Topic)
+			}
 		default:
 			h.mu.Unlock()
 			_ = c.conn.Close(websocket.StatusPolicyViolation, "bad op")

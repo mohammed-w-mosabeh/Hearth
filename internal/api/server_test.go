@@ -137,6 +137,28 @@ func TestListensOnLoopbackOnly(t *testing.T) {
 	}
 }
 
+func TestShutdownForcesUnusedConnections(t *testing.T) {
+	h := newHarness(t)
+	// A connection that never sends a request, like a browser preconnect.
+	var d net.Dialer
+	c, err := d.DialContext(context.Background(), "tcp", h.s.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	time.Sleep(50 * time.Millisecond)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	if err := h.s.Shutdown(ctx); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("shutdown took %v", d)
+	}
+}
+
 func TestHealthIsPublic(t *testing.T) {
 	h := newHarness(t)
 	resp := h.do(t, req{path: "/api/v1/health"})
@@ -404,6 +426,7 @@ func TestWebSocketRejections(t *testing.T) {
 
 func TestWebSocketSubscribePublish(t *testing.T) {
 	h := newHarness(t)
+	watch := h.s.Hub.Watch("metrics")
 	conn, _, got, err := h.dialWS(t, h.origin(), auth.Subprotocol, "hearth.key."+h.key)
 	if err != nil {
 		t.Fatal(err)
@@ -419,6 +442,11 @@ func TestWebSocketSubscribePublish(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool { return h.s.Hub.Subscribers("metrics") == 1 })
+	select {
+	case <-watch:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Watch not signalled on subscribe")
+	}
 
 	if err := h.s.Hub.Publish("other", 1); err != nil {
 		t.Fatal(err)
@@ -439,6 +467,11 @@ func TestWebSocketSubscribePublish(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool { return h.s.Hub.Subscribers("metrics") == 0 })
+	select {
+	case <-watch:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Watch not signalled on unsubscribe")
+	}
 }
 
 func TestWebSocketBadMessages(t *testing.T) {
