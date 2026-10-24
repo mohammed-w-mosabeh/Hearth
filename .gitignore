@@ -1,0 +1,31 @@
+# Build output
+/bin/
+/dist/
+*.deb
+*.test
+*.out
+coverage.*
+
+# Pinned dev tools (make tools)
+/.tools/
+
+# Web
+/web/node_modules/
+/web/dist/
+/web/.svelte-kit/
+/web/coverage/
+
+# Local data / secrets never belong in the repo
+*.db
+*.db-wal
+*.db-shm
+token
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Claude Code local settings (shared settings.json is tracked)
+/.claude/settings.local.json
