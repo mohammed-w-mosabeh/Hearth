@@ -37,7 +37,7 @@ hearth/
     hearth-broker/main.go
   internal/
     api/          # router, middleware (auth, origin, host, csp, ratelimit), ws hub
-    auth/         # session token file, cookie, pairing (phone)
+    auth/         # launch token file, bearer session keys, pairing (phone)
     store/        # sqlite open/migrate, ringbuf, downsampler, audit log
     model/        # Item, Action, Risk, Metric types shared by modules
     collect/      # cpu.go mem.go disk.go gpu_nvml.go gpu_sysfs.go sensors.go net.go battery.go proc.go

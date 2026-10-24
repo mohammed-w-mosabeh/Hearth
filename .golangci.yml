@@ -38,6 +38,10 @@ linters:
       - path: internal/safeexec/
         linters:
           - forbidigo
+      # httptest.NewRequest in tests needs no caller context.
+      - path: _test\.go$
+        linters:
+          - noctx
 
 formatters:
   enable:

@@ -7,7 +7,7 @@ Rules: one task at a time, `make check` + commit after each, tick the box in the
 - [x] 0.2 Lint/CI config: `golangci-lint` (incl. `gosec`, `depguard` forbidding `os/exec` outside `internal/safeexec`), custom check script for `sh -c` / `bash -c` / `{@html}`, `govulncheck`, GitHub Actions workflow (not pushed)
 - [x] 0.3 `internal/safeexec` with binary allowlist + validators + fuzz tests
 - [x] 0.4 `internal/store`: SQLite open (WAL, 0600), migrations runner, `audit_log` table
-- [ ] 0.5 `internal/auth`: token file (0600, rotate on start), `/auth?t=` exchange → cookie, middleware
+- [x] 0.5 `internal/auth`: token file (0600, rotate on start, single-use), `/auth?t=` exchange → bearer session key (SECURITY S2; no cookie), middleware
 - [ ] 0.6 `internal/api`: server on 127.0.0.1:<port>, Host/Origin middleware, security headers/CSP, rate limit, body limit, `/api/v1/health`, WebSocket hub with Origin check — with tests for every rejection path
 - [ ] 0.7 `web/`: Svelte 5 + Vite + TS skeleton, tokens.css (light/dark), sidebar layout, English UI strings in an i18n file (en.json), embedded via `go:embed`
 - [ ] 0.8 `cmd/hearthd`: refuses root, loads config, starts server, opens browser on first run (`xdg-open`)
