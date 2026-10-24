@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -27,8 +26,8 @@ type cpuTimes struct {
 }
 
 // readProcStat returns the aggregate line and one entry per core, in order.
-func readProcStat(procRoot string) (cpuTimes, []cpuTimes, error) {
-	b, err := readRootFile(procRoot, "stat")
+func readProcStat(r *fileReader, procRoot string) (cpuTimes, []cpuTimes, error) {
+	b, err := r.read(procRoot, "stat")
 	if err != nil {
 		return cpuTimes{}, nil, fmt.Errorf("collect: %w", err)
 	}
@@ -85,8 +84,8 @@ func usage(prev, cur cpuTimes) float64 {
 	return float64(cur.busy-prev.busy) / float64(cur.total-prev.total) * 100
 }
 
-func readLoadAvg(procRoot string) (l1, l5, l15 float64, err error) {
-	b, err := readRootFile(procRoot, "loadavg")
+func readLoadAvg(r *fileReader, procRoot string) (l1, l5, l15 float64, err error) {
+	b, err := r.read(procRoot, "loadavg")
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("collect: %w", err)
 	}
@@ -103,18 +102,12 @@ func readLoadAvg(procRoot string) (l1, l5, l15 float64, err error) {
 	return vals[0], vals[1], vals[2], nil
 }
 
-// readRootFile reads a fixed file under a /proc or /sys root. Roots come from
-// Config (tests use fixtures), never from requests.
-func readRootFile(root, name string) ([]byte, error) {
-	return os.ReadFile(filepath.Join(root, name)) // #nosec G304 -- fixed name under a configured root
-}
-
 // readFreqMHz returns the current frequency of each core, 0 if unknown.
-func readFreqMHz(sysRoot string, cores int) []float64 {
+func readFreqMHz(r *fileReader, sysRoot string, cores int) []float64 {
 	out := make([]float64, cores)
 	for i := range out {
 		p := filepath.Join("devices/system/cpu", "cpu"+strconv.Itoa(i), "cpufreq/scaling_cur_freq")
-		b, err := readRootFile(sysRoot, p)
+		b, err := r.read(sysRoot, p)
 		if err != nil {
 			continue
 		}

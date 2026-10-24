@@ -18,8 +18,8 @@ type Mem struct {
 	SwapUsed  uint64 `json:"swap_used"`
 }
 
-func readMemInfo(procRoot string) (Mem, error) {
-	b, err := readRootFile(procRoot, "meminfo")
+func readMemInfo(r *fileReader, procRoot string) (Mem, error) {
+	b, err := r.read(procRoot, "meminfo")
 	if err != nil {
 		return Mem{}, fmt.Errorf("collect: %w", err)
 	}
