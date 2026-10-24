@@ -1,6 +1,9 @@
 package safeexec
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // allowlist is the complete set of programs Hearth may run. Adding an entry
 // needs a validator that accepts only the argument shapes the caller uses.
@@ -21,6 +24,16 @@ var allowlist = map[string]Spec{
 			Literal("/usr/bin/xdg-open"), HTTPURL,
 		),
 		Env: []string{"XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", "HOME"},
+	},
+	// nvidia-smi with one fixed query (collect/gpu.go): NVIDIA exposes no
+	// usable sysfs metrics, and NVML would need cgo.
+	"nvidia-smi": {
+		Paths: []string{"/usr/bin/nvidia-smi"},
+		Validate: exactly(
+			Literal("--query-gpu=pci.bus_id,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw"),
+			Literal("--format=csv,noheader,nounits"),
+		),
+		Timeout: 2 * time.Second,
 	},
 }
 

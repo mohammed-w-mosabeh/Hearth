@@ -30,6 +30,11 @@ type Sample struct {
 	Disks  []Disk    `json:"disks"`
 	DiskIO []DiskIO  `json:"disk_io"`
 	Net    []NetIf   `json:"net"`
+	Temps  []Temp    `json:"temps"`
+	Fans   []Fan     `json:"fans"`
+	GPUs   []GPU     `json:"gpus"`
+	// CPUTempC is the sensor that best represents the CPU package, if any.
+	CPUTempC *float64 `json:"cpu_temp_c,omitempty"`
 	// Partial is set on the first sample, which has no CPU deltas yet.
 	Partial bool `json:"partial,omitempty"`
 }
@@ -73,6 +78,25 @@ func (s Sample) Points() []store.Point {
 				store.Point{Metric: "net.tx:" + n.Name, Value: n.TxBps})
 		}
 	}
+	if s.CPUTempC != nil {
+		pts = append(pts, store.Point{Metric: "cpu.temp", Value: *s.CPUTempC})
+	}
+	for _, t := range s.Temps {
+		pts = append(pts, store.Point{Metric: "temp:" + t.Chip + "/" + t.Label, Value: t.C})
+	}
+	for _, f := range s.Fans {
+		pts = append(pts, store.Point{Metric: "fan:" + f.Chip + "/" + f.Label, Value: f.RPM})
+	}
+	for _, g := range s.GPUs {
+		for _, m := range []struct {
+			name string
+			v    *float64
+		}{{"gpu.util:", g.UtilPct}, {"gpu.mem:", g.MemUsed}, {"gpu.temp:", g.TempC}, {"gpu.power:", g.PowerW}, {"gpu.freq:", g.FreqMHz}} {
+			if m.v != nil {
+				pts = append(pts, store.Point{Metric: m.name + g.PCI, Value: *m.v})
+			}
+		}
+	}
 	return append(pts,
 		store.Point{Metric: "load1", Value: s.CPU.Load1},
 		store.Point{Metric: "load5", Value: s.CPU.Load5},
@@ -102,6 +126,10 @@ type Config struct {
 	Log      *slog.Logger
 	// Statfs is replaced in tests.
 	Statfs statfsFunc
+	// PCIIDs is the pci.ids database used to name GPUs.
+	PCIIDs string
+	// RunNvidiaSMI is replaced in tests.
+	RunNvidiaSMI func(context.Context) ([]byte, error)
 	// DiskEvery bounds how often filesystem usage (mountinfo + statfs) is
 	// refreshed; usage changes slowly and statfs can be slow on FUSE.
 	// Default SlowInterval; negative refreshes every sample.
@@ -126,7 +154,17 @@ type Sampler struct {
 	virtual map[string]bool
 	disks   []Disk
 	disksAt time.Time
+
+	sensors      sensorSet
+	gpus         []gpuCard
+	discoveredAt time.Time
+	nvidia       map[string]GPU
+	nvidiaAt     time.Time
+	slow         *slowValues
 }
+
+// discoverEvery bounds rescans for sensor and GPU files (hotplug is rare).
+const discoverEvery = time.Minute
 
 // warnOnce logs each distinct collection error once, not every tick.
 func (s *Sampler) warnOnce(err error) {
@@ -168,11 +206,18 @@ func New(cfg Config) *Sampler {
 	if cfg.DiskEvery == 0 {
 		cfg.DiskEvery = SlowInterval
 	}
+	if cfg.PCIIDs == "" {
+		cfg.PCIIDs = "/usr/share/misc/pci.ids"
+	}
+	if cfg.RunNvidiaSMI == nil {
+		cfg.RunNvidiaSMI = runNvidiaSMI
+	}
 	return &Sampler{
 		cfg:     cfg,
 		rd:      newFileReader(),
 		statfs:  newStatfsTimeout(cfg.Statfs, time.Second),
 		virtual: map[string]bool{},
+		slow:    newSlowValues(5 * time.Second),
 	}
 }
 
@@ -266,6 +311,13 @@ func (s *Sampler) Collect() (Sample, error) {
 		s.warnOnce(err)
 		s.disks, s.disksAt = disks, now
 	}
+	if s.discoveredAt.IsZero() || now.Sub(s.discoveredAt) >= discoverEvery {
+		s.sensors = discoverSensors(s.cfg.SysRoot)
+		s.gpus = discoverGPUs(s.cfg.SysRoot, s.cfg.PCIIDs)
+		s.discoveredAt = now
+	}
+	temps, fans := s.readSensors()
+	gpus := s.readGPUs(context.Background())
 	diskC, err := readDiskStats(s.rd, s.cfg.ProcRoot, s.cfg.SysRoot)
 	s.warnOnce(err)
 	netC, err := readNetDev(s.rd, s.cfg.ProcRoot, s.cfg.SysRoot, s.virtual)
@@ -281,6 +333,12 @@ func (s *Sampler) Collect() (Sample, error) {
 		Disks:  s.disks,
 		DiskIO: diskRates(s.prevDisk, diskC, dt),
 		Net:    netRates(s.prevNet, netC, dt),
+		Temps:  temps,
+		Fans:   fans,
+		GPUs:   gpus,
+	}
+	if c, ok := cpuTemp(temps); ok {
+		sample.CPUTempC = &c
 	}
 	s.prev, s.prevCore, s.prevAt, s.prevDisk, s.prevNet = total, cores, now, diskC, netC
 	return sample, nil

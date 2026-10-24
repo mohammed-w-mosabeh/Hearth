@@ -20,7 +20,7 @@ Rules: one task at a time, `make check` + commit after each, tick the box in the
 - [x] 1.1 `collect`: CPU (total, per core, freq, load), RAM/swap — ring buffer + adaptive sampling (1 s with subscribers / 15 s otherwise)
 - [x] 1.2 `store`: downsampler to `metrics_1m` / `metrics_1h` with retention
 - [x] 1.3 `collect`: disks (usage per mount, I/O), network throughput per interface
-- [ ] 1.4 `collect`: sensors (hwmon/thermal) and fans; GPU (NVML if present via dlopen-free approach or `nvidia-smi` fallback through safeexec at ≥ 2 s; AMD/Intel sysfs)
+- [x] 1.4 `collect`: sensors (hwmon/thermal) and fans; GPU (NVML if present via dlopen-free approach or `nvidia-smi` fallback through safeexec at ≥ 2 s; AMD/Intel sysfs)
 - [ ] 1.5 `collect`: battery via UPower D-Bus + power profiles
 - [ ] 1.6 WS topics `metrics` + Home page Quick Views cards with uPlot sparklines (draggable grid, layout persisted)
 - [ ] 1.7 Resources page: detailed charts with time range (10 min / 24 h / 7 d / 1 y)

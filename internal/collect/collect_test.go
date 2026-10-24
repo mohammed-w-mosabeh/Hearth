@@ -392,6 +392,24 @@ func TestCollectRealSystem(t *testing.T) {
 		}
 	}
 	t.Logf("%d interfaces, %d physical", len(got.Net), phys)
+	for _, tp := range got.Temps {
+		t.Logf("temp %s/%s %.1f°C", tp.Chip, tp.Label, tp.C)
+	}
+	for _, f := range got.Fans {
+		t.Logf("fan %s/%s %.0f rpm", f.Chip, f.Label, f.RPM)
+	}
+	if got.CPUTempC != nil {
+		t.Logf("cpu temp %.1f°C", *got.CPUTempC)
+	}
+	for _, g := range got.GPUs {
+		f := func(p *float64) string {
+			if p == nil {
+				return "-"
+			}
+			return strconv.FormatFloat(*p, 'f', 1, 64)
+		}
+		t.Logf("gpu %s %s %s sleeping=%v util=%s temp=%s power=%s freq=%s", g.Card, g.Driver, g.Name, g.Sleeping, f(g.UtilPct), f(g.TempC), f(g.PowerW), f(g.FreqMHz))
+	}
 }
 
 // fakePub stands in for api.Hub.

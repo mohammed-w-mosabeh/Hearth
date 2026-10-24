@@ -26,7 +26,9 @@ ProtectControlGroups=yes
 ProtectClock=yes
 ProtectHostname=yes
 ProtectKernelLogs=yes
-# Phase 1 GPU support may need /dev/nvidia* or /dev/dri; relax then.
+# AMD/Intel GPU stats come from sysfs and work with this. NVIDIA stats need
+# nvidia-smi, which needs /dev/nvidia*: on NVIDIA machines add a drop-in with
+# PrivateDevices=no, or GPU cards show identity only (untested: no hardware).
 PrivateDevices=yes
 KeyringMode=private
 RemoveIPC=yes

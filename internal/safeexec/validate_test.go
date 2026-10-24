@@ -117,6 +117,24 @@ func TestSystemdRunShape(t *testing.T) {
 	}
 }
 
+func TestNvidiaSMIShape(t *testing.T) {
+	v := allowlist["nvidia-smi"].Validate
+	ok := []string{"--query-gpu=pci.bus_id,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw", "--format=csv,noheader,nounits"}
+	if err := v(ok); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range [][]string{
+		{"-r"}, // GPU reset
+		{"--query-gpu=name", "--format=csv"},
+		{ok[0], ok[1], "-i", "0"},
+		{"--gom=COMPUTE", ok[1]},
+	} {
+		if v(bad) == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+}
+
 func TestExactly(t *testing.T) {
 	v := exactly(DebPackage, UnitName)
 	if err := v([]string{"bash", "ssh.service"}); err != nil {
