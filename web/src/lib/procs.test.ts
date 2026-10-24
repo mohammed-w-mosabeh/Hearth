@@ -5,7 +5,7 @@ import type { ProcGroup } from './types';
 const g = (id: string, kind: ProcGroup['kind'], cpu: number, mem: number, procs: string[] = [], read?: number): ProcGroup => ({
   id, kind, name: id.split(':')[1] ?? id, user: 'me', count: procs.length || 1, cpu, mem,
   ...(read === undefined ? {} : { read_bps: read }),
-  procs: procs.map((name, i) => ({ pid: 100 + i, name, state: 'S', cpu: 0, rss: 0 })),
+  procs: procs.map((name, i) => ({ pid: 100 + i, start: 1, name, state: 'S', cpu: 0, rss: 0 })),
 });
 
 const groups = [

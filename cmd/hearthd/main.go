@@ -21,11 +21,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mohammed-w-mosabeh/hearth/internal/actions"
 	"github.com/mohammed-w-mosabeh/hearth/internal/api"
 	"github.com/mohammed-w-mosabeh/hearth/internal/auth"
 	"github.com/mohammed-w-mosabeh/hearth/internal/collect"
 	"github.com/mohammed-w-mosabeh/hearth/internal/dbusx"
 	"github.com/mohammed-w-mosabeh/hearth/internal/power"
+	"github.com/mohammed-w-mosabeh/hearth/internal/procctl"
 	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
 	"github.com/mohammed-w-mosabeh/hearth/web"
@@ -124,6 +126,11 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		<-samplerDone
 		ds.Close(context.Background())
 	}()
+
+	// Typed actions (ARCHITECTURE "Actions endpoint"), audited in db.
+	reg := actions.NewRegistry(db)
+	procctl.Register(reg, procctl.Config{})
+	srv.API.HandleFunc("POST /api/v1/actions/{kind}/{action}", reg.Handle)
 
 	// Process scanning runs only while a client follows the procs topic.
 	procs := collect.NewProcSampler(collect.ProcConfig{Pub: srv.Hub, Log: log})

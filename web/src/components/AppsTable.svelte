@@ -1,5 +1,9 @@
 <script lang="ts">
+  import ConfirmDialog from './ConfirmDialog.svelte';
+  import { preview, reasonKey, run, type Blocked, type Plan, type Result } from '../lib/actions';
+  import { ApiError } from '../lib/api';
   import { bytes, pct, rate } from '../lib/format';
+  import { toast } from '../lib/toast.svelte';
   import { t, type MessageKey } from '../lib/i18n';
   import { view, type KindFilter, type SortKey } from '../lib/procs';
   import type { GroupKind, ProcSnapshot } from '../lib/types';
@@ -57,6 +61,91 @@
     session: 'apps.kind.session',
     kernel: 'apps.kind.kernel',
   };
+  // Actions (ROADMAP 1.9). One shared menu (a popover="auto" panel: top
+  // layer, light dismiss, Esc) and one confirmation dialog for all rows.
+  type Destructive = 'terminate' | 'kill';
+  type Subject = { target: string; name: string; group: boolean; stopped: boolean };
+
+  let menu: HTMLDivElement;
+  let subject = $state<Subject | null>(null);
+  let pending = $state<{ action: Destructive; subject: Subject; plan: Plan } | null>(null);
+
+  const verbs: Record<string, MessageKey> = {
+    terminate: 'action.terminate',
+    kill: 'action.kill',
+    freeze: 'action.freeze',
+    resume: 'action.resume',
+    renice: 'action.renice',
+  };
+
+  function openMenu(e: MouseEvent, s: Subject): void {
+    subject = s;
+    const btn = e.currentTarget as HTMLElement;
+    menu.showPopover();
+    // Anchor positioning is not available in the target browsers yet:
+    // place the panel from the button's box, flipping at the edges.
+    const r = btn.getBoundingClientRect();
+    const w = menu.offsetWidth;
+    const h = menu.offsetHeight;
+    const top = r.bottom + 4 + h > innerHeight ? Math.max(4, r.top - 4 - h) : r.bottom + 4;
+    const left = Math.min(Math.max(4, r.right - w), innerWidth - w - 4);
+    menu.style.top = `${top}px`;
+    menu.style.left = `${left}px`;
+  }
+
+  function errorText(err: unknown): string {
+    return err instanceof ApiError ? err.message : t('action.failed');
+  }
+
+  // describe turns a result into one line: what was done, what was not.
+  function describe(action: string, name: string, res: Result): string {
+    const parts = [t('result.done', { verb: t(verbs[action] ?? 'action.failed'), name, n: res.done })];
+    const skipped: Blocked[] = [...res.blocked, ...res.failed];
+    if (skipped.length > 0) {
+      const first = skipped[0] as Blocked;
+      parts.push(t('result.skipped', { n: skipped.length, reason: t(reasonKey(first.reason), { user: first.detail ?? '' }) }));
+    }
+    return parts.join(' ');
+  }
+
+  async function act(action: string, s: Subject, params: Record<string, string> = {}): Promise<void> {
+    menu.hidePopover();
+    try {
+      const res = await run('proc', action, s.target, params);
+      const undo = action === 'freeze' && res.done > 0 ? () => void act('resume', s) : undefined;
+      toast(describe(action, s.name, res), { tone: res.done === 0 ? 'error' : 'info', ...(undo ? { undo } : {}) });
+    } catch (err) {
+      toast(errorText(err), { tone: 'error' });
+    }
+  }
+
+  async function confirmFirst(action: Destructive, s: Subject): Promise<void> {
+    menu.hidePopover();
+    try {
+      const plan = await preview('proc', action, s.target);
+      if (plan.items.length === 0) {
+        toast(describe(action, s.name, { done: 0, failed: [], blocked: plan.blocked }), { tone: 'error' });
+        return;
+      }
+      pending = { action, subject: s, plan };
+    } catch (err) {
+      toast(errorText(err), { tone: 'error' });
+    }
+  }
+
+  async function confirmed(typed: string): Promise<void> {
+    if (!pending) return;
+    const { action, subject: s, plan } = pending;
+    try {
+      const res = await run('proc', action, s.target, {}, plan.token, typed || undefined);
+      toast(describe(action, s.name, res), { tone: res.done === 0 ? 'error' : 'info' });
+    } catch (err) {
+      toast(errorText(err), { tone: 'error' });
+    } finally {
+      pending = null;
+    }
+  }
+
   const cpuText = (v: number) => (snap?.partial ? '–' : pct(v, 1));
   const ioText = (v: number | undefined) => (v === undefined ? '–' : rate(v));
 </script>
@@ -88,6 +177,7 @@
               </button>
             </th>
           {/each}
+          <th><span class="visually-hidden">{t('apps.col.actions')}</span></th>
         </tr>
       </thead>
       <tbody>
@@ -110,6 +200,16 @@
             <td class="num" title={g.io_partial ? t('apps.ioPartial') : undefined}>{ioText(g.read_bps)}{g.io_partial ? '*' : ''}</td>
             <td class="num" title={g.io_partial ? t('apps.ioPartial') : undefined}>{ioText(g.write_bps)}{g.io_partial ? '*' : ''}</td>
             <td class="num">{g.count}</td>
+            <td class="act">
+              <button
+                type="button"
+                class="more-btn"
+                aria-label={t('apps.actionsFor', { name: g.name })}
+                onclick={(e) =>
+                  openMenu(e, { target: `group:${g.id}`, name: g.name, group: true, stopped: g.procs.length > 0 && g.procs.every((p) => p.state === 'T') })}
+                >⋯</button
+              >
+            </td>
           </tr>
           {#if open[g.id]}
             {#each g.procs as p (p.pid)}
@@ -120,10 +220,19 @@
                 <td class="num">–</td>
                 <td class="num">–</td>
                 <td></td>
+                <td class="act">
+                  <button
+                    type="button"
+                    class="more-btn"
+                    aria-label={t('apps.actionsFor', { name: `${p.name} (${p.pid})` })}
+                    onclick={(e) => openMenu(e, { target: `pid:${p.pid}:${p.start}`, name: `${p.name} (${p.pid})`, group: false, stopped: p.state === 'T' })}
+                    >⋯</button
+                  >
+                </td>
               </tr>
             {/each}
             {#if g.count > g.procs.length}
-              <tr class="proc"><td colspan="6" class="more">{t('apps.more', { n: g.count - g.procs.length })}</td></tr>
+              <tr class="proc"><td colspan="7" class="more">{t('apps.more', { n: g.count - g.procs.length })}</td></tr>
             {/if}
           {/if}
         {/each}
@@ -132,6 +241,33 @@
   </div>
   <p class="foot">{t('apps.footnote')}</p>
 {/if}
+
+<!-- Not a role="menu": a group of buttons in a popover (no arrow-key contract). -->
+<div bind:this={menu} popover="auto" class="menu" aria-label={subject ? t('apps.actionsFor', { name: subject.name }) : undefined}>
+  {#if subject}
+    {@const s = subject}
+    {#if s.stopped}
+      <button type="button" onclick={() => act('resume', s)}>{t('menu.resume')}</button>
+    {:else}
+      <button type="button" onclick={() => act('freeze', s)}>{t('menu.freeze')}</button>
+    {/if}
+    <button type="button" onclick={() => confirmFirst('terminate', s)}>{t('menu.terminate')}</button>
+    <button type="button" class="danger" onclick={() => confirmFirst('kill', s)}>{t('menu.kill')}</button>
+    <hr />
+    <span class="label">{t('menu.priority')}</span>
+    <button type="button" onclick={() => act('renice', s, { nice: '0' })}>{t('menu.prioNormal')}</button>
+    <button type="button" onclick={() => act('renice', s, { nice: '10' })}>{t('menu.prioLow')}</button>
+    <button type="button" onclick={() => act('renice', s, { nice: '19' })}>{t('menu.prioLowest')}</button>
+  {/if}
+</div>
+
+<ConfirmDialog
+  plan={pending?.plan ?? null}
+  title={pending ? t(pending.action === 'kill' ? 'confirm.killTitle' : 'confirm.terminateTitle', { name: pending.subject.name }) : ''}
+  verb={pending ? t(pending.action === 'kill' ? 'menu.kill' : 'menu.terminate') : ''}
+  onconfirm={confirmed}
+  oncancel={() => (pending = null)}
+/>
 
 <style>
   .bar {
@@ -264,5 +400,77 @@
   }
   .more {
     font-style: italic;
+  }
+  .act {
+    width: 1%;
+    text-align: end;
+  }
+  .more-btn {
+    font: inherit;
+    font-size: 16px;
+    line-height: 1;
+    color: var(--text-muted);
+    background: none;
+    border: 1px solid transparent;
+    border-radius: var(--radius-s);
+    padding: 2px 8px;
+    cursor: pointer;
+  }
+  .more-btn:hover,
+  .more-btn:focus-visible {
+    border-color: var(--border);
+    color: var(--text);
+  }
+  .menu {
+    position: fixed;
+    inset: auto;
+    margin: 0;
+    min-width: 200px;
+    padding: var(--space-1);
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-m);
+    box-shadow: var(--shadow);
+    font-size: 13px;
+  }
+  .menu:popover-open {
+    display: grid;
+  }
+  .menu button {
+    font: inherit;
+    text-align: start;
+    color: var(--text);
+    background: none;
+    border: 0;
+    border-radius: var(--radius-s);
+    padding: var(--space-1) var(--space-3);
+    cursor: pointer;
+  }
+  .menu button:hover,
+  .menu button:focus-visible {
+    background: var(--surface-2);
+  }
+  .menu .danger {
+    color: var(--crit);
+  }
+  .menu hr {
+    border: 0;
+    border-top: 1px solid var(--border);
+    margin: var(--space-1) 0;
+    width: 100%;
+  }
+  .menu .label {
+    padding: var(--space-1) var(--space-3) 0;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 </style>

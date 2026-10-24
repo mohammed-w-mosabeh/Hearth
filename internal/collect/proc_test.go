@@ -168,6 +168,7 @@ func TestGroupFor(t *testing.T) {
 		{"/system.slice/docker-8809c2af4d64facf2a9c.scope", "nginx", "container:8809c2af4d64", KindContainer, "Container 8809c2af4d64"},
 		{"/user.slice/user-1000.slice/session-2.scope", "bash", "exe:bash", KindSession, "bash"},
 		{"/init.scope", "systemd", "unit:init.scope", KindService, "systemd"},
+		{u + "init.scope", "systemd", "user-unit:init.scope", KindUserService, "systemd --user"},
 		{"", "orphan", "exe:orphan", KindSession, "orphan"},
 	}
 	for _, c := range cases {
@@ -222,5 +223,29 @@ func BenchmarkProcScan(b *testing.B) {
 		if _, err := ps.Scan(); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+func TestLookup(t *testing.T) {
+	f := newProcFixture(t)
+	const app = "/user.slice/user-1000.slice/user@1000.service/app.slice/app-org.gnome.TextEditor-9.scope"
+	f.proc(400, "gnome-text-editor", app, 0, 0, 20)
+	f.proc(401, "helper", app, 0, 0, 20)
+	f.proc(500, "cupsd", "/system.slice/cups.service", 0, 0, 5)
+	f.write(f.root, "500/status", "Name:\tcupsd\nUid:\t0\t0\t0\t0\n")
+	ps := NewProcSampler(ProcConfig{ProcRoot: f.root, CgroupRoot: f.cgrp, Log: discard(),
+		Users: func() map[int]string { return map[int]string{0: "root", 1000: "me"} }})
+	ps.uid = 1000
+
+	got, err := ps.Lookup("app:org.gnome.TextEditor", 0, 0)
+	if err != nil || len(got) != 2 || got[0].GroupName != "TextEditor" || !got[0].Own {
+		t.Fatalf("group: %+v %v", got, err)
+	}
+	got, _ = ps.Lookup("", 500, 600)
+	if len(got) != 1 || got[0].Own || got[0].User != "root" || got[0].Group != "unit:cups.service" {
+		t.Fatalf("pid: %+v", got)
+	}
+	if got, _ := ps.Lookup("", 500, 1); len(got) != 0 {
+		t.Fatalf("stale start time matched: %+v", got)
 	}
 }

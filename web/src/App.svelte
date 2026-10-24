@@ -1,6 +1,7 @@
 <script lang="ts">
   import Sidebar from './components/Sidebar.svelte';
   import EmptyState from './components/EmptyState.svelte';
+  import Toaster from './components/Toaster.svelte';
   import Home from './routes/Home.svelte';
   import Resources from './routes/Resources.svelte';
   import Placeholder from './routes/Placeholder.svelte';
@@ -57,6 +58,8 @@
     </main>
   </div>
 {/if}
+
+<Toaster />
 
 <style>
   .shell {

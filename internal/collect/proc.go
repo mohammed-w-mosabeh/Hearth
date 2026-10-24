@@ -39,6 +39,7 @@ const (
 // Proc is one process in a group.
 type Proc struct {
 	PID   int     `json:"pid"`
+	Start uint64  `json:"start"` // start time in clock ticks since boot; with PID, identifies the process
 	Name  string  `json:"name"`
 	State string  `json:"state"`
 	CPU   float64 `json:"cpu"` // % of the whole machine
@@ -92,6 +93,7 @@ type procInfo struct {
 	// noIO: neither source is available.
 	procIO, noIO bool
 	memCgroup    string // cgroup whose memory.current counts this process
+	uid          int    // -1 if unknown
 }
 
 type procPrev struct {
@@ -279,7 +281,7 @@ func (p *ProcSampler) Scan() (ProcSnapshot, error) {
 		}
 		seen[key] = cur
 
-		pr := Proc{PID: pid, Name: info.name, State: st.state, RSS: st.rss * p.pageSize}
+		pr := Proc{PID: pid, Start: st.start, Name: info.name, State: st.state, RSS: st.rss * p.pageSize}
 		old, had := p.prev[key]
 		if had && !first && dCPU > 0 && st.ticks >= old.ticks {
 			pr.CPU = float64(st.ticks-old.ticks) / dCPU * 100
@@ -524,7 +526,7 @@ func (p *ProcSampler) readInfo(pid int, st procStat) procInfo {
 	info := procInfo{name: st.comm}
 	if st.kernel || pid == 2 || st.ppid == 2 {
 		info.group = groupID{id: "kernel", kind: KindKernel, name: "Kernel"}
-		info.user = "root"
+		info.user, info.uid = "root", 0
 		return info
 	}
 	if b, err := p.read(strconv.Itoa(pid) + "/cmdline"); err == nil && len(b) > 0 {
@@ -536,8 +538,10 @@ func (p *ProcSampler) readInfo(pid int, st procStat) procInfo {
 		}
 	}
 	own := false
+	info.uid = -1
 	if b, err := p.read(strconv.Itoa(pid) + "/status"); err == nil {
 		if uid, ok := statusUID(b); ok {
+			info.uid = uid
 			info.user = p.users[uid]
 			if info.user == "" {
 				info.user = strconv.Itoa(uid)
@@ -643,6 +647,9 @@ func groupFor(cgroup, exe string) groupID {
 			kind, prefix = KindUserService, "user-unit:"
 		}
 		return groupID{id: prefix + unit, kind: kind, name: strings.TrimSuffix(unescapeUnit(unit), ".service"), unit: unit, own: true}
+	case unit == "init.scope" && user:
+		// The user's own systemd manager, not PID 1.
+		return groupID{id: "user-unit:init.scope", kind: KindUserService, name: "systemd --user", unit: unit, own: true}
 	case unit == "init.scope":
 		return groupID{id: "unit:init.scope", kind: KindService, name: "systemd", unit: unit, own: true}
 	default:
@@ -697,4 +704,70 @@ func readPasswd() map[int]string {
 		}
 	}
 	return users
+}
+
+// ProcRef identifies a process for an action on it.
+type ProcRef struct {
+	PID   int    `json:"pid"`
+	Start uint64 `json:"start"`
+	Name  string `json:"name"`
+	User  string `json:"user"`
+	Own   bool   `json:"-"` // owned by hearthd's user
+	// Group is the process group id and Kind its kind, as in Group.
+	Group string `json:"-"`
+	Kind  string `json:"-"`
+	// GroupName is the group's display name.
+	GroupName string `json:"-"`
+	// Cgroup is the process's cgroup path for groups made of whole
+	// cgroups ("" otherwise).
+	Cgroup string `json:"-"`
+}
+
+// Lookup reads the current processes and returns those in group id (when
+// pid is 0) or the single process pid with start time start. It is meant
+// for one-off use by actions; it does not disturb a running Scan loop as
+// long as each caller uses its own ProcSampler.
+func (p *ProcSampler) Lookup(id string, pid int, start uint64) ([]ProcRef, error) {
+	p.users = p.cfg.Users()
+	var pids []int
+	if pid > 0 {
+		pids = []int{pid}
+	} else {
+		entries, err := os.ReadDir(p.cfg.ProcRoot)
+		if err != nil {
+			return nil, fmt.Errorf("procs: %w", err)
+		}
+		for _, e := range entries {
+			if n, err := strconv.Atoi(e.Name()); err == nil && n > 0 {
+				pids = append(pids, n)
+			}
+		}
+	}
+	var out []ProcRef
+	for _, n := range pids {
+		st, err := p.readStat(n)
+		if err != nil {
+			continue
+		}
+		if pid > 0 && st.start != start {
+			continue // the pid now belongs to another process
+		}
+		info := p.readInfo(n, st)
+		if pid == 0 && info.group.id != id {
+			continue
+		}
+		out = append(out, ProcRef{PID: n, Start: st.start, Name: info.name, User: info.user,
+			Own: info.uid == p.uid, Group: info.group.id, Kind: info.group.kind, GroupName: info.group.name, Cgroup: info.memCgroup})
+	}
+	return out, nil
+}
+
+// StartTime returns the start time of pid, to check that a pid still names
+// the same process.
+func (p *ProcSampler) StartTime(pid int) (uint64, error) {
+	st, err := p.readStat(pid)
+	if err != nil {
+		return 0, err
+	}
+	return st.start, nil
 }

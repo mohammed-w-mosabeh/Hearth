@@ -111,6 +111,7 @@ export type GroupKind = 'app' | 'service' | 'user-service' | 'container' | 'sess
 
 export interface Proc {
   pid: number;
+  start: number;
   name: string;
   state: string;
   cpu: number;
