@@ -47,6 +47,17 @@ func noOption(s string) error {
 	return nil
 }
 
+// Literal returns a validator that accepts exactly want. It is the only way
+// a fixed option such as "--user" can appear in an argument list.
+func Literal(want string) Validator {
+	return func(s string) error {
+		if s != want {
+			return invalid("want %q, got %q", want, s)
+		}
+		return nil
+	}
+}
+
 var debPackageRe = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]+$`)
 
 // DebPackage validates a Debian package name (Debian Policy 5.6.1).

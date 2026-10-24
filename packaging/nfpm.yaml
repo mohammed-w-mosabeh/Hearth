@@ -1,0 +1,40 @@
+# nfpm config for the hearth .deb (`make deb`). VERSION comes from the Makefile.
+name: hearth
+arch: amd64
+platform: linux
+version: ${VERSION}
+version_schema: none
+section: admin
+priority: optional
+maintainer: Mohammed Mosabeh <219109774+mohammed-w-mosabeh@users.noreply.github.com>
+description: |
+  Local-first system manager and monitor for a single Debian machine.
+  Monitors resources and manages apps, services, Docker, packages and more
+  from a browser UI served on 127.0.0.1 only.
+homepage: https://github.com/mohammed-w-mosabeh/hearth
+license: Proprietary
+
+depends:
+  - systemd
+  - xdg-utils
+
+contents:
+  - src: bin/hearthd
+    dst: /usr/bin/hearthd
+    file_info:
+      mode: 0755
+      owner: root
+      group: root
+  - src: packaging/systemd/hearthd.service
+    dst: /usr/lib/systemd/user/hearthd.service
+    file_info:
+      mode: 0644
+  - src: packaging/desktop/hearth.desktop
+    dst: /usr/share/applications/hearth.desktop
+    file_info:
+      mode: 0644
+
+scripts:
+  postinstall: packaging/scripts/postinstall.sh
+  preremove: packaging/scripts/preremove.sh
+  postremove: packaging/scripts/postremove.sh

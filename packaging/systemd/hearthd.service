@@ -1,0 +1,51 @@
+[Unit]
+Description=Hearth system manager and monitor
+Documentation=https://github.com/mohammed-w-mosabeh/hearth
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/hearthd
+Restart=on-failure
+RestartSec=2s
+
+# The sandbox below makes $HOME read-only, so create Hearth's directories
+# first. "+" runs this one command outside the sandbox (still as the user).
+ExecStartPre=+/usr/bin/mkdir -p -m 0700 %h/.config/hearth %h/.local/share/hearth
+
+# --- Hardening (SECURITY.md "systemd hardening") ---
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+# Relaxation: hearthd writes its config/token and database. Uses the XDG
+# defaults; a custom XDG_CONFIG_HOME/XDG_DATA_HOME needs a drop-in.
+ReadWritePaths=%h/.config/hearth %h/.local/share/hearth
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+# Phase 1 GPU support may need /dev/nvidia* or /dev/dri; relax then.
+PrivateDevices=yes
+KeyringMode=private
+RemoveIPC=yes
+MemoryDenyWriteExecute=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+SystemCallErrorNumber=EPERM
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+UMask=0077
+MemoryMax=80M
+CPUQuota=10%
+# Relaxation: anything hearthd launches for the user (browser, apps,
+# terminals) would inherit this sandbox, so it is started through
+# `systemd-run --user` in its own unit instead (needs AF_UNIX to the user bus).
+
+[Install]
+WantedBy=default.target

@@ -11,6 +11,9 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -147,10 +150,56 @@ func checkBinary(p string, fi fs.FileInfo) error {
 	if !ok {
 		return fmt.Errorf("%w: %s: cannot read owner", ErrBinary, p)
 	}
-	if st.Uid != 0 {
+	if st.Uid != rootUID() {
 		return fmt.Errorf("%w: %s is not owned by root", ErrBinary, p)
 	}
 	return nil
+}
+
+// rootUID is the uid that host root's files show as from this process. It is
+// 0 normally, but inside a user namespace that does not map host root (e.g. a
+// hardened systemd user unit, uid_map "1000 1000 1") they show as the
+// kernel's overflow uid.
+var rootUID = sync.OnceValue(func() uint32 {
+	m, err := os.ReadFile("/proc/self/uid_map")
+	if err != nil {
+		return 0
+	}
+	if inside, ok := mapHostUID(string(m), 0); ok {
+		return inside
+	}
+	return overflowUID()
+})
+
+// mapHostUID translates a host uid through uid_map lines
+// "<inside> <outside> <count>".
+func mapHostUID(uidMap string, host uint64) (uint32, bool) {
+	for _, line := range strings.Split(uidMap, "\n") {
+		f := strings.Fields(line)
+		if len(f) != 3 {
+			continue
+		}
+		in, err1 := strconv.ParseUint(f[0], 10, 32)
+		out, err2 := strconv.ParseUint(f[1], 10, 32)
+		n, err3 := strconv.ParseUint(f[2], 10, 33)
+		if err1 != nil || err2 != nil || err3 != nil {
+			continue
+		}
+		if host >= out && host < out+n {
+			return uint32(in + (host - out)), true // #nosec G115 -- bounded by the 32-bit uid_map ranges
+		}
+	}
+	return 0, false
+}
+
+func overflowUID() uint32 {
+	b, err := os.ReadFile("/proc/sys/kernel/overflowuid")
+	if err == nil {
+		if v, err := strconv.ParseUint(strings.TrimSpace(string(b)), 10, 32); err == nil {
+			return uint32(v)
+		}
+	}
+	return 65534
 }
 
 func buildEnv(pass []string) []string {

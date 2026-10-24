@@ -94,6 +94,29 @@ func TestHTTPURL(t *testing.T) {
 	})
 }
 
+func TestLiteral(t *testing.T) {
+	runCases(t, Literal("--user"), []vcase{{"--user", true}, {"--user ", false}, {"--system", false}, {"", false}})
+}
+
+func TestSystemdRunShape(t *testing.T) {
+	v := allowlist["systemd-run-xdg-open"].Validate
+	ok := []string{"--user", "--collect", "--quiet", "--", "/usr/bin/xdg-open", "http://127.0.0.1:7380/auth?t=ab"}
+	if err := v(ok); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range [][]string{
+		{"--user", "--collect", "--quiet", "--", "/bin/sh", "http://x"},
+		{"--user", "--collect", "--quiet", "--", "/usr/bin/xdg-open", "file:///etc/passwd"},
+		{"--system", "--collect", "--quiet", "--", "/usr/bin/xdg-open", "http://x"},
+		{"--user", "--collect", "--quiet", "--", "/usr/bin/xdg-open", "http://x", "extra"},
+		{"--user", "-p", "User=root", "--", "/usr/bin/xdg-open", "http://x"},
+	} {
+		if v(bad) == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+}
+
 func TestExactly(t *testing.T) {
 	v := exactly(DebPackage, UnitName)
 	if err := v([]string{"bash", "ssh.service"}); err != nil {

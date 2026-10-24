@@ -135,6 +135,28 @@ func TestResolveRejectsUnsafeBinaries(t *testing.T) {
 	}
 }
 
+func TestMapHostUID(t *testing.T) {
+	cases := []struct {
+		uidMap string
+		host   uint64
+		want   uint32
+		ok     bool
+	}{
+		{"         0          0 4294967295\n", 0, 0, true},  // init namespace
+		{"      1000       1000          1\n", 0, 0, false}, // hardened user unit
+		{"      1000       1000          1\n", 1000, 1000, true},
+		{"0 100000 65536\n", 100000, 0, true}, // rootless container
+		{"0 100000 65536\n", 0, 0, false},
+		{"garbage\n\n", 0, 0, false},
+	}
+	for _, c := range cases {
+		got, ok := mapHostUID(c.uidMap, c.host)
+		if got != c.want || ok != c.ok {
+			t.Errorf("mapHostUID(%q, %d) = %d, %v; want %d, %v", c.uidMap, c.host, got, ok, c.want, c.ok)
+		}
+	}
+}
+
 func TestAllowlistPathsAreAbsolute(t *testing.T) {
 	for name, spec := range allowlist {
 		if spec.Validate == nil {

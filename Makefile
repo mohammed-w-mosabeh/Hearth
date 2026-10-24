@@ -22,6 +22,10 @@ GOVULNCHECK   := $(TOOLS_BIN)/govulncheck
 GOSEC         := $(TOOLS_BIN)/gosec
 NFPM          := $(TOOLS_BIN)/nfpm
 
+# Debian version: 0.0.0~git<date>.<sha> until the first tag.
+VERSION ?= 0.0.0~git$(shell git log -1 --format=%cd --date=format:%Y%m%d).$(shell git rev-parse --short=12 HEAD)
+DEB      = dist/hearth_$(VERSION)_amd64.deb
+
 # Reproducible, static builds (SECURITY S25).
 export CGO_ENABLED := 0
 GO_BUILD_FLAGS := -trimpath -buildvcs=true
@@ -104,16 +108,17 @@ vuln: web ## govulncheck + npm audit
 check: lint test vuln ## lint + test + vuln
 
 .PHONY: itest
-itest: ## Integration tests in a Debian 13 container (systemd + Docker)
-	$(call stub,ROADMAP 0.9)
+itest: deb ## Install/uninstall the .deb in a Debian 13 container with systemd
+	./test/itest/run.sh $(DEB)
 
 .PHONY: bench
 bench: ## Measure hearthd idle RSS/CPU over 60 s
 	$(call stub,ROADMAP 0.10)
 
 .PHONY: deb
-deb: ## Build the .deb with nfpm
-	$(call stub,ROADMAP 0.9)
+deb: build ## Build dist/hearth_<version>_amd64.deb with nfpm (unsigned for now)
+	@mkdir -p dist
+	VERSION='$(VERSION)' $(NFPM) package --config packaging/nfpm.yaml --packager deb --target $(DEB)
 
 .PHONY: clean
 clean: ## Remove build output

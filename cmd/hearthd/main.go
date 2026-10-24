@@ -166,8 +166,17 @@ func launchURL(paths Paths, port int) (string, error) {
 	return "http://127.0.0.1:" + strconv.Itoa(port) + "/auth?t=" + tok, nil
 }
 
+// openBrowser opens url for the user. Under systemd (INVOCATION_ID is set)
+// the browser would inherit hearthd's sandbox, so the user manager starts it
+// in its own transient unit instead.
 func openBrowser(ctx context.Context, url string) error {
-	_, err := safeexec.Run(ctx, "xdg-open", url)
+	var err error
+	if os.Getenv("INVOCATION_ID") != "" {
+		_, err = safeexec.Run(ctx, "systemd-run-xdg-open",
+			"--user", "--collect", "--quiet", "--", "/usr/bin/xdg-open", url)
+	} else {
+		_, err = safeexec.Run(ctx, "xdg-open", url)
+	}
 	return err
 }
 

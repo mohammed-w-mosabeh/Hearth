@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Hearth
+Comment=Manage and monitor this computer
+Exec=/usr/bin/hearthd open
+Icon=utilities-system-monitor
+Terminal=false
+Categories=System;Monitor;
+Keywords=monitor;docker;services;packages;system;
