@@ -1,0 +1,68 @@
+/* Design tokens. One accent (warm amber); status colors only for status. */
+:root {
+  --font-ui: system-ui, -apple-system, 'Segoe UI', 'Noto Sans', 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, 'DejaVu Sans Mono', 'Liberation Mono', monospace;
+
+  --bg: #f7f6f3;
+  --surface: #ffffff;
+  --surface-2: #efede8;
+  --border: #e2dfd8;
+  --text: #1f1d1a;
+  --text-muted: #6b665d;
+  --accent: #c27c0e;
+  --accent-contrast: #ffffff;
+  --accent-soft: #f6e7cc;
+  --focus: #c27c0e;
+
+  --ok: #2f8a4c;
+  --warn: #b7791f;
+  --crit: #c53030;
+  --info: #2b6cb0;
+
+  --radius-s: 6px;
+  --radius-m: 10px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  --sidebar-w: 64px;
+  --row-h: 40px;
+  --motion: 150ms;
+  --shadow: 0 1px 2px rgb(0 0 0 / 6%), 0 2px 8px rgb(0 0 0 / 4%);
+}
+
+:root[data-density='compact'] {
+  --row-h: 32px;
+  --space-4: 12px;
+  --space-5: 16px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161513;
+    --surface: #1e1d1a;
+    --surface-2: #272522;
+    --border: #34312c;
+    --text: #ece9e3;
+    --text-muted: #a39d92;
+    --accent: #e9a23b;
+    --accent-contrast: #1a1307;
+    --accent-soft: #3a2c14;
+    --focus: #e9a23b;
+
+    --ok: #5cbf7c;
+    --warn: #e3b048;
+    --crit: #f07171;
+    --info: #6aa8e8;
+    --shadow: 0 1px 2px rgb(0 0 0 / 40%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion: 0ms;
+  }
+}

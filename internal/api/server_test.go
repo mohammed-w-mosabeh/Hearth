@@ -217,6 +217,12 @@ func TestAuthRequired(t *testing.T) {
 	if resp := h.do(t, req{path: "/api/v1/ping", key: h.key}); resp.code != 200 {
 		t.Errorf("valid key: status %d", resp.code)
 	}
+	if resp := h.do(t, req{path: "/api/v1/session"}); resp.code != http.StatusUnauthorized {
+		t.Errorf("session without key: status %d", resp.code)
+	}
+	if resp := h.do(t, req{path: "/api/v1/session", key: h.key}); resp.code != 200 {
+		t.Errorf("session with key: status %d", resp.code)
+	}
 }
 
 func TestAuthExchangeViaServer(t *testing.T) {

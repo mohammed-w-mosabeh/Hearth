@@ -2,6 +2,9 @@ module github.com/mohammed-w-mosabeh/hearth
 
 go 1.27.3
 
+// npm packages can contain .go files; keep them out of ./...
+ignore ./web/node_modules
+
 require (
 	github.com/coder/websocket v1.8.15
 	modernc.org/sqlite v1.61.0

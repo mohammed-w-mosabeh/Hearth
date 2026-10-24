@@ -26,9 +26,9 @@ NFPM          := $(TOOLS_BIN)/nfpm
 export CGO_ENABLED := 0
 GO_BUILD_FLAGS := -trimpath -buildvcs=true
 
-# Empty until the first Go package lands; go vet/test fail on "./..." matching nothing.
 GO_PKGS = $(shell $(GO) list ./... 2>/dev/null)
-WEB     = $(wildcard web/package.json)
+
+WEB_SRC = $(shell find web/src web/index.html web/vite.config.ts web/svelte.config.js -type f 2>/dev/null)
 
 stub = @echo "make $@: not implemented yet ($(1))"
 
@@ -44,6 +44,16 @@ tools: ## Install pinned dev tools into .tools/bin
 	GOBIN=$(TOOLS_BIN) $(GO) install github.com/securego/gosec/v2/cmd/gosec@$(GOSEC_VERSION)
 	GOBIN=$(TOOLS_BIN) $(GO) install github.com/goreleaser/nfpm/v2/cmd/nfpm@$(NFPM_VERSION)
 
+# The Go build embeds web/dist, so every Go step needs the UI built first.
+web/node_modules/.package-lock.json: web/package.json web/package-lock.json
+	cd web && npm ci
+
+web/dist/index.html: web/node_modules/.package-lock.json $(WEB_SRC)
+	cd web && npm run build
+
+.PHONY: web
+web: web/dist/index.html ## Build the UI into web/dist
+
 .PHONY: dev
 dev: ## Run hearthd with the Vite dev server proxy (127.0.0.1 only)
 	$(call stub,ROADMAP 0.7/0.8)
@@ -53,13 +63,14 @@ build: ## Build web + both binaries
 	$(call stub,ROADMAP 0.7/0.8)
 
 .PHONY: test
-test: ## go test + vitest
-	$(if $(GO_PKGS),$(GO) test ./...,@echo "go test: no Go packages yet")
+test: web ## go test + vitest
+	$(GO) test ./...
+	cd web && npm run -s test
 
 FUZZTIME ?= 60s
 
 .PHONY: fuzz
-fuzz: ## Run every Fuzz* target for FUZZTIME each (default 60s)
+fuzz: web ## Run every Fuzz* target for FUZZTIME each (default 60s)
 	@for pkg in $(GO_PKGS); do \
 		for f in $$($(GO) test -list '^Fuzz' $$pkg | grep '^Fuzz'); do \
 			echo "== $$pkg $$f"; \
@@ -68,18 +79,18 @@ fuzz: ## Run every Fuzz* target for FUZZTIME each (default 60s)
 	done
 
 .PHONY: lint
-lint: ## golangci-lint (incl. gosec, depguard), gosec, forbidden patterns, svelte-check, eslint
+lint: web ## golangci-lint (incl. gosec, depguard), gosec, forbidden patterns, svelte-check, eslint
 	@out=$$(git ls-files -z '*.go' | xargs -0 -r gofmt -l); if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
 	./scripts/check-forbidden.sh
-	$(if $(GO_PKGS),$(GO) vet ./...,@echo "go vet: no Go packages yet")
-	$(if $(GO_PKGS),$(GOLANGCI_LINT) run ./...,@echo "golangci-lint: no Go packages yet")
-	$(if $(GO_PKGS),$(GOSEC) -quiet ./...,@echo "gosec: no Go packages yet")
-	$(if $(WEB),cd web && npx --no-install svelte-check --fail-on-warnings && npx --no-install eslint .,@echo "svelte-check/eslint: no web/ yet")
+	$(GO) vet ./...
+	$(GOLANGCI_LINT) run ./...
+	$(GOSEC) -quiet -exclude-dir=web/node_modules ./...
+	cd web && npm run -s check && npm run -s lint
 
 .PHONY: vuln
-vuln: ## govulncheck + npm audit
-	$(if $(GO_PKGS),$(GOVULNCHECK) ./...,@echo "govulncheck: no Go packages yet")
-	$(if $(WEB),cd web && npm audit --audit-level=high,@echo "npm audit: no web/ yet")
+vuln: web ## govulncheck + npm audit
+	$(GOVULNCHECK) ./...
+	cd web && npm audit --audit-level=high
 
 .PHONY: check
 check: lint test vuln ## lint + test + vuln
@@ -98,4 +109,4 @@ deb: ## Build the .deb with nfpm
 
 .PHONY: clean
 clean: ## Remove build output
-	rm -rf bin dist web/dist *.deb
+	rm -rf bin dist web/dist web/node_modules *.deb

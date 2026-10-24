@@ -53,6 +53,10 @@ func New(cfg Config) (*Server, error) {
 	}
 	s := &Server{cfg: cfg, log: cfg.Logger, API: http.NewServeMux()}
 	s.Hub = newHub(s.log)
+	// Lets the UI check that its stored key is still valid.
+	s.API.HandleFunc("GET /api/v1/session", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	})
 	s.srv = &http.Server{
 		Handler:           s.handler(),
 		ReadHeaderTimeout: 5 * time.Second,

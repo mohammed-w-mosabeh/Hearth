@@ -9,7 +9,7 @@ Rules: one task at a time, `make check` + commit after each, tick the box in the
 - [x] 0.4 `internal/store`: SQLite open (WAL, 0600), migrations runner, `audit_log` table
 - [x] 0.5 `internal/auth`: token file (0600, rotate on start, single-use), `/auth?t=` exchange → bearer session key (SECURITY S2; no cookie), middleware
 - [x] 0.6 `internal/api`: server on 127.0.0.1:<port>, Host/Origin middleware, security headers/CSP, rate limit, body limit, `/api/v1/health`, WebSocket hub with Origin check — with tests for every rejection path
-- [ ] 0.7 `web/`: Svelte 5 + Vite + TS skeleton, tokens.css (light/dark), sidebar layout, English UI strings in an i18n file (en.json), embedded via `go:embed`
+- [x] 0.7 `web/`: Svelte 5 + Vite + TS skeleton, tokens.css (light/dark), sidebar layout, English UI strings in an i18n file (en.json), embedded via `go:embed`
 - [ ] 0.8 `cmd/hearthd`: refuses root, loads config, starts server, opens browser on first run (`xdg-open`)
 - [ ] 0.9 `packaging/`: hearthd user unit (hardened), nfpm config, desktop file; `make deb` builds an installable package
 - [ ] 0.10 `make bench` script: measures RSS/CPU of idle hearthd over 60 s
