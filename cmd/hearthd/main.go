@@ -114,6 +114,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		OnSample: func(s collect.Sample) { ds.Add(ctx, s.Time, s.Points()) },
 	})
 	srv.API.HandleFunc("GET /api/v1/metrics/live", sampler.HandleLive)
+	srv.API.HandleFunc("GET /api/v1/metrics/history", collect.HandleHistory(db))
 	srv.RegisterSettings(db)
 	samplerCtx, stopSampler := context.WithCancel(ctx)
 	samplerDone := make(chan struct{})

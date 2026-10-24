@@ -33,3 +33,15 @@ export function duration(seconds: number): string {
   const h = Math.floor(m / 60);
   return h === 0 ? `${m} min` : `${h} h ${m % 60} min`;
 }
+
+export function mhz(v: number): string {
+  return Number.isFinite(v) ? (v >= 1000 ? `${(v / 1000).toFixed(2)} GHz` : `${Math.round(v)} MHz`) : '–';
+}
+
+export function watts(v: number): string {
+  return Number.isFinite(v) ? `${v.toFixed(v < 10 ? 1 : 0)} W` : '–';
+}
+
+export function rpm(v: number): string {
+  return Number.isFinite(v) ? `${Math.round(v)} RPM` : '–';
+}

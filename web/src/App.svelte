@@ -2,6 +2,7 @@
   import Sidebar from './components/Sidebar.svelte';
   import EmptyState from './components/EmptyState.svelte';
   import Home from './routes/Home.svelte';
+  import Resources from './routes/Resources.svelte';
   import Placeholder from './routes/Placeholder.svelte';
   import { api, setSession } from './lib/api';
   import { t } from './lib/i18n';
@@ -44,6 +45,8 @@
     <main>
       {#if route?.id === 'home'}
         {#if live}<Home {live} />{/if}
+      {:else if route?.id === 'resources'}
+        {#if live}<Resources {live} />{/if}
       {:else if route}
         <Placeholder {route} />
       {:else}

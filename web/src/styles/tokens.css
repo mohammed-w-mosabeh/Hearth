@@ -28,6 +28,16 @@
   --space-5: 24px;
   --space-6: 32px;
 
+  /* Chart series, in order; distinct from the status colors. */
+  --series-1: #c27c0e;
+  --series-2: #3b6fb6;
+  --series-3: #0f8b8d;
+  --series-4: #8b5cc6;
+  --series-5: #c2457a;
+  --series-6: #6f7f22;
+  --series-7: #8a5a3b;
+  --series-8: #5b6b7f;
+
   --sidebar-w: 64px;
   --row-h: 40px;
   --motion: 150ms;
@@ -58,6 +68,15 @@
     --crit: #f07171;
     --info: #6aa8e8;
     --shadow: 0 1px 2px rgb(0 0 0 / 40%);
+
+    --series-1: #e9a23b;
+    --series-2: #6fa0e6;
+    --series-3: #3cc0c2;
+    --series-4: #b18ae6;
+    --series-5: #ea7aa6;
+    --series-6: #a9bd4f;
+    --series-7: #c99a72;
+    --series-8: #95a5b8;
   }
 }
 

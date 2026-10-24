@@ -577,3 +577,39 @@ func TestHandleLiveValidation(t *testing.T) {
 		t.Fatalf("empty ring: %d %s", rec.Code, rec.Body)
 	}
 }
+
+type fakeHistory struct {
+	res  store.Resolution
+	sel  []string
+	span time.Duration
+	step time.Duration
+}
+
+func (f *fakeHistory) History(_ context.Context, res store.Resolution, sel []string, from, to time.Time, step time.Duration) (store.History, error) {
+	f.res, f.sel, f.span, f.step = res, sel, to.Sub(from), step
+	return store.History{T: []int64{}, Avg: map[string][]*float64{}, Max: map[string][]*float64{}}, nil
+}
+
+func TestHandleHistory(t *testing.T) {
+	f := &fakeHistory{}
+	h := HandleHistory(f)
+	get := func(q string) int {
+		rec := httptest.NewRecorder()
+		h(rec, httptest.NewRequest(http.MethodGet, "/api/v1/metrics/history"+q, nil))
+		return rec.Code
+	}
+	if c := get("?range=7d&m=cpu.usage&m=cpu.core."); c != 200 {
+		t.Fatalf("valid: %d", c)
+	}
+	if f.res != store.Res1m || f.step != 10*time.Minute || f.span < 7*24*time.Hour || len(f.sel) != 2 {
+		t.Fatalf("7d → %+v", f)
+	}
+	if get("?range=1y&m=cpu.usage"); f.res != store.Res1h {
+		t.Fatalf("1y → %s", f.res)
+	}
+	for _, q := range []string{"?m=cpu.usage", "?range=10m&m=cpu.usage", "?range=24h", "?range=24h&m="} {
+		if c := get(q); c != 400 {
+			t.Errorf("%s: %d", q, c)
+		}
+	}
+}
