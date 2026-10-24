@@ -112,8 +112,8 @@ itest: deb ## Install/uninstall the .deb in a Debian 13 container with systemd
 	./test/itest/run.sh $(DEB)
 
 .PHONY: bench
-bench: ## Measure hearthd idle RSS/CPU over 60 s
-	$(call stub,ROADMAP 0.10)
+bench: build ## Measure hearthd idle RSS/CPU over BENCH_SECONDS (default 60) against the budget
+	./scripts/bench.sh bin/hearthd
 
 .PHONY: deb
 deb: build ## Build dist/hearth_<version>_amd64.deb with nfpm (unsigned for now)

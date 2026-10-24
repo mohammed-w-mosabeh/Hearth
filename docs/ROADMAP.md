@@ -12,7 +12,7 @@ Rules: one task at a time, `make check` + commit after each, tick the box in the
 - [x] 0.7 `web/`: Svelte 5 + Vite + TS skeleton, tokens.css (light/dark), sidebar layout, English UI strings in an i18n file (en.json), embedded via `go:embed`
 - [x] 0.8 `cmd/hearthd`: refuses root, loads config, starts server, opens browser on first run (`xdg-open`)
 - [x] 0.9 `packaging/`: hearthd user unit (hardened), nfpm config, desktop file; `make deb` builds an installable package (unsigned until signing is set up); `make itest` Debian 13 + systemd container
-- [ ] 0.10 `make bench` script: measures RSS/CPU of idle hearthd over 60 s
+- [x] 0.10 `make bench` script: measures RSS/CPU of idle hearthd over 60 s
 
 **Gate 0:** no listener off localhost (`ss -tlnp`), all auth/Origin/Host tests pass, `make check` clean, `.deb` installs and uninstalls cleanly in `make itest` container.
 
