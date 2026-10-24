@@ -92,11 +92,24 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		return err
 	}
 
-	sampler := collect.New(collect.Config{Pub: srv.Hub, Log: log})
+	ds, err := store.NewDownsampler(ctx, db, log, nil)
+	if err != nil {
+		return err
+	}
+	sampler := collect.New(collect.Config{
+		Pub: srv.Hub,
+		Log: log,
+		// The sampler goroutine owns ds; it is flushed after the sampler stops.
+		OnSample: func(s collect.Sample) { ds.Add(ctx, s.Time, s.Points()) },
+	})
 	samplerCtx, stopSampler := context.WithCancel(ctx)
 	samplerDone := make(chan struct{})
 	go func() { sampler.Run(samplerCtx); close(samplerDone) }()
-	defer func() { stopSampler(); <-samplerDone }()
+	defer func() {
+		stopSampler()
+		<-samplerDone
+		ds.Close(context.Background())
+	}()
 
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve() }()

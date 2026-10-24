@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mohammed-w-mosabeh/hearth/internal/store"
 )
 
 func TestRefuseRoot(t *testing.T) {
@@ -152,6 +154,18 @@ func TestRunServesAndStops(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("run did not stop")
+	}
+
+	// The sampler ran and its partial minute was flushed on shutdown.
+	db, err := store.Open(context.Background(), p.DBFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	now := time.Now()
+	rows, err := db.Series(context.Background(), store.Res1m, "mem.used", now.Add(-time.Hour), now.Add(time.Hour))
+	if err != nil || len(rows) == 0 || rows[0].Avg <= 0 {
+		t.Fatalf("no mem.used history after a run: %+v %v", rows, err)
 	}
 }
 

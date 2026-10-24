@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -77,8 +78,13 @@ func TestCollect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.CPU.Usage != 0 || first.CPU.Cores[0] != 0 {
-		t.Fatalf("first sample usage %v %v, want 0", first.CPU.Usage, first.CPU.Cores)
+	if first.CPU.Usage != 0 || first.CPU.Cores[0] != 0 || !first.Partial {
+		t.Fatalf("first sample usage %v %v partial %v", first.CPU.Usage, first.CPU.Cores, first.Partial)
+	}
+	for _, p := range first.Points() {
+		if strings.HasPrefix(p.Metric, "cpu.usage") || strings.HasPrefix(p.Metric, "cpu.core") {
+			t.Fatalf("partial sample recorded %s", p.Metric)
+		}
 	}
 
 	f.stat(25, 75, 100)
@@ -95,6 +101,18 @@ func TestCollect(t *testing.T) {
 	}
 	if c.Load1 != 0.52 || c.Load5 != 0.41 || c.Load15 != 0.30 {
 		t.Fatalf("load %v %v %v", c.Load1, c.Load5, c.Load15)
+	}
+
+	if got.Partial {
+		t.Fatal("second sample marked partial")
+	}
+	pts := map[string]float64{}
+	for _, p := range got.Points() {
+		pts[p.Metric] = p.Value
+	}
+	if !near(pts["cpu.usage"], 50) || !near(pts["cpu.core.1"], 75) || !near(pts["cpu.freq"], 2400) ||
+		pts["load1"] != 0.52 || pts["mem.used"] != 10000000*1024 || pts["swap.used"] != 500000*1024 {
+		t.Fatalf("points %v", pts)
 	}
 
 	m := got.Mem

@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -41,6 +42,9 @@ type Server struct {
 
 	srv *http.Server
 	ln  net.Listener
+
+	connMu   sync.Mutex
+	newConns map[net.Conn]struct{} // accepted, no request read yet
 }
 
 // New builds a Server; it does not listen until Listen is called.
@@ -51,7 +55,7 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
-	s := &Server{cfg: cfg, log: cfg.Logger, API: http.NewServeMux()}
+	s := &Server{cfg: cfg, log: cfg.Logger, API: http.NewServeMux(), newConns: map[net.Conn]struct{}{}}
 	s.Hub = newHub(s.log)
 	// Lets the UI check that its stored key is still valid.
 	s.API.HandleFunc("GET /api/v1/session", func(w http.ResponseWriter, _ *http.Request) {
@@ -66,6 +70,7 @@ func New(cfg Config) (*Server, error) {
 		IdleTimeout:    120 * time.Second,
 		MaxHeaderBytes: 64 << 10,
 		ErrorLog:       slog.NewLogLogger(s.log.Handler(), slog.LevelWarn),
+		ConnState:      s.trackConn,
 	}
 	return s, nil
 }
@@ -122,12 +127,27 @@ func (s *Server) Serve() error {
 	return nil
 }
 
+func (s *Server) trackConn(c net.Conn, st http.ConnState) {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	if st == http.StateNew {
+		s.newConns[c] = struct{}{}
+	} else {
+		delete(s.newConns, c)
+	}
+}
+
 // Shutdown stops accepting requests, closes WebSockets and waits for
 // in-flight handlers until ctx expires, then force-closes what is left.
-// Forcing matters because connections that were opened but never used
-// (browser preconnects, client dial races) delay a graceful shutdown by 5 s.
+// Connections that never sent a request (browser preconnects, client dial
+// races) are closed up front: net/http would otherwise wait 5 s for them.
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.Hub.closeAll()
+	s.connMu.Lock()
+	for c := range s.newConns {
+		_ = c.Close()
+	}
+	s.connMu.Unlock()
 	err := s.srv.Shutdown(ctx)
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		s.log.Warn("graceful shutdown timed out; closing remaining connections")

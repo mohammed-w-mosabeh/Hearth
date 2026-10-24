@@ -148,13 +148,14 @@ func TestShutdownForcesUnusedConnections(t *testing.T) {
 	defer func() { _ = c.Close() }()
 	time.Sleep(50 * time.Millisecond)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	start := time.Now()
 	if err := h.s.Shutdown(ctx); err != nil {
 		t.Fatalf("Shutdown: %v", err)
 	}
-	if d := time.Since(start); d > 2*time.Second {
+	// Closed up front, not by the deadline fallback.
+	if d := time.Since(start); d > 500*time.Millisecond {
 		t.Fatalf("shutdown took %v", d)
 	}
 }

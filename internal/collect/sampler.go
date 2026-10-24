@@ -5,6 +5,7 @@ package collect
 import (
 	"context"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
@@ -26,6 +27,39 @@ type Sample struct {
 	Time time.Time `json:"t"`
 	CPU  CPU       `json:"cpu"`
 	Mem  Mem       `json:"mem"`
+	// Partial is set on the first sample, which has no CPU deltas yet.
+	Partial bool `json:"partial,omitempty"`
+}
+
+// Points flattens s into named metrics for the history tables. CPU values
+// are left out of a partial sample rather than recorded as zero.
+func (s Sample) Points() []store.Point {
+	pts := make([]store.Point, 0, 8+len(s.CPU.Cores))
+	if !s.Partial {
+		pts = append(pts, store.Point{Metric: "cpu.usage", Value: s.CPU.Usage})
+		for i, v := range s.CPU.Cores {
+			pts = append(pts, store.Point{Metric: "cpu.core." + strconv.Itoa(i), Value: v})
+		}
+	}
+	var sum float64
+	var n int
+	for _, f := range s.CPU.FreqMHz {
+		if f > 0 {
+			sum += f
+			n++
+		}
+	}
+	if n > 0 {
+		pts = append(pts, store.Point{Metric: "cpu.freq", Value: sum / float64(n)})
+	}
+	return append(pts,
+		store.Point{Metric: "load1", Value: s.CPU.Load1},
+		store.Point{Metric: "load5", Value: s.CPU.Load5},
+		store.Point{Metric: "load15", Value: s.CPU.Load15},
+		store.Point{Metric: "mem.used", Value: float64(s.Mem.Used)},
+		store.Point{Metric: "mem.cached", Value: float64(s.Mem.Cached)},
+		store.Point{Metric: "swap.used", Value: float64(s.Mem.SwapUsed)},
+	)
 }
 
 // Publisher is the subset of api.Hub the sampler needs.
@@ -45,6 +79,9 @@ type Config struct {
 	Ring     *store.Ring[Sample]
 	Pub      Publisher
 	Log      *slog.Logger
+	// OnSample, if set, is called with every sample on the sampler
+	// goroutine (e.g. to feed the downsampler).
+	OnSample func(Sample)
 }
 
 // Sampler collects Samples on an adaptive interval.
@@ -124,6 +161,9 @@ func (s *Sampler) tick() {
 		return
 	}
 	s.cfg.Ring.Push(sample)
+	if s.cfg.OnSample != nil {
+		s.cfg.OnSample(sample)
+	}
 	if s.cfg.Pub != nil && s.cfg.Pub.Subscribers(Topic) > 0 {
 		if err := s.cfg.Pub.Publish(Topic, sample); err != nil {
 			s.cfg.Log.Warn("publish failed", "err", err)
@@ -157,6 +197,7 @@ func (s *Sampler) Collect() (Sample, error) {
 			cpu.Cores[i] = usage(s.prevCore[i], c)
 		}
 	}
+	partial := s.prev.total == 0
 	s.prev, s.prevCore = total, cores
-	return Sample{Time: time.Now(), CPU: cpu, Mem: mem}, nil
+	return Sample{Time: time.Now(), CPU: cpu, Mem: mem, Partial: partial}, nil
 }
