@@ -54,13 +54,21 @@ web/dist/index.html: web/node_modules/.package-lock.json $(WEB_SRC)
 .PHONY: web
 web: web/dist/index.html ## Build the UI into web/dist
 
+DEV_PORT ?= 7381
+DEV_ENV   = XDG_CONFIG_HOME=$(CURDIR)/.dev/config XDG_DATA_HOME=$(CURDIR)/.dev/data
+
 .PHONY: dev
-dev: ## Run hearthd with the Vite dev server proxy (127.0.0.1 only)
-	$(call stub,ROADMAP 0.7/0.8)
+dev: web ## Run hearthd (isolated .dev/ config) + Vite dev server, both on 127.0.0.1
+	@mkdir -p -m 700 .dev/config/hearth .dev/data
+	@test -f .dev/config/hearth/config.json || echo '{"port": $(DEV_PORT)}' > .dev/config/hearth/config.json
+	@echo "open: http://127.0.0.1:5173/auth?t=$$(cat .dev/config/hearth/token 2>/dev/null || echo '<token appears after start>')"
+	@trap 'kill 0' EXIT; \
+		$(DEV_ENV) $(GO) run ./cmd/hearthd & \
+		cd web && HEARTH_PORT=$(DEV_PORT) npx vite --port 5173
 
 .PHONY: build
-build: ## Build web + both binaries
-	$(call stub,ROADMAP 0.7/0.8)
+build: web ## Build web + binaries into bin/ (hearth-broker arrives in ROADMAP 2.1)
+	$(GO) build $(GO_BUILD_FLAGS) -o bin/hearthd ./cmd/hearthd
 
 .PHONY: test
 test: web ## go test + vitest
@@ -109,4 +117,4 @@ deb: ## Build the .deb with nfpm
 
 .PHONY: clean
 clean: ## Remove build output
-	rm -rf bin dist web/dist web/node_modules *.deb
+	rm -rf bin dist .dev web/dist web/node_modules *.deb

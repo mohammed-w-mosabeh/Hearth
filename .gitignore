@@ -6,6 +6,9 @@
 *.out
 coverage.*
 
+# make dev state
+/.dev/
+
 # Pinned dev tools (make tools)
 /.tools/
 
