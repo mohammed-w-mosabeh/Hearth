@@ -56,6 +56,17 @@ build: ## Build web + both binaries
 test: ## go test + vitest
 	$(if $(GO_PKGS),$(GO) test ./...,@echo "go test: no Go packages yet")
 
+FUZZTIME ?= 60s
+
+.PHONY: fuzz
+fuzz: ## Run every Fuzz* target for FUZZTIME each (default 60s)
+	@for pkg in $(GO_PKGS); do \
+		for f in $$($(GO) test -list '^Fuzz' $$pkg | grep '^Fuzz'); do \
+			echo "== $$pkg $$f"; \
+			$(GO) test -run '^$$' -fuzz "^$$f$$" -fuzztime $(FUZZTIME) $$pkg || exit 1; \
+		done; \
+	done
+
 .PHONY: lint
 lint: ## golangci-lint (incl. gosec, depguard), gosec, forbidden patterns, svelte-check, eslint
 	@out=$$(git ls-files -z '*.go' | xargs -0 -r gofmt -l); if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
