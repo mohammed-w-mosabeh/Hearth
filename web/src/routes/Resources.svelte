@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AppsTable from '../components/AppsTable.svelte';
   import Chart from '../components/Chart.svelte';
   import { api } from '../lib/api';
   import { CHARTS, CORES, label, query } from '../lib/charts';
@@ -12,19 +13,22 @@
   const PREFS = 'hearth.resources';
   const REFRESH_MS = 60_000; // downsampled tables change once a minute
 
-  function loadPrefs(): { range: Range; cores: boolean } {
+  type View = 'charts' | 'apps';
+
+  function loadPrefs(): { range: Range; cores: boolean; view: View } {
     try {
-      const p = JSON.parse(localStorage.getItem(PREFS) ?? '{}') as { range?: unknown; cores?: unknown };
+      const p = JSON.parse(localStorage.getItem(PREFS) ?? '{}') as { range?: unknown; cores?: unknown; view?: unknown };
       const range = RANGES.find((r) => r.id === p.range)?.id ?? '10m';
-      return { range, cores: p.cores === true };
+      return { range, cores: p.cores === true, view: p.view === 'apps' ? 'apps' : 'charts' };
     } catch {
-      return { range: '10m', cores: false };
+      return { range: '10m', cores: false, view: 'charts' };
     }
   }
 
   const prefs = loadPrefs();
   let range = $state<Range>(prefs.range);
   let cores = $state(prefs.cores);
+  let viewMode = $state<View>(prefs.view);
   let cols = $state.raw<Columns | null>(null);
   let failed = $state(false);
   let now = $state(Date.now());
@@ -32,7 +36,7 @@
 
   $effect(() => {
     try {
-      localStorage.setItem(PREFS, JSON.stringify({ range, cores }));
+      localStorage.setItem(PREFS, JSON.stringify({ range, cores, view: viewMode }));
     } catch {
       // per-viewer convenience only
     }
@@ -41,6 +45,7 @@
   // Load the range, then keep it current: 10 min grows with every live
   // sample (fetching only what is new); longer ranges refresh each minute.
   $effect(() => {
+    if (viewMode !== 'charts') return;
     const r = range;
     const span = (RANGES.find((x) => x.id === r)?.seconds ?? 600) * 1000;
     let stopped = false;
@@ -105,7 +110,16 @@
     <p>{t('resources.intro')}</p>
   </div>
   <div class="controls">
-    <label class="check">
+    <div class="segmented" role="radiogroup" aria-label={t('resources.view')}>
+      <button type="button" role="radio" aria-checked={viewMode === 'charts'} class:on={viewMode === 'charts'} onclick={() => (viewMode = 'charts')}>
+        {t('resources.charts')}
+      </button>
+      <button type="button" role="radio" aria-checked={viewMode === 'apps'} class:on={viewMode === 'apps'} onclick={() => (viewMode = 'apps')}>
+        {t('resources.apps')}
+      </button>
+    </div>
+    {#if viewMode === 'charts'}
+      <label class="check">
       <input type="checkbox" bind:checked={cores} />
       {t('resources.cores')}
     </label>
@@ -116,32 +130,36 @@
         </button>
       {/each}
     </div>
+    {/if}
   </div>
 </header>
 
-{#if failed}
-  <p class="note error" role="status">{t('resources.error')}</p>
-{/if}
-
-{#if cols === null}
-  {#if !failed}<p class="note">{t('resources.loading')}</p>{/if}
-{:else if charts.length === 0}
-  <p class="note">{t('resources.empty')}</p>
+{#if viewMode === 'apps'}
+  <AppsTable {live} />
 {:else}
-  <div class="grid">
-    {#each charts as c (c.spec.id)}
-      <Chart
-        title={t(c.spec.title)}
-        unit={c.spec.unit}
-        keys={c.keys}
-        labels={c.labels}
-        {cols}
-        {xRange}
-        min={c.spec.min}
-        max={c.spec.max}
-      />
-    {/each}
-  </div>
+  {#if failed}
+    <p class="note error" role="status">{t('resources.error')}</p>
+  {/if}
+  {#if cols === null}
+    {#if !failed}<p class="note">{t('resources.loading')}</p>{/if}
+  {:else if charts.length === 0}
+    <p class="note">{t('resources.empty')}</p>
+  {:else}
+    <div class="grid">
+      {#each charts as c (c.spec.id)}
+        <Chart
+          title={t(c.spec.title)}
+          unit={c.spec.unit}
+          keys={c.keys}
+          labels={c.labels}
+          {cols}
+          {xRange}
+          min={c.spec.min}
+          max={c.spec.max}
+        />
+      {/each}
+    </div>
+  {/if}
 {/if}
 
 <style>

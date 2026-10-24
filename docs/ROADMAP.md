@@ -24,7 +24,8 @@ Rules: one task at a time, `make check` + commit after each, tick the box in the
 - [x] 1.5 `collect`: battery via UPower D-Bus + power profiles
 - [x] 1.6 WS topics `metrics` + Home page Quick Views cards with uPlot sparklines (draggable grid, layout persisted)
 - [x] 1.7 Resources page: detailed charts with time range (10 min / 24 h / 7 d / 1 y)
-- [ ] 1.8 `collect/proc`: processes grouped by app (cgroup/scope → desktop app → exe), CPU/RAM/IO/net
+- [x] 1.8 `collect/proc`: processes grouped by app (cgroup/scope → desktop app → exe), CPU/RAM/IO/net
+  - Open: network per app needs privileges (eBPF or packet capture; no unprivileged per-process byte counters). Not shown until the owner decides (broker method in phase 2, or drop).
 - [ ] 1.9 Per-app actions: terminate, kill (confirm), freeze/resume, renice — with audit log
 - [ ] 1.10 `discovery`: `.desktop` apps (+ Flatpak/Snap exports, AppImages) with fsnotify; Applications page (grid, search, favorites)
 - [ ] 1.11 App launch via `systemd-run --user --scope` + close action

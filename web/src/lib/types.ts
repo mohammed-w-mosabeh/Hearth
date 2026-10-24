@@ -106,3 +106,35 @@ export interface LiveSeries {
   t: number[];
   series: Record<string, (number | null)[]>;
 }
+
+export type GroupKind = 'app' | 'service' | 'user-service' | 'container' | 'session' | 'kernel';
+
+export interface Proc {
+  pid: number;
+  name: string;
+  state: string;
+  cpu: number;
+  rss: number;
+}
+
+export interface ProcGroup {
+  id: string;
+  kind: GroupKind;
+  name: string;
+  unit?: string;
+  user: string;
+  count: number;
+  cpu: number;
+  mem: number;
+  read_bps?: number;
+  write_bps?: number;
+  io_partial?: boolean;
+  procs: Proc[];
+}
+
+/** WS topic "procs" */
+export interface ProcSnapshot {
+  t: string;
+  groups: ProcGroup[];
+  partial?: boolean;
+}

@@ -125,6 +125,13 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		ds.Close(context.Background())
 	}()
 
+	// Process scanning runs only while a client follows the procs topic.
+	procs := collect.NewProcSampler(collect.ProcConfig{Pub: srv.Hub, Log: log})
+	procsCtx, stopProcs := context.WithCancel(ctx)
+	procsDone := make(chan struct{})
+	go func() { procs.Run(procsCtx); close(procsDone) }()
+	defer func() { stopProcs(); <-procsDone }()
+
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve() }()
 	log.Info("hearthd started", "version", version(), "port", srv.Port(), "first_run", firstRun)
