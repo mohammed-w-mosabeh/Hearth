@@ -70,7 +70,15 @@ func TestSettings(t *testing.T) {
 	if r := h.do(t, req{method: http.MethodPut, path: "/api/v1/settings/home.layout", key: h.key, body: `{"order":[]}`}); r.code != 403 {
 		t.Errorf("no Origin: %d", r.code)
 	}
-	if len(st.m) != 1 {
+	if r := put("apps.favorites", `{"ids": ["org.gnome.TextEditor", "Among Us", "appimage.obsidian-1.5.3"]}`); r.code != 204 {
+		t.Fatalf("favorites: %d %s", r.code, r.body)
+	}
+	for _, bad := range []string{`{"ids": ["../x"]}`, `{"ids": ["a\u0000b"]}`, `{"ids": [""]}`, `{"ids": "x"}`, `[]`} {
+		if r := put("apps.favorites", bad); r.code != 400 {
+			t.Errorf("favorites %s: %d", bad, r.code)
+		}
+	}
+	if len(st.m) != 2 {
 		t.Fatalf("store %v", st.m)
 	}
 }

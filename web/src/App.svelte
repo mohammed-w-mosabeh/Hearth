@@ -3,6 +3,7 @@
   import EmptyState from './components/EmptyState.svelte';
   import Toaster from './components/Toaster.svelte';
   import Home from './routes/Home.svelte';
+  import Applications from './routes/Applications.svelte';
   import Resources from './routes/Resources.svelte';
   import Placeholder from './routes/Placeholder.svelte';
   import { api, setSession } from './lib/api';
@@ -46,6 +47,8 @@
     <main>
       {#if route?.id === 'home'}
         {#if live}<Home {live} />{/if}
+      {:else if route?.id === 'apps'}
+        {#if live}<Applications {live} />{/if}
       {:else if route?.id === 'resources'}
         {#if live}<Resources {live} />{/if}
       {:else if route}

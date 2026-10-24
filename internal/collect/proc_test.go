@@ -79,7 +79,13 @@ func TestProcScanGroups(t *testing.T) {
 	f.cg("/system.slice/cups.service", 70, 0, 0)
 
 	ps := NewProcSampler(ProcConfig{ProcRoot: f.root, CgroupRoot: f.cgrp, Log: discard(),
-		Users: func() map[int]string { return map[int]string{1000: "me"} }})
+		Users: func() map[int]string { return map[int]string{1000: "me"} },
+		AppName: func(id string) (string, bool) {
+			if id == "org.gnome.TextEditor" {
+				return "Text Editor", true
+			}
+			return "", false
+		}})
 	ps.uid = 1000 // the fixture's processes are "ours"
 	first, err := ps.Scan()
 	if err != nil {
@@ -118,7 +124,7 @@ func TestProcScanGroups(t *testing.T) {
 	}
 	// No io controller in the user's cgroups: own processes' /proc/<pid>/io.
 	ed := byID["app:org.gnome.TextEditor"]
-	if ed.Mem != 300 || ed.ReadB == nil || *ed.ReadB <= 0 || *ed.WriteB <= 0 || ed.IOPartial {
+	if ed.Name != "Text Editor" || ed.Mem != 300 || ed.ReadB == nil || *ed.ReadB <= 0 || *ed.WriteB <= 0 || ed.IOPartial {
 		t.Fatalf("editor %+v", ed)
 	}
 	cups := byID["unit:cups.service"]

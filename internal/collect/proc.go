@@ -122,6 +122,9 @@ type ProcConfig struct {
 	Log        *slog.Logger
 	// Users maps uid to user name; nil reads /etc/passwd.
 	Users func() map[int]string
+	// AppName, if set, names app groups from their .desktop entry
+	// (discovery.Index.Name).
+	AppName func(appID string) (string, bool)
 }
 
 // ProcSampler scans /proc while the procs topic has subscribers.
@@ -554,6 +557,11 @@ func (p *ProcSampler) readInfo(pid int, st procStat) procInfo {
 		cg = cgroupV2Path(b)
 	}
 	info.group = groupFor(cg, info.name)
+	if info.group.kind == KindApp && p.cfg.AppName != nil {
+		if n, ok := p.cfg.AppName(strings.TrimPrefix(info.group.id, "app:")); ok {
+			info.group.name = n
+		}
+	}
 	if info.group.own {
 		path := filepath.Clean("/" + cg)
 		info.memCgroup = path

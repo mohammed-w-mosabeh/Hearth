@@ -26,6 +26,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/auth"
 	"github.com/mohammed-w-mosabeh/hearth/internal/collect"
 	"github.com/mohammed-w-mosabeh/hearth/internal/dbusx"
+	"github.com/mohammed-w-mosabeh/hearth/internal/discovery"
 	"github.com/mohammed-w-mosabeh/hearth/internal/power"
 	"github.com/mohammed-w-mosabeh/hearth/internal/procctl"
 	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
@@ -132,8 +133,20 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	procctl.Register(reg, procctl.Config{})
 	srv.API.HandleFunc("POST /api/v1/actions/{kind}/{action}", reg.Handle)
 
+	// Installed applications, kept current with fsnotify.
+	appsCfg := discovery.ConfigFromEnv(os.Getenv)
+	appsCfg.Pub, appsCfg.Log = srv.Hub, log
+	apps := discovery.NewIndex(appsCfg)
+	apps.Scan() // before serving, so the first page load has the list
+	appsCtx, stopApps := context.WithCancel(ctx)
+	appsDone := make(chan struct{})
+	go func() { apps.Run(appsCtx); close(appsDone) }()
+	defer func() { stopApps(); <-appsDone }()
+	srv.API.HandleFunc("GET /api/v1/apps", apps.HandleList)
+	srv.API.HandleFunc("GET /api/v1/apps/icons", apps.HandleIcons)
+
 	// Process scanning runs only while a client follows the procs topic.
-	procs := collect.NewProcSampler(collect.ProcConfig{Pub: srv.Hub, Log: log})
+	procs := collect.NewProcSampler(collect.ProcConfig{Pub: srv.Hub, Log: log, AppName: apps.Name})
 	procsCtx, stopProcs := context.WithCancel(ctx)
 	procsDone := make(chan struct{})
 	go func() { procs.Run(procsCtx); close(procsDone) }()

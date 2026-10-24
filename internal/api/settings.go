@@ -22,7 +22,8 @@ const maxSettingBytes = 16 << 10
 // settingKeys is the closed list of settings the UI may read and write,
 // each with a validator for its value.
 var settingKeys = map[string]func(json.RawMessage) error{
-	"home.layout": validateHomeLayout,
+	"home.layout":    validateHomeLayout,
+	"apps.favorites": validateFavorites,
 }
 
 // cardIDRe matches Home card IDs such as "cpu" or "disk:/home".
@@ -46,6 +47,31 @@ func validateHomeLayout(v json.RawMessage) error {
 	for _, id := range append(l.Order, l.Hidden...) {
 		if len(id) > 200 || !cardIDRe.MatchString(id) {
 			return errors.New("layout has an invalid card id")
+		}
+	}
+	return nil
+}
+
+// appIDRe matches desktop file IDs ("org.gnome.TextEditor", "Among Us",
+// "appimage.obsidian-1.5.3"): printable, no path separators.
+var appIDRe = regexp.MustCompile(`^[^/\x00-\x1f\x7f]{1,255}$`)
+
+// validateFavorites accepts {"ids": [app ids]}.
+func validateFavorites(v json.RawMessage) error {
+	var f struct {
+		IDs []string `json:"ids"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(v))
+	dec.DisallowUnknownFields()
+	if t := bytes.TrimSpace(v); len(t) == 0 || t[0] != '{' || dec.Decode(&f) != nil {
+		return errors.New(`favorites must be {"ids": [...]}`)
+	}
+	if len(f.IDs) > 500 {
+		return errors.New("too many favorites")
+	}
+	for _, id := range f.IDs {
+		if !appIDRe.MatchString(id) {
+			return errors.New("favorites has an invalid app id")
 		}
 	}
 	return nil
