@@ -5,10 +5,14 @@
 //
 //	hearthd          run the daemon (normally via systemd --user)
 //	hearthd open     open the UI in the browser (used by the launcher)
+//	hearthd broker-call <method> [params-json]
+//	                 call hearth-broker as this user and print the answer
+//	                 (for testing the broker; no privilege of its own)
 package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -25,6 +29,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/alerts"
 	"github.com/mohammed-w-mosabeh/hearth/internal/api"
 	"github.com/mohammed-w-mosabeh/hearth/internal/auth"
+	"github.com/mohammed-w-mosabeh/hearth/internal/broker"
 	"github.com/mohammed-w-mosabeh/hearth/internal/collect"
 	"github.com/mohammed-w-mosabeh/hearth/internal/dbusx"
 	"github.com/mohammed-w-mosabeh/hearth/internal/discovery"
@@ -68,12 +73,14 @@ func main() {
 		err = openUI(ctx, paths)
 	case len(args) == 1 && (args[0] == "version" || args[0] == "--version"):
 		fmt.Println(version())
+	case (len(args) == 2 || len(args) == 3) && args[0] == "broker-call":
+		err = brokerCall(ctx, args[1:])
 	default:
-		fmt.Fprintln(os.Stderr, "usage: hearthd [open|version]")
+		fmt.Fprintln(os.Stderr, "usage: hearthd [open|version|broker-call <method> [params-json]]")
 		os.Exit(2)
 	}
 	if err != nil {
-		log.Error(err.Error())
+		log.Error("hearthd failed", "err", err) // an attribute: JSON-escaped, so error text cannot forge log lines
 		os.Exit(1)
 	}
 }
@@ -214,6 +221,8 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		User:   func(ctx context.Context) (unitctl.Bus, error) { return dbusx.SessionBus(ctx) },
 	})
 	srv.API.HandleFunc("POST /api/v1/actions/{kind}/{action}", reg.Handle)
+	brokerClient := &broker.Client{}
+	srv.API.HandleFunc("GET /api/v1/broker/status", brokerClient.HandleStatus)
 	srv.API.HandleFunc("GET /api/v1/services/journal", services.HandleJournal(safeexec.Run, services.CanReadSystemJournal))
 
 	// Process scanning runs only while a client follows the procs topic.
@@ -324,6 +333,24 @@ func openBrowser(ctx context.Context, url string) error {
 		_, err = safeexec.Run(ctx, "xdg-open", url)
 	}
 	return err
+}
+
+// brokerCall is `hearthd broker-call <method> [params-json]`.
+func brokerCall(ctx context.Context, args []string) error {
+	var params any
+	if len(args) == 2 {
+		var raw json.RawMessage
+		if err := json.Unmarshal([]byte(args[1]), &raw); err != nil {
+			return fmt.Errorf("params must be JSON: %w", err)
+		}
+		params = raw
+	}
+	var out json.RawMessage
+	if err := (&broker.Client{}).Call(ctx, args[0], params, &out); err != nil {
+		return err
+	}
+	fmt.Println(string(out))
+	return nil
 }
 
 func version() string {

@@ -71,8 +71,9 @@ dev: web ## Run hearthd (isolated .dev/ config) + Vite dev server, both on 127.0
 		cd web && HEARTH_PORT=$(DEV_PORT) npx vite --port 5173
 
 .PHONY: build
-build: web ## Build web + binaries into bin/ (hearth-broker arrives in ROADMAP 2.1)
+build: web ## Build web + binaries into bin/
 	$(GO) build $(GO_BUILD_FLAGS) -o bin/hearthd ./cmd/hearthd
+	$(GO) build $(GO_BUILD_FLAGS) -o bin/hearth-broker ./cmd/hearth-broker
 
 .PHONY: test
 test: web ## go test + vitest

@@ -17,6 +17,8 @@ license: Proprietary
 depends:
   - systemd
   - xdg-utils
+  - polkitd
+  - passwd
 
 contents:
   - src: bin/hearthd
@@ -25,6 +27,24 @@ contents:
       mode: 0755
       owner: root
       group: root
+  - src: bin/hearth-broker
+    dst: /usr/bin/hearth-broker
+    file_info:
+      mode: 0755
+      owner: root
+      group: root
+  - src: packaging/systemd/hearth-broker.socket
+    dst: /usr/lib/systemd/system/hearth-broker.socket
+    file_info:
+      mode: 0644
+  - src: packaging/systemd/hearth-broker.service
+    dst: /usr/lib/systemd/system/hearth-broker.service
+    file_info:
+      mode: 0644
+  - src: packaging/polkit/org.hearth.policy
+    dst: /usr/share/polkit-1/actions/org.hearth.policy
+    file_info:
+      mode: 0644
   - src: packaging/systemd/hearthd.service
     dst: /usr/lib/systemd/user/hearthd.service
     file_info:

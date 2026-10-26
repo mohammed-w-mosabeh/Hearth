@@ -8,4 +8,8 @@ if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
 	for user in $(loginctl list-users --no-legend 2>/dev/null | awk '{print $2}'); do
 		systemctl --user --machine="$user@.host" stop hearthd.service >/dev/null 2>&1 || true
 	done
+	if [ -d /run/systemd/system ]; then
+		systemctl disable --now hearth-broker.socket >/dev/null 2>&1 || true
+		systemctl stop hearth-broker.service >/dev/null 2>&1 || true
+	fi
 fi

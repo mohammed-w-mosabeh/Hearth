@@ -1,0 +1,53 @@
+[Unit]
+Description=Hearth privileged helper
+Documentation=https://github.com/mohammed-w-mosabeh/hearth
+Requires=hearth-broker.socket
+After=hearth-broker.socket
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/hearth-broker
+# Started by the socket only; exits by itself after 60 s idle.
+Restart=no
+# Audit log (/var/lib/hearth/audit.jsonl); removed on purge.
+StateDirectory=hearth
+StateDirectoryMode=0700
+UMask=0077
+
+# --- Hardening (SECURITY.md "systemd hardening") ---
+# It runs as root but needs no capabilities for what it does so far
+# (answering on its socket, asking polkit over the system bus, writing its
+# StateDirectory). Each later method that needs one adds it here with a
+# comment (e.g. Docker in ROADMAP 2.2 needs only the socket's file access).
+CapabilityBoundingSet=
+AmbientCapabilities=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=no
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+# Not ProtectProc=invisible: the broker reads the caller's /proc/<pid>/stat
+# (start time) so polkit can identify the calling process.
+KeyringMode=private
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+SystemCallErrorNumber=EPERM
+# Unix only: its socket and the system bus. No network at all.
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+MemoryMax=64M
+CPUQuota=20%
+TasksMax=64

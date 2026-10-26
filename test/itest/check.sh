@@ -106,6 +106,59 @@ echo "  journal (xdg-open): $(journalctl --no-pager -o cat 2>/dev/null | grep -m
 asuser systemd-analyze --user security hearthd.service --no-pager 2>/dev/null | tail -1 | sed 's/^/  /' || true
 echo "  MemoryCurrent: $(asuser systemctl --user show -p MemoryCurrent --value hearthd.service)"
 
+echo "== broker"
+api_key() { curl -s -o /dev/null -w '%{redirect_url}' "http://127.0.0.1:$port/auth?t=$(cat /home/$user/.config/hearth/token)" | sed 's/.*#k=//'; }
+broker_status() { curl -s -H "Authorization: Bearer $1" "http://127.0.0.1:$port/api/v1/broker/status"; }
+in_group() { id -nG "$user" | tr ' ' '\n' | grep -qx hearth; }
+call_says() { # call_says "text" method [params]: broker-call's output contains text
+	local want=$1
+	shift
+	local out
+	out=$(asuser /usr/bin/hearthd broker-call "$@" 2>&1 || true) # refusals exit 1; pipefail would hide the match
+	grep -q "$want" <<<"$out"
+}
+check "binary hearth-broker root-owned 0755" test "$(stat -c '%U %a' /usr/bin/hearth-broker)" = "root 755"
+check "polkit policy installed" test -f /usr/share/polkit-1/actions/org.hearth.policy
+check "group hearth exists" getent group hearth
+check "nobody added to hearth automatically" not in_group
+check "hearth-broker.socket active" systemctl is-active hearth-broker.socket
+check "socket 0660 root:hearth" test "$(stat -c '%a %U %G' /run/hearth/broker.sock)" = "660 root hearth"
+check "broker not running before first use" not systemctl is-active hearth-broker.service
+key=$(api_key)
+echo "  status as non-member: $(broker_status "$key")"
+check "status says not a member" grep -q '"reason":"not-member"' <<<"$(broker_status "$key")"
+check "non-member cannot call" call_says "not a member" broker.ping
+# The socket's file mode refuses a non-member before the broker starts (the
+# broker's own SO_PEERCRED group check is the second layer, unit-tested).
+check "non-member does not start the broker" not systemctl is-active hearth-broker.service
+
+usermod -aG hearth "$user"
+# Group membership applies to new sessions: restart the user manager.
+systemctl restart user@$uid.service
+wait_until 30 systemctl is-active user@$uid.service || fail "user manager restarted"
+asuser systemctl --user start hearthd.service || true
+wait_until 15 curl -fsS "http://127.0.0.1:$port/api/v1/health" || fail "hearthd back"
+key=$(api_key)
+echo "  status as member: $(broker_status "$key")"
+check "status says available to a member" grep -q '"member":true' <<<"$(broker_status "$key")"
+check "member can ping, seen as uid $uid" call_says "\"uid\":$uid" broker.ping
+check "unknown method rejected" call_says "unknown method" exec '{"cmd":"/bin/sh"}'
+check "bad params rejected" call_says "takes no params" broker.ping '{"x":1}'
+check "privileged call refused without polkit authorization" call_says "not authorized" broker.authorize
+bpid=$(pgrep -x hearth-broker || true)
+check "broker runs as root" test "$(stat -c %u /proc/"$bpid" 2>/dev/null)" = 0
+check "broker has no capabilities" grep -Eq '^CapEff:\s+0+$' /proc/"$bpid"/status
+check "broker has no network" not grep -q AF_INET <<<"$(systemctl show -p RestrictAddressFamilies --value hearth-broker.service)"
+check "audit log root 0600" test "$(stat -c '%U %a' /var/lib/hearth/audit.jsonl)" = "root 600"
+check "audit records the refusals" grep -q 'refused: unknown method' /var/lib/hearth/audit.jsonl
+check "audit records polkit refusal" grep -q 'broker.authorize.*refused' /var/lib/hearth/audit.jsonl
+systemd-analyze security hearth-broker.service --no-pager 2>/dev/null | tail -1 | sed 's/^/  /' || true
+check "broker exits after 60 s idle" wait_until 80 not systemctl is-active hearth-broker.service
+check "socket still listening after it exits" systemctl is-active hearth-broker.socket
+check "socket starts it again" call_says "broker.ping" broker.ping
+# Leave the group empty so purge can remove it.
+gpasswd -d "$user" hearth >/dev/null
+
 echo "== purge"
 apt-get purge -y -qq hearth >/dev/null
 check "package gone" not dpkg -s hearth
@@ -116,6 +169,13 @@ done
 check "daemon stopped" wait_until 10 not pgrep -x hearthd
 check "port closed" not port_open "$port"
 check "no /var/lib/hearth" test ! -e /var/lib/hearth
+for f in /usr/bin/hearth-broker /usr/lib/systemd/system/hearth-broker.socket \
+	/usr/lib/systemd/system/hearth-broker.service /usr/share/polkit-1/actions/org.hearth.policy \
+	/etc/systemd/system/sockets.target.wants/hearth-broker.socket /run/hearth; do
+	check "removed $f" test ! -e "$f"
+done
+check "broker stopped" not pgrep -x hearth-broker
+check "empty hearth group removed" not getent group hearth
 
 echo
 if [ "$failures" -gt 0 ]; then
