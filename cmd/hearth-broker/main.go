@@ -42,6 +42,7 @@ func run(log *slog.Logger) error {
 	}
 	var srv *broker.Server
 	methods := broker.BaseMethods(version(), func() []string { return srv.Names() })
+	methods = append(methods, broker.DockerMethods(broker.NewDocker(broker.DockerSocket))...)
 	srv, err = broker.NewServer(broker.Config{
 		Methods:   methods,
 		InGroup:   broker.GroupMember(broker.Group),

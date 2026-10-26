@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net"
 	"net/http"
@@ -56,8 +57,7 @@ func (c *Client) Call(ctx context.Context, method string, params, out any) error
 	// A refused caller gets its answer and the connection closed at once,
 	// possibly before the request is written: read the answer anyway.
 	werr := json.NewEncoder(conn).Encode(req)
-	r := bufio.NewReaderSize(conn, MaxLine)
-	line, err := r.ReadSlice('\n')
+	line, err := bufio.NewReader(io.LimitReader(conn, MaxResponse)).ReadBytes('\n')
 	if err != nil {
 		if werr != nil {
 			err = werr

@@ -26,8 +26,12 @@ const Group = "hearth"
 // ActionManage is the polkit action for privileged methods.
 const ActionManage = "org.hearth.broker.manage"
 
-// MaxLine bounds one request or response line.
+// MaxLine bounds one request line.
 const MaxLine = 64 << 10
+
+// MaxResponse bounds one response line (container lists and inspect
+// results are larger than a request).
+const MaxResponse = 16 << 20
 
 // Request is one call.
 type Request struct {
@@ -53,6 +57,8 @@ const (
 	CodeNotMember    = 1 // the caller is not in the hearth group
 	CodeUnauthorized = 2 // polkit did not authorize the call
 	CodeFailed       = 3 // the method ran and failed
+	CodeNotFound     = 4 // the object does not exist (Docker 404)
+	CodeConflict     = 5 // the object is in use or in the wrong state (Docker 409)
 )
 
 // Error is a call's failure.

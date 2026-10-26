@@ -17,8 +17,9 @@ UMask=0077
 # --- Hardening (SECURITY.md "systemd hardening") ---
 # It runs as root but needs no capabilities for what it does so far
 # (answering on its socket, asking polkit over the system bus, writing its
-# StateDirectory). Each later method that needs one adds it here with a
-# comment (e.g. Docker in ROADMAP 2.2 needs only the socket's file access).
+# StateDirectory). Docker needs none either: /run/docker.sock is root's
+# (connecting needs no write access to the read-only /run). Each later
+# method that needs a capability adds it here with a comment.
 CapabilityBoundingSet=
 AmbientCapabilities=
 NoNewPrivileges=yes

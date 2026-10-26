@@ -3,7 +3,8 @@
 # install the .deb, run the checks, purge. The container is --rm.
 set -euo pipefail
 
-deb=${1:?usage: run.sh path/to/hearth.deb}
+deb=${1:?usage: run.sh path/to/hearth.deb path/to/fakedocker}
+fakedocker=${2:?usage: run.sh path/to/hearth.deb path/to/fakedocker}
 here=$(cd "$(dirname "$0")" && pwd)
 image=hearth-itest:debian13
 name=hearth-itest-$$
@@ -34,4 +35,5 @@ case $state in running | degraded) ;; *)
 esac
 
 docker cp "$deb" "$name:/root/hearth.deb"
+docker cp "$fakedocker" "$name:/root/fakedocker"
 docker exec "$name" hearth-itest-check /root/hearth.deb

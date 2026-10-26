@@ -37,6 +37,9 @@ type Method struct {
 	// ActionManage) for the calling process before Handle runs.
 	Privileged bool
 	Action     string
+	// Timeout bounds the call (polkit dialog included); default
+	// Config.CallTimeout.
+	Timeout time.Duration
 	// Handle runs the method. Params are the raw "params"; the method
 	// must validate them and reject anything unexpected.
 	Handle func(ctx context.Context, c Caller, params json.RawMessage) (any, error)
@@ -271,7 +274,11 @@ func (s *Server) call(ctx context.Context, c Caller, line []byte) Response {
 		s.audit(c, req.Method, req.Params, "refused: unknown method")
 		return Response{ID: req.ID, Error: Errorf(CodeNoMethod, "unknown method %q", req.Method)}
 	}
-	ctx, cancel := context.WithTimeout(ctx, s.cfg.CallTimeout)
+	timeout := s.cfg.CallTimeout
+	if m.Timeout > 0 {
+		timeout = m.Timeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	if m.Privileged {
 		ok, err := s.cfg.Authority.Check(ctx, c, m.Action)

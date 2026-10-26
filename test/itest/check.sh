@@ -152,6 +152,40 @@ check "broker has no network" not grep -q AF_INET <<<"$(systemctl show -p Restri
 check "audit log root 0600" test "$(stat -c '%U %a' /var/lib/hearth/audit.jsonl)" = "root 600"
 check "audit records the refusals" grep -q 'refused: unknown method' /var/lib/hearth/audit.jsonl
 check "audit records polkit refusal" grep -q 'broker.authorize.*refused' /var/lib/hearth/audit.jsonl
+
+echo "== broker: docker"
+# A stand-in Engine on /run/docker.sock (root only), logging each request.
+systemd-run --quiet --unit=fakedocker /root/fakedocker
+wait_until 10 test -S /run/docker.sock || fail "fake docker started"
+# polkit: the test user may control Docker (not remove) without a password.
+cat >/etc/polkit-1/rules.d/50-hearth-itest.rules <<'RULES'
+polkit.addRule(function(action, subject) {
+	if (action.id == "org.hearth.docker.control" && subject.user == "tester") {
+		return polkit.Result.YES;
+	}
+});
+RULES
+sleep 1 # polkitd reloads rules on change
+engine_got() { grep -q "$1" /run/fakedocker.log; }
+check "user cannot reach the Docker socket directly" not asuser test -w /run/docker.sock
+check "docker.version through the broker" call_says '"ApiVersion":"1.44"' docker.version
+check "docker.containers.list" call_says '"/web"' docker.containers.list '{"all":true}'
+inspect=$(asuser /usr/bin/hearthd broker-call docker.containers.inspect '{"id":"web"}' 2>&1 || true)
+check "inspect masks secret env" grep -q 'DB_PASSWORD=\*\*\*\*\*\*\*\*' <<<"$inspect"
+check "inspect never shows the secret" not grep -q hunter2 <<<"$inspect"
+check "inspect reports S12 risks" grep -q '"risks":\["privileged","host-mount:/etc"\]' <<<"$inspect"
+check "authorized start reaches the engine" call_says '"ok":true' docker.containers.start '{"id":"web"}'
+check "engine got the start" engine_got '^POST /v1.44/containers/web/start$'
+check "remove refused without polkit authorization" call_says "not authorized" docker.containers.remove '{"id":"web"}'
+check "engine never got the remove" not engine_got '^DELETE'
+check "no create method" call_says "unknown method" docker.containers.create '{"Image":"alpine","HostConfig":{"Privileged":true}}'
+check "path injection refused" call_says "id must be" docker.containers.inspect '{"id":"../../version"}'
+check "engine only got allowlisted requests" not grep -vE '^(GET /v1.44/(version|containers/json\?all=true&size=false|containers/web/json)|POST /v1.44/containers/web/start)$' /run/fakedocker.log
+check "audit records the docker refusal" grep -q 'docker.containers.remove.*refused: not authorized' /var/lib/hearth/audit.jsonl
+echo "  engine log: $(tr '\n' ';' </run/fakedocker.log)"
+systemctl stop fakedocker
+rm -f /etc/polkit-1/rules.d/50-hearth-itest.rules
+
 systemd-analyze security hearth-broker.service --no-pager 2>/dev/null | tail -1 | sed 's/^/  /' || true
 check "broker exits after 60 s idle" wait_until 80 not systemctl is-active hearth-broker.service
 check "socket still listening after it exits" systemctl is-active hearth-broker.socket
