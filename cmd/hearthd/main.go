@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/actions"
+	"github.com/mohammed-w-mosabeh/hearth/internal/alerts"
 	"github.com/mohammed-w-mosabeh/hearth/internal/api"
 	"github.com/mohammed-w-mosabeh/hearth/internal/auth"
 	"github.com/mohammed-w-mosabeh/hearth/internal/collect"
@@ -108,6 +109,28 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	srv.API.HandleFunc("GET /api/v1/power", pw.HandleGet)
 	srv.API.HandleFunc("POST /api/v1/power/profile", pw.HandleSetProfile(db))
 
+	// Alerts: rules evaluated on every metrics sample (1 s with the UI
+	// open, 15 s otherwise) and on failed units, notified on the desktop.
+	notifier := alerts.DesktopNotifier{Dial: dbusx.SessionBus}
+	engine := alerts.NewEngine(db, notifier, srv.Hub, log)
+	if err := engine.Load(ctx); err != nil {
+		return err
+	}
+	defer engine.Wait()
+	(&alerts.API{Store: db, Engine: engine, Notify: notifier}).Register(srv.API)
+	failed := &services.FailedPoller{
+		System: func(ctx context.Context) (services.Bus, error) { return dbusx.SystemBus(ctx) },
+		User:   func(ctx context.Context) (services.Bus, error) { return dbusx.SessionBus(ctx) },
+		Log:    log,
+		Observe: func(ctx context.Context, now time.Time, f map[string]float64) {
+			engine.Observe(ctx, now, "unit.failed", f)
+		},
+	}
+	failedCtx, stopFailed := context.WithCancel(ctx)
+	failedDone := make(chan struct{})
+	go func() { failed.Run(failedCtx); close(failedDone) }()
+	defer func() { stopFailed(); <-failedDone }()
+
 	ds, err := store.NewDownsampler(ctx, db, log, nil)
 	if err != nil {
 		return err
@@ -117,7 +140,12 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		Log:   log,
 		Power: pw.Snapshot,
 		// The sampler goroutine owns ds; it is flushed after the sampler stops.
-		OnSample: func(s collect.Sample) { ds.Add(ctx, s.Time, s.Points()) },
+		OnSample: func(s collect.Sample) {
+			ds.Add(ctx, s.Time, s.Points())
+			for metric, values := range alerts.FromSample(s) {
+				engine.Observe(ctx, s.Time, metric, values)
+			}
+		},
 	})
 	srv.API.HandleFunc("GET /api/v1/metrics/live", sampler.HandleLive)
 	srv.API.HandleFunc("GET /api/v1/metrics/history", collect.HandleHistory(db))

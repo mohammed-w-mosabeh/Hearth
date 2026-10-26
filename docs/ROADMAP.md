@@ -31,7 +31,7 @@ Rules: one task at a time, `make check` + commit after each, tick the box in the
 - [x] 1.11 App launch via a transient user unit (D-Bus `StartTransientUnit`; a scope would inherit hearthd's sandbox) + close action
 - [x] 1.12 `services`: list system + user units via D-Bus with signals; Services page
 - [x] 1.13 Service actions (start/stop/restart/enable/disable) via systemd D-Bus (polkit handles auth); critical-unit double confirm; journal viewer for a unit
-- [ ] 1.14 `alerts`: rule engine with duration + hysteresis, default rules, desktop notification channel, Alerts page (rules form + history)
+- [x] 1.14 `alerts`: rule engine with duration + hysteresis, default rules, desktop notification channel, Alerts page (rules form + history)
 - [ ] 1.15 Command palette Ctrl+K over apps, services, pages
 - [ ] 1.16 Disks page: usage, folder size explorer (user-owned paths)
 

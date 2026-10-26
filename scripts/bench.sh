@@ -23,7 +23,10 @@ mkdir -p -m 700 "$tmp/config/hearth" "$tmp/data"
 printf '{"port": %d}\n' "$port" >"$tmp/config/hearth/config.json"
 chmod 600 "$tmp/config/hearth/config.json"
 
-XDG_CONFIG_HOME=$tmp/config XDG_DATA_HOME=$tmp/data "$bin" 2>"$tmp/log" &
+# No session bus: default alert rules (e.g. a disk over 90%) must not pop
+# desktop notifications during a benchmark.
+DBUS_SESSION_BUS_ADDRESS=unix:path=$tmp/no-bus \
+	XDG_CONFIG_HOME=$tmp/config XDG_DATA_HOME=$tmp/data "$bin" 2>"$tmp/log" &
 pid=$!
 
 for _ in $(seq 50); do

@@ -3,6 +3,7 @@
   import EmptyState from './components/EmptyState.svelte';
   import Toaster from './components/Toaster.svelte';
   import Home from './routes/Home.svelte';
+  import Alerts from './routes/Alerts.svelte';
   import Applications from './routes/Applications.svelte';
   import Resources from './routes/Resources.svelte';
   import Services from './routes/Services.svelte';
@@ -54,6 +55,8 @@
         {#if live}<Resources {live} />{/if}
       {:else if route?.id === 'services'}
         {#if live}<Services {live} />{/if}
+      {:else if route?.id === 'alerts'}
+        {#if live}<Alerts {live} />{/if}
       {:else if route}
         <Placeholder {route} />
       {:else}
