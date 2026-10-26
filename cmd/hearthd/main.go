@@ -85,6 +85,9 @@ func refuseRoot(euid int) error {
 	return nil
 }
 
+// serverHook, set only by tests, sees the fully wired server.
+var serverHook func(*api.Server)
+
 // run starts the daemon and blocks until ctx is cancelled.
 func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.Context, string) error) error {
 	cfg, firstRun, err := loadConfig(ctx, paths)
@@ -231,6 +234,9 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	go func() { units.Run(unitsCtx); close(unitsDone) }()
 	defer func() { stopUnits(); <-unitsDone }()
 
+	if serverHook != nil {
+		serverHook(srv) // every route is registered by now
+	}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve() }()
 	log.Info("hearthd started", "version", version(), "port", srv.Port(), "first_run", firstRun)

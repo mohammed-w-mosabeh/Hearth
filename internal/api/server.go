@@ -29,6 +29,34 @@ type Config struct {
 	Logger *slog.Logger
 }
 
+// Mux is an http.ServeMux that remembers its patterns, so a test can check
+// that every route sits behind the session, Origin and Host checks.
+type Mux struct {
+	*http.ServeMux
+	mu       sync.Mutex
+	patterns []string
+}
+
+// HandleFunc registers h for pattern.
+func (m *Mux) HandleFunc(pattern string, h func(http.ResponseWriter, *http.Request)) {
+	m.Handle(pattern, http.HandlerFunc(h))
+}
+
+// Handle registers h for pattern.
+func (m *Mux) Handle(pattern string, h http.Handler) {
+	m.mu.Lock()
+	m.patterns = append(m.patterns, pattern)
+	m.mu.Unlock()
+	m.ServeMux.Handle(pattern, h)
+}
+
+// Patterns returns the registered patterns ("POST /api/v1/actions/{kind}/{action}").
+func (m *Mux) Patterns() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string{}, m.patterns...)
+}
+
 // Server owns the listener, routes and WebSocket hub.
 type Server struct {
 	cfg  Config
@@ -37,7 +65,7 @@ type Server struct {
 
 	// API is the authenticated mux for /api/v1 routes, e.g.
 	// s.API.HandleFunc("GET /api/v1/containers", ...).
-	API *http.ServeMux
+	API *Mux
 	Hub *Hub
 
 	srv *http.Server
@@ -55,7 +83,7 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
-	s := &Server{cfg: cfg, log: cfg.Logger, API: http.NewServeMux(), newConns: map[net.Conn]struct{}{}}
+	s := &Server{cfg: cfg, log: cfg.Logger, API: &Mux{ServeMux: http.NewServeMux()}, newConns: map[net.Conn]struct{}{}}
 	s.Hub = newHub(s.log)
 	// Lets the UI check that its stored key is still valid.
 	s.API.HandleFunc("GET /api/v1/session", func(w http.ResponseWriter, _ *http.Request) {
