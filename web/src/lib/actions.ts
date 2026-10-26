@@ -57,6 +57,11 @@ const reasons: Record<string, MessageKey> = {
   gone: 'reason.gone',
   denied: 'reason.denied',
   error: 'reason.error',
+  unauthorized: 'reason.unauthorized',
+  'not-found': 'reason.notFound',
+  masked: 'reason.masked',
+  'no-install': 'reason.noInstall',
+  'job-failed': 'reason.jobFailed',
 };
 
 /** The i18n key explaining why an item was blocked or failed. */

@@ -5,17 +5,22 @@
   // Confirmation for destructive actions: shows the previewed plan (what
   // will be affected, what is left alone and why) and, for high-impact
   // actions, asks for the name to be typed. A native modal <dialog>: focus
-  // is trapped and Esc cancels.
+  // is trapped and Esc cancels. body replaces the default "affects N
+  // processes" line; warning is shown above it, highlighted.
   let {
     plan,
     title,
     verb,
+    body,
+    warning,
     onconfirm,
     oncancel,
   }: {
     plan: Plan | null;
     title: string;
     verb: string;
+    body?: string;
+    warning?: string;
     onconfirm: (typed: string) => void;
     oncancel: () => void;
   } = $props();
@@ -56,10 +61,11 @@
       }}
     >
       <h2 id="confirm-title">{title}</h2>
-      <p>{t('confirm.affects', { n: plan.items.length })}</p>
+      {#if warning}<p class="warning" role="alert">{warning}</p>{/if}
+      <p>{body ?? t('confirm.affects', { n: plan.items.length })}</p>
       <ul class="items">
         {#each plan.items.slice(0, SHOW) as it (it.id)}
-          <li><span class="name">{it.name}</span> <span class="muted">{it.id.split(':')[1]}</span></li>
+          <li><span class="name">{it.name}</span> <span class="muted">{it.id.includes(':') ? it.id.split(':')[1] : (it.detail ?? '')}</span></li>
         {/each}
         {#if plan.items.length > SHOW}
           <li class="muted">{t('apps.more', { n: plan.items.length - SHOW })}</li>
@@ -70,7 +76,7 @@
           <summary>{t('confirm.skipped', { n: plan.blocked.length })}</summary>
           <ul class="items">
             {#each plan.blocked as b (b.id)}
-              <li><span class="name">{b.name}</span> <span class="muted">{t(reasonKey(b.reason), { user: b.detail ?? '' })}</span></li>
+              <li><span class="name">{b.name}</span> <span class="muted">{t(reasonKey(b.reason), { user: b.detail ?? '', detail: b.detail ?? '' })}</span></li>
             {/each}
           </ul>
         </details>
@@ -110,6 +116,11 @@
   p {
     margin: 0 0 var(--space-2);
     color: var(--text-muted);
+  }
+  .warning {
+    color: var(--crit);
+    border-inline-start: 3px solid var(--crit);
+    padding-inline-start: var(--space-2);
   }
   .items {
     list-style: none;

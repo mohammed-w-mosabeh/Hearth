@@ -2,9 +2,11 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +17,7 @@ import (
 	"github.com/godbus/dbus/v5"
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/dbusx"
+	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
 )
 
 func TestMerge(t *testing.T) {
@@ -311,4 +314,71 @@ func TestRealBus(t *testing.T) {
 	start := time.Now()
 	got := st.sample(time.Now())
 	t.Logf("stats: %d unit cgroups in %v", len(got), time.Since(start))
+}
+
+func TestParseJournal(t *testing.T) {
+	out := `{"__CURSOR":"s=1;i=1","__REALTIME_TIMESTAMP":"1700000000123456","PRIORITY":"3","_PID":"42","SYSLOG_IDENTIFIER":"cupsd","MESSAGE":"failed <b>x</b>"}
+{"__CURSOR":"s=1;i=2","__REALTIME_TIMESTAMP":"1700000001000000","MESSAGE":[104,105,255]}
+not json
+{"__CURSOR":"s=1;i=3","MESSAGE":null}
+{"__CURSOR":"s=1;i=4","MESS`
+	got := parseJournal([]byte(out), true)
+	if len(got) != 3 {
+		t.Fatalf("%+v", got)
+	}
+	if e := got[0]; e.Time != 1700000000123 || e.Prio != 3 || e.PID != 42 || e.Ident != "cupsd" || e.Msg != "failed <b>x</b>" {
+		t.Errorf("first %+v", e)
+	}
+	if e := got[1]; e.Msg != "hi�" || e.Prio != 6 {
+		t.Errorf("binary %+v", e)
+	}
+	if got[2].Msg != "" {
+		t.Errorf("null %+v", got[2])
+	}
+}
+
+func TestReaderGroup(t *testing.T) {
+	g := "root:x:0:\nadm:x:4:syslog\nsudo:x:27:me\nsystemd-journal:x:999:\n"
+	if !readerGroup(g, []int{1000, 4}) || !readerGroup(g, []int{999}) || readerGroup(g, []int{27, 1000}) {
+		t.Fatal("groups")
+	}
+}
+
+func TestHandleJournal(t *testing.T) {
+	var gotArgs []string
+	run := func(_ context.Context, name string, args ...string) (safeexec.Result, error) {
+		if name != "journalctl-unit" {
+			t.Fatalf("ran %s", name)
+		}
+		gotArgs = args
+		return safeexec.Result{Stdout: []byte(`{"__CURSOR":"s=1;i=9","MESSAGE":"hello"}` + "\n")}, nil
+	}
+	h := HandleJournal(run, func() bool { return false })
+	get := func(q string) (int, Journal) {
+		rec := httptest.NewRecorder()
+		h(rec, httptest.NewRequest("GET", "/api/v1/services/journal?"+q, nil))
+		var j Journal
+		_ = json.Unmarshal(rec.Body.Bytes(), &j)
+		return rec.Code, j
+	}
+	code, j := get("unit=system/cups.service")
+	if code != 200 || len(j.Entries) != 1 || j.Cursor != "s=1;i=9" || !j.Limited ||
+		strings.Join(gotArgs[len(gotArgs)-2:], " ") != "--lines=200 --unit=cups.service" {
+		t.Fatalf("%d %+v %q", code, j, gotArgs)
+	}
+	code, j = get("unit=user/syncnotes.service&lines=50&after=s%3D1%3Bi%3D8")
+	if code != 200 || j.Limited || strings.Join(gotArgs[len(gotArgs)-3:], " ") != "--lines=50 --user-unit=syncnotes.service --after-cursor=s=1;i=8" {
+		t.Fatalf("%d %+v %q", code, j, gotArgs)
+	}
+	for _, q := range []string{"unit=cups.service", "unit=system/-x.service", "unit=root/cups.service", "unit=system/cups.service&lines=0", "unit=system/cups.service&lines=5000"} {
+		if code, _ := get(q); code != 400 {
+			t.Errorf("%s: %d", q, code)
+		}
+	}
+}
+
+func TestRealJournal(t *testing.T) {
+	rec := httptest.NewRecorder()
+	HandleJournal(safeexec.Run, CanReadSystemJournal)(rec, httptest.NewRequest("GET", "/api/v1/services/journal?unit=user/pipewire.service&lines=5", nil))
+	t.Logf("%d %.300s", rec.Code, rec.Body.String())
 }

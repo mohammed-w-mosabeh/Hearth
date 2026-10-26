@@ -101,3 +101,19 @@ export function view(units: Unit[], stats: Record<string, Stat>, f: Filters, sor
 export function failedCount(units: Unit[]): number {
   return units.filter((u) => u.active === 'failed').length;
 }
+
+export type UnitOp = 'start' | 'stop' | 'restart' | 'enable' | 'disable';
+
+/** The actions that make sense for a unit in its current state. */
+export function available(u: Unit): UnitOp[] {
+  const type = unitType(u.name);
+  if (type === 'device' || u.load === 'masked' || u.enabled === 'masked' || u.name.includes('@.')) return [];
+  const ops: UnitOp[] = [];
+  const h = health(u);
+  if (type === 'scope') return h === 'running' ? ['stop'] : [];
+  if (h === 'inactive' || h === 'failed') ops.push('start');
+  if (h === 'running' || h === 'changing') ops.push('stop', 'restart');
+  if (u.enabled === 'disabled') ops.push('enable');
+  if (u.enabled === 'enabled' || u.enabled === 'enabled-runtime') ops.push('disable');
+  return ops;
+}

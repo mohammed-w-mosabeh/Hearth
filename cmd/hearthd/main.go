@@ -33,6 +33,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
 	"github.com/mohammed-w-mosabeh/hearth/internal/services"
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
+	"github.com/mohammed-w-mosabeh/hearth/internal/unitctl"
 	"github.com/mohammed-w-mosabeh/hearth/web"
 )
 
@@ -161,7 +162,12 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		Apps: apps, Home: appsCfg.Home, Path: appsCfg.Path,
 		Bus: func(ctx context.Context) (launch.Bus, error) { return dbusx.SessionBus(ctx) },
 	})
+	unitctl.Register(reg, unitctl.Config{
+		System: func(ctx context.Context) (unitctl.Bus, error) { return dbusx.SystemBus(ctx) },
+		User:   func(ctx context.Context) (unitctl.Bus, error) { return dbusx.SessionBus(ctx) },
+	})
 	srv.API.HandleFunc("POST /api/v1/actions/{kind}/{action}", reg.Handle)
+	srv.API.HandleFunc("GET /api/v1/services/journal", services.HandleJournal(safeexec.Run, services.CanReadSystemJournal))
 
 	// Process scanning runs only while a client follows the procs topic.
 	procs := collect.NewProcSampler(collect.ProcConfig{Pub: srv.Hub, Log: log, AppName: apps.Name})

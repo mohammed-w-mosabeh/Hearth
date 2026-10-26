@@ -1,7 +1,12 @@
 <script lang="ts">
+  import ConfirmDialog from '../components/ConfirmDialog.svelte';
+  import JournalDialog from '../components/JournalDialog.svelte';
+  import { preview, reasonKey, run, type Plan, type Result } from '../lib/actions';
+  import { ApiError } from '../lib/api';
   import { bytes, pct } from '../lib/format';
   import { t, type MessageKey } from '../lib/i18n';
   import {
+    available,
     failedCount,
     health,
     key,
@@ -13,7 +18,9 @@
     type StateFilter,
     type TypeFilter,
     type Unit,
+    type UnitOp,
   } from '../lib/services';
+  import { toast } from '../lib/toast.svelte';
   import type { Live } from '../lib/ws';
 
   // systemd units, system and user. Following the "services" topic is what
@@ -92,6 +99,106 @@
   ];
 
   const statOf = (u: Unit) => stats[key(u)];
+
+  // Actions (ROADMAP 1.13). One shared menu, one confirmation dialog for
+  // critical units (the server asks for it: the preview comes back
+  // destructive with the name to type), and the log viewer.
+  let menu: HTMLDivElement;
+  let subject = $state<Unit | null>(null);
+  let pending = $state<{ op: UnitOp; unit: Unit; plan: Plan } | null>(null);
+  let journalOf = $state<Unit | null>(null);
+  let busy = $state.raw<ReadonlySet<string>>(new Set());
+
+  const opLabels: Record<UnitOp, MessageKey> = {
+    start: 'svc.op.start',
+    stop: 'svc.op.stop',
+    restart: 'svc.op.restart',
+    enable: 'svc.op.enable',
+    disable: 'svc.op.disable',
+  };
+  const doneLabels: Record<UnitOp, MessageKey> = {
+    start: 'svc.done.start',
+    stop: 'svc.done.stop',
+    restart: 'svc.done.restart',
+    enable: 'svc.done.enable',
+    disable: 'svc.done.disable',
+  };
+  // Undo for the reversible ones (SPEC: toast with Undo for 5 s).
+  const undoOf: Partial<Record<UnitOp, UnitOp>> = { stop: 'start', enable: 'disable', disable: 'enable' };
+
+  function openMenu(e: MouseEvent, u: Unit): void {
+    subject = u;
+    const btn = e.currentTarget as HTMLElement;
+    menu.showPopover();
+    const r = btn.getBoundingClientRect();
+    const w = menu.offsetWidth;
+    const h = menu.offsetHeight;
+    const top = r.bottom + 4 + h > innerHeight ? Math.max(4, r.top - 4 - h) : r.bottom + 4;
+    const left = Math.min(Math.max(4, r.right - w), innerWidth - w - 4);
+    menu.style.top = `${top}px`;
+    menu.style.left = `${left}px`;
+  }
+
+  function errorText(err: unknown): string {
+    return err instanceof ApiError ? err.message : t('action.failed');
+  }
+
+  function setBusy(u: Unit, on: boolean): void {
+    const k = key(u);
+    busy = on ? new Set([...busy, k]) : new Set([...busy].filter((x) => x !== k));
+  }
+
+  function report(op: UnitOp, u: Unit, res: Result): void {
+    const bad = [...res.blocked, ...res.failed][0];
+    if (res.done === 0 && bad) {
+      // An unclassified error carries systemd's own message.
+      const reason = bad.reason === 'error' && bad.detail ? bad.detail : t(reasonKey(bad.reason), { detail: bad.detail ?? '', user: '' });
+      toast(t('svc.failed', { op: t(opLabels[op]), name: u.name, reason }), { tone: 'error' });
+      return;
+    }
+    const back = undoOf[op];
+    toast(t(doneLabels[op], { name: u.name }), back ? { undo: () => void execute(back, u) } : {});
+  }
+
+  async function execute(op: UnitOp, u: Unit, token?: string, typed?: string): Promise<void> {
+    setBusy(u, true);
+    if (u.scope === 'system') toast(t('svc.authHint'));
+    try {
+      report(op, u, await run('unit', op, key(u), {}, token, typed));
+    } catch (err) {
+      toast(errorText(err), { tone: 'error' });
+    } finally {
+      setBusy(u, false);
+    }
+  }
+
+  async function act(op: UnitOp, u: Unit): Promise<void> {
+    menu.hidePopover();
+    if (op === 'start' || op === 'enable') return execute(op, u);
+    try {
+      const plan = await preview('unit', op, key(u));
+      if (plan.items.length === 0) {
+        report(op, u, { done: 0, failed: [], blocked: plan.blocked });
+        return;
+      }
+      if (plan.risk === 'destructive') pending = { op, unit: u, plan };
+      else await execute(op, u);
+    } catch (err) {
+      toast(errorText(err), { tone: 'error' });
+    }
+  }
+
+  async function confirmed(typed: string): Promise<void> {
+    if (!pending) return;
+    const { op, unit: u, plan } = pending;
+    pending = null;
+    await execute(op, u, plan.token, typed);
+  }
+
+  function logs(u: Unit): void {
+    menu.hidePopover();
+    journalOf = u;
+  }
 </script>
 
 <header>
@@ -153,6 +260,7 @@
               {/if}
             </th>
           {/each}
+          <th><span class="visually-hidden">{t('svc.col.actions')}</span></th>
         </tr>
       </thead>
       <tbody>
@@ -175,6 +283,15 @@
             <td class="muted">{u.enabled ?? (filesKnown ? '–' : '…')}</td>
             <td class="num">{st ? bytes(st.mem) : '–'}</td>
             <td class="num">{st ? pct(st.cpu, 1) : '–'}</td>
+            <td class="act">
+              <button
+                type="button"
+                class="more-btn"
+                aria-label={t('svc.actionsFor', { name: u.name })}
+                aria-busy={busy.has(key(u))}
+                onclick={(e) => openMenu(e, u)}>{busy.has(key(u)) ? '…' : '⋯'}</button
+              >
+            </td>
           </tr>
         {/each}
       </tbody>
@@ -182,6 +299,32 @@
   </div>
   <p class="foot">{t('svc.footnote')}</p>
 {/if}
+
+<!-- Not a role="menu": a group of buttons in a popover (no arrow-key contract). -->
+<div bind:this={menu} popover="auto" class="menu" aria-label={subject ? t('svc.actionsFor', { name: subject.name }) : undefined}>
+  {#if subject}
+    {@const u = subject}
+    {#each available(u) as op (op)}
+      <button type="button" class:danger={u.critical && op !== 'start' && op !== 'enable'} onclick={() => act(op, u)}>
+        {t(opLabels[op])}
+      </button>
+    {/each}
+    {#if available(u).length > 0}<hr />{/if}
+    <button type="button" onclick={() => logs(u)}>{t('svc.op.logs')}</button>
+  {/if}
+</div>
+
+<ConfirmDialog
+  plan={pending?.plan ?? null}
+  title={pending ? t('svc.confirmTitle', { op: t(opLabels[pending.op]), name: pending.unit.name }) : ''}
+  verb={pending ? t(opLabels[pending.op]) : ''}
+  warning={t('svc.criticalWarning')}
+  body={t('svc.confirmBody')}
+  onconfirm={confirmed}
+  oncancel={() => (pending = null)}
+/>
+
+<JournalDialog unit={journalOf} onclose={() => (journalOf = null)} />
 
 <style>
   header {
@@ -357,5 +500,71 @@
   .failed {
     color: var(--crit);
     font-weight: 500;
+  }
+  .act {
+    width: 1%;
+    text-align: end;
+  }
+  .more-btn {
+    font: inherit;
+    font-size: 16px;
+    line-height: 1;
+    color: var(--text-muted);
+    background: none;
+    border: 1px solid transparent;
+    border-radius: var(--radius-s);
+    padding: 2px 8px;
+    cursor: pointer;
+  }
+  .more-btn:hover,
+  .more-btn:focus-visible {
+    border-color: var(--border);
+  }
+  .menu {
+    position: fixed;
+    inset: auto;
+    margin: 0;
+    min-width: 180px;
+    padding: var(--space-1);
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-m);
+    box-shadow: var(--shadow);
+    font-size: 13px;
+  }
+  .menu:popover-open {
+    display: grid;
+  }
+  .menu button {
+    font: inherit;
+    text-align: start;
+    color: var(--text);
+    background: none;
+    border: 0;
+    border-radius: var(--radius-s);
+    padding: var(--space-1) var(--space-3);
+    cursor: pointer;
+  }
+  .menu button:hover,
+  .menu button:focus-visible {
+    background: var(--surface-2);
+  }
+  .menu .danger {
+    color: var(--crit);
+  }
+  .menu hr {
+    border: 0;
+    border-top: 1px solid var(--border);
+    margin: var(--space-1) 0;
+    width: 100%;
+  }
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 </style>

@@ -251,3 +251,52 @@ func FuzzHTTPURL(f *testing.F) {
 		}
 	})
 }
+
+func TestJournalShape(t *testing.T) {
+	ok := func(extra ...string) []string { return append(append([]string{}, JournalFixedArgs...), extra...) }
+	good := [][]string{
+		ok("--lines=200", "--unit=cups.service"),
+		ok("--lines=1", "--user-unit=syncnotes.service"),
+		ok("--lines=1000", "--unit=getty@tty1.service", "--after-cursor=s=8a1b;i=2f;b=3c;m=4d;t=5e;x=6f"),
+	}
+	for _, a := range good {
+		if err := journalArgs(a); err != nil {
+			t.Errorf("%q: %v", a, err)
+		}
+	}
+	bad := [][]string{
+		ok("--lines=0", "--unit=cups.service"),
+		ok("--lines=1001", "--unit=cups.service"),
+		ok("--lines=020", "--unit=cups.service"),
+		ok("--lines=10", "--unit=-x.service"),
+		ok("--lines=10", "--unit=cups"),
+		ok("--lines=10", "--identifier=cups.service"),
+		ok("--lines=10", "--unit=cups.service", "--after-cursor=s=1;--flush"),
+		ok("--lines=10", "--unit=cups.service", "--since=yesterday"),
+		ok("--lines=10", "--unit=cups.service", "--after-cursor=s=1", "--merge"),
+		ok("--lines=10"),
+		append([]string{"--output=export"}, ok("--lines=10", "--unit=cups.service")[1:]...),
+		{"--lines=10", "--unit=cups.service"},
+	}
+	for _, a := range bad {
+		if journalArgs(a) == nil {
+			t.Errorf("accepted %q", a)
+		}
+	}
+}
+
+func FuzzJournalArgs(f *testing.F) {
+	f.Add("200", "cups.service", "s=8a1b;i=2f")
+	f.Fuzz(func(t *testing.T, lines, unit, cursor string) {
+		args := append(append([]string{}, JournalFixedArgs...), "--lines="+lines, "--unit="+unit, "--after-cursor="+cursor)
+		if journalArgs(args) != nil {
+			return
+		}
+		for _, a := range args[len(JournalFixedArgs):] {
+			_, v, _ := strings.Cut(a, "=")
+			if strings.HasPrefix(v, "-") || strings.ContainsAny(v, " \t\n/") {
+				t.Fatalf("accepted %q", a)
+			}
+		}
+	})
+}

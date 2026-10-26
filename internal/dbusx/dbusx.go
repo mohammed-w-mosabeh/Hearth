@@ -93,6 +93,28 @@ func (c *Conn) Call(ctx context.Context, dest string, path dbus.ObjectPath, meth
 	return nil
 }
 
+// InteractiveTimeout bounds a call that may wait for the user to answer a
+// polkit authentication dialog.
+const InteractiveTimeout = 2 * time.Minute
+
+// CallInteractive is Call with interactive authorization allowed: for a
+// privileged method, polkit asks the user to authenticate (through the
+// desktop's agent) instead of refusing at once.
+func (c *Conn) CallInteractive(ctx context.Context, dest string, path dbus.ObjectPath, method string, out []any, args ...any) error {
+	ctx, cancel := context.WithTimeout(ctx, InteractiveTimeout)
+	defer cancel()
+	call := c.c.Object(dest, path).CallWithContext(ctx, method, dbus.FlagAllowInteractiveAuthorization, args...)
+	if call.Err != nil {
+		return fmt.Errorf("dbusx: %s %s: %w", dest, method, call.Err)
+	}
+	if len(out) > 0 {
+		if err := call.Store(out...); err != nil {
+			return fmt.Errorf("dbusx: %s %s: %w", dest, method, err)
+		}
+	}
+	return nil
+}
+
 func (c *Conn) Set(ctx context.Context, dest string, path dbus.ObjectPath, iface, prop string, value any) error {
 	return c.Call(ctx, dest, path, "org.freedesktop.DBus.Properties.Set", nil, iface, prop, dbus.MakeVariant(value))
 }

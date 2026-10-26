@@ -63,6 +63,9 @@ type Plan struct {
 	// State is carried from the preview to Run (e.g. the exact processes
 	// that were shown), so the action does what the user confirmed.
 	State any `json:"-"`
+	// Risk, if set, raises the action's risk for this target (a critical
+	// unit makes a reversible stop destructive). It never lowers it.
+	Risk Risk `json:"-"`
 }
 
 // Result is what an action did.
@@ -124,6 +127,16 @@ func NewRegistry(audit Auditor) *Registry {
 	return &Registry{audit: audit, now: time.Now, actions: map[string]Action{}, tokens: map[string]token{}}
 }
 
+var riskLevel = map[Risk]int{Safe: 0, Reversible: 1, Destructive: 2}
+
+// effective is the risk of running a with plan p.
+func effective(a Action, p Plan) Risk {
+	if p.Risk != "" && riskLevel[p.Risk] > riskLevel[a.Risk] {
+		return p.Risk
+	}
+	return a.Risk
+}
+
 var nameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 
 // Register adds a; it panics on a malformed or duplicate action, which is
@@ -160,7 +173,7 @@ type previewResponse struct {
 	Plan
 	Risk    Risk      `json:"risk"`
 	Token   string    `json:"token,omitempty"`
-	Expires time.Time `json:"expires,omitempty"`
+	Expires time.Time `json:"expires,omitzero"`
 }
 
 // Handle serves POST /api/v1/actions/{kind}/{action}.
@@ -202,8 +215,9 @@ func (r *Registry) Handle(w http.ResponseWriter, req *http.Request) {
 			httpError(w, statusOf(err), err.Error())
 			return
 		}
-		resp := previewResponse{Plan: plan, Risk: a.Risk}
-		if a.Risk == Destructive && len(plan.Items) > 0 {
+		risk := effective(a, plan)
+		resp := previewResponse{Plan: plan, Risk: risk}
+		if risk == Destructive && len(plan.Items) > 0 {
 			resp.Token, resp.Expires = r.issue(token{key: key, target: ar.Target, params: params, plan: plan})
 		}
 		writeJSON(w, http.StatusOK, resp)
@@ -211,7 +225,7 @@ func (r *Registry) Handle(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var plan Plan
-	if a.Risk == Destructive {
+	if a.Risk == Destructive || b.Token != "" {
 		t, err := r.redeem(b.Token, key, ar.Target, params)
 		if err != nil {
 			httpError(w, http.StatusConflict, err.Error())
@@ -225,6 +239,10 @@ func (r *Registry) Handle(w http.ResponseWriter, req *http.Request) {
 	} else {
 		if plan, err = a.Plan(req.Context(), ar); err != nil {
 			httpError(w, statusOf(err), err.Error())
+			return
+		}
+		if effective(a, plan) == Destructive {
+			httpError(w, http.StatusConflict, "preview first: this action needs a valid preview token")
 			return
 		}
 	}

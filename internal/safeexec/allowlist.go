@@ -2,6 +2,9 @@ package safeexec
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -35,6 +38,57 @@ var allowlist = map[string]Spec{
 		),
 		Timeout: 2 * time.Second,
 	},
+	// journalctl reading one unit's recent entries as JSON (services
+	// journal viewer). Only the shape journalArgs accepts.
+	"journalctl-unit": {
+		Paths:    []string{"/usr/bin/journalctl", "/bin/journalctl"},
+		Validate: journalArgs,
+		Timeout:  5 * time.Second,
+	},
+}
+
+// JournalFixedArgs start every journalctl-unit command line.
+var JournalFixedArgs = []string{"--quiet", "--no-pager", "--output=json", "--output-fields=MESSAGE,PRIORITY,_PID,SYSLOG_IDENTIFIER"}
+
+// MaxJournalLines bounds --lines= for journalctl-unit.
+const MaxJournalLines = 1000
+
+var journalCursorRe = regexp.MustCompile(`^[a-z]=[0-9a-f]{1,64}(;[a-z]=[0-9a-f]{1,64}){0,15}$`)
+
+// journalArgs accepts JournalFixedArgs, then --lines=<1..MaxJournalLines>,
+// then --unit=<unit> or --user-unit=<unit>, then optionally
+// --after-cursor=<cursor>.
+func journalArgs(args []string) error {
+	n := len(JournalFixedArgs)
+	if len(args) != n+2 && len(args) != n+3 {
+		return invalid("want %d or %d arguments, got %d", n+2, n+3, len(args))
+	}
+	for i, want := range JournalFixedArgs {
+		if err := Literal(want)(args[i]); err != nil {
+			return err
+		}
+	}
+	lines, ok := strings.CutPrefix(args[n], "--lines=")
+	if v, err := strconv.Atoi(lines); !ok || err != nil || v < 1 || v > MaxJournalLines || strconv.Itoa(v) != lines {
+		return invalid("bad --lines argument %q", args[n])
+	}
+	unit, ok := strings.CutPrefix(args[n+1], "--unit=")
+	if !ok {
+		unit, ok = strings.CutPrefix(args[n+1], "--user-unit=")
+	}
+	if !ok {
+		return invalid("want --unit= or --user-unit=, got %q", args[n+1])
+	}
+	if err := UnitName(unit); err != nil {
+		return err
+	}
+	if len(args) == n+3 {
+		c, ok := strings.CutPrefix(args[n+2], "--after-cursor=")
+		if !ok || !journalCursorRe.MatchString(c) {
+			return invalid("bad --after-cursor argument")
+		}
+	}
+	return nil
 }
 
 // exactly returns a Spec.Validate that requires one argument per validator,

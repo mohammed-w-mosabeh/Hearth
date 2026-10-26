@@ -103,7 +103,7 @@
     const skipped: Blocked[] = [...res.blocked, ...res.failed];
     if (skipped.length > 0) {
       const first = skipped[0] as Blocked;
-      parts.push(t('result.skipped', { n: skipped.length, reason: t(reasonKey(first.reason), { user: first.detail ?? '' }) }));
+      parts.push(t('result.skipped', { n: skipped.length, reason: t(reasonKey(first.reason), { user: first.detail ?? '', detail: first.detail ?? '' }) }));
     }
     return parts.join(' ');
   }

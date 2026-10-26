@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { failedCount, health, unitType, view, type Filters, type Unit } from './services';
+import { available, failedCount, health, unitType, view, type Filters, type Unit } from './services';
 
 const u = (name: string, active: string, extra: Partial<Unit> = {}): Unit => ({
   name, scope: 'system', load: 'loaded', active, sub: active === 'active' ? 'running' : 'dead', ...extra,
@@ -43,5 +43,16 @@ describe('services view', () => {
     const stats = { 'system/ssh.service': { mem: 5, cpu: 0 }, 'system/cups.service': { mem: 9, cpu: 1.5 } };
     expect(names(view(units, stats, svc, 'mem', true)).slice(0, 2)).toEqual(['system/cups.service', 'system/ssh.service']);
     expect(names(view(units, stats, svc, 'cpu', true))[0]).toBe('system/cups.service');
+  });
+});
+
+describe('available actions', () => {
+  it('follows state and unit file state', () => {
+    expect(available(u('cups.service', 'active', { enabled: 'enabled' }))).toEqual(['stop', 'restart', 'disable']);
+    expect(available(u('ssh.service', 'inactive', { enabled: 'disabled' }))).toEqual(['start', 'enable']);
+    expect(available(u('broken.service', 'failed', { enabled: 'static' }))).toEqual(['start']);
+    expect(available(u('x.service', 'inactive', { enabled: 'masked' }))).toEqual([]);
+    expect(available(u('dev-sda.device', 'active'))).toEqual([]);
+    expect(available(u('session-2.scope', 'active'))).toEqual(['stop']);
   });
 });

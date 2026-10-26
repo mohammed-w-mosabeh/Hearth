@@ -54,6 +54,9 @@ func newHarness(t *testing.T) *harness {
 		if r.Params["big"] == "yes" {
 			p.Confirm = "Thing"
 		}
+		if r.Params["critical"] == "yes" {
+			p.Risk, p.Confirm = Destructive, "Thing"
+		}
 		return p, nil
 	}
 	run := func(_ context.Context, _ Request, p Plan) (Result, error) {
@@ -178,5 +181,37 @@ func TestRejections(t *testing.T) {
 	}
 	if len(h.ran) != 0 {
 		t.Fatal("a rejected request ran")
+	}
+}
+
+func TestPlanEscalatesRisk(t *testing.T) {
+	h := newHarness(t)
+	const p = "/api/v1/actions/thing/pause"
+	crit := `"target": "thing:a", "params": {"critical": "yes"}`
+	if code, _ := h.post(p, `{`+crit+`}`); code != http.StatusConflict || len(h.ran) != 0 {
+		t.Fatalf("escalated ran without preview: %d", code)
+	}
+	code, prev := h.post(p, `{`+crit+`, "preview": true}`)
+	tok, _ := prev["token"].(string)
+	if code != http.StatusOK || prev["risk"] != "destructive" || tok == "" || prev["confirm"] != "Thing" {
+		t.Fatalf("preview %d %v", code, prev)
+	}
+	if code, _ := h.post(p, `{`+crit+`, "token": "`+tok+`"}`); code != http.StatusBadRequest {
+		t.Fatalf("ran without the typed name: %d", code)
+	}
+	_, prev = h.post(p, `{`+crit+`, "preview": true}`)
+	tok, _ = prev["token"].(string)
+	if code, _ := h.post(p, `{`+crit+`, "token": "`+tok+`", "confirm": "Thing"}`); code != http.StatusOK || len(h.ran) != 1 {
+		t.Fatalf("confirmed run: %d", code)
+	}
+	// Not escalated: no token, runs directly; a bogus token is refused.
+	if code, prev := h.post(p, `{"target": "thing:b", "preview": true}`); code != http.StatusOK || prev["risk"] != "reversible" || prev["token"] != nil || prev["expires"] != nil {
+		t.Fatalf("plain preview %d %v", code, prev)
+	}
+	if code, _ := h.post(p, `{"target": "thing:b", "token": "nope"}`); code != http.StatusConflict {
+		t.Fatalf("bogus token: %d", code)
+	}
+	if code, _ := h.post(p, `{"target": "thing:b"}`); code != http.StatusOK || len(h.ran) != 2 {
+		t.Fatalf("plain run: %d", code)
 	}
 }
