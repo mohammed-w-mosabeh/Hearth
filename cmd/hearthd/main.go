@@ -27,6 +27,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/collect"
 	"github.com/mohammed-w-mosabeh/hearth/internal/dbusx"
 	"github.com/mohammed-w-mosabeh/hearth/internal/discovery"
+	"github.com/mohammed-w-mosabeh/hearth/internal/launch"
 	"github.com/mohammed-w-mosabeh/hearth/internal/power"
 	"github.com/mohammed-w-mosabeh/hearth/internal/procctl"
 	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
@@ -128,11 +129,6 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		ds.Close(context.Background())
 	}()
 
-	// Typed actions (ARCHITECTURE "Actions endpoint"), audited in db.
-	reg := actions.NewRegistry(db)
-	procctl.Register(reg, procctl.Config{})
-	srv.API.HandleFunc("POST /api/v1/actions/{kind}/{action}", reg.Handle)
-
 	// Installed applications, kept current with fsnotify.
 	appsCfg := discovery.ConfigFromEnv(os.Getenv)
 	appsCfg.Pub, appsCfg.Log = srv.Hub, log
@@ -144,6 +140,27 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	defer func() { stopApps(); <-appsDone }()
 	srv.API.HandleFunc("GET /api/v1/apps", apps.HandleList)
 	srv.API.HandleFunc("GET /api/v1/apps/icons", apps.HandleIcons)
+	running := func() []string { return collect.RunningApps("", os.Getuid()) }
+	srv.API.HandleFunc("GET /api/v1/apps/running", apps.HandleRunning(running))
+
+	// Typed actions (ARCHITECTURE "Actions endpoint"), audited in db.
+	reg := actions.NewRegistry(db)
+	procctl.Register(reg, procctl.Config{AppGroups: func(id string) ([]string, string, bool) {
+		a, ok := apps.App(id)
+		if !ok {
+			return nil, "", false
+		}
+		var groups []string
+		for _, u := range apps.Running(running())[id] {
+			groups = append(groups, "app:"+u)
+		}
+		return groups, a.Name, true
+	}})
+	launch.Register(reg, launch.Config{
+		Apps: apps, Home: appsCfg.Home, Path: appsCfg.Path,
+		Bus: func(ctx context.Context) (launch.Bus, error) { return dbusx.SessionBus(ctx) },
+	})
+	srv.API.HandleFunc("POST /api/v1/actions/{kind}/{action}", reg.Handle)
 
 	// Process scanning runs only while a client follows the procs topic.
 	procs := collect.NewProcSampler(collect.ProcConfig{Pub: srv.Hub, Log: log, AppName: apps.Name})

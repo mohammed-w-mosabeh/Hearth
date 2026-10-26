@@ -230,3 +230,29 @@ func TestHandleIcons(t *testing.T) {
 		t.Fatalf("too many ids: %d", c)
 	}
 }
+
+func TestRunning(t *testing.T) {
+	_, cfg := newTree(t)
+	x := NewIndex(cfg)
+	x.Scan()
+	got := x.Running([]string{"org.gnome.TextEditor", "zen", "app.zen_browser.zen", "unknown"})
+	if len(got) != 2 || len(got["org.gnome.TextEditor"]) != 1 || strings.Join(got["app.zen_browser.zen"], ",") != "zen,app.zen_browser.zen" {
+		t.Fatalf("%v", got)
+	}
+	rec := httptest.NewRecorder()
+	x.HandleRunning(func() []string { return []string{"zen", "firefox"} })(rec, httptest.NewRequest("GET", "/api/v1/apps/running", nil))
+	if body := strings.TrimSpace(rec.Body.String()); body != `{"running":["app.zen_browser.zen","firefox"]}` {
+		t.Fatalf("body %s", body)
+	}
+}
+
+func TestValidID(t *testing.T) {
+	for s, ok := range map[string]bool{
+		"org.gnome.TextEditor": true, "firefox-esr": true, "appimage.obsidian-1.5.3": true, "kde4-dolphin": true,
+		"": false, "-x": false, ".x": false, "a/b": false, "a b": false, "a\n": false, strings.Repeat("a", 201): false,
+	} {
+		if ValidID(s) != ok {
+			t.Errorf("%q: %v", s, !ok)
+		}
+	}
+}

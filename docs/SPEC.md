@@ -22,7 +22,7 @@ Priority: **P1** = v0.x MVP, **P2** = v1.0, **P3** = after v1.0.
 ### 2. Applications (P1)
 - Sources: `.desktop` files (`/usr/share/applications`, `~/.local/share/applications`, Flatpak exports, `/var/lib/snapd/desktop/applications`), AppImages in `~/Applications`, `~/Downloads`, `~/.local/bin`.
 - Grid with icons, search, filter by source/category, favorites.
-- Actions: launch (inside `systemd-run --user --scope --unit=hearth-app-<id>-<n>` so usage is measurable and stoppable as a group), close, uninstall (via owning package manager), open containing folder.
+- Actions: launch (as a transient user service `app-hearth-<id>@<n>.service`, started by the systemd user manager over D-Bus, so usage is measurable and stoppable as a group and the app does not inherit hearthd's sandbox), close, uninstall (via owning package manager), open containing folder.
 
 ### 3. Tools (P2)
 - Every executable in `$PATH` with: owning package (`dpkg -S`, cached), version (`--version`, 2 s timeout, cached), short description (`whatis`).

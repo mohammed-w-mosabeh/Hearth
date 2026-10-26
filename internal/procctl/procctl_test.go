@@ -1,6 +1,7 @@
 package procctl
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -150,6 +151,52 @@ func TestBrowserGroup(t *testing.T) {
 	for _, other := range []string{"127.0.0.1:50001", "10.0.0.2:50000", "garbage"} {
 		if g := c.browserGroup(other); g != "" {
 			t.Errorf("%s: %q", other, g)
+		}
+	}
+}
+
+func TestCloseAppPlan(t *testing.T) {
+	root := t.TempDir()
+	w := func(rel, s string) {
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(s), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const slice = "/user.slice/user-1000.slice/user@1000.service/app.slice/"
+	proc := func(pid int, name, cg string) {
+		w(fmt.Sprintf("%d/stat", pid), fmt.Sprintf("%d (%s) S 1 1 1 0 -1 0 0 0 0 0 1 1 0 0 20 0 1 0 999 1000 10 0\n", pid, name))
+		w(fmt.Sprintf("%d/cgroup", pid), "0::"+cg+"\n")
+		w(fmt.Sprintf("%d/status", pid), fmt.Sprintf("Name:\t%s\nUid:\t%d\t0\t0\t0\n", name, os.Getuid()))
+	}
+	proc(300, "editor", slice+"app-hearth-editor@1a.service")
+	proc(301, "editor", slice+"app-gnome-editor-5.scope")
+	proc(302, "other", slice+"app-gnome-other-6.scope")
+	c := &ctl{cfg: Config{ProcRoot: root, CgroupRoot: t.TempDir(), AppGroups: func(id string) ([]string, string, bool) {
+		switch id {
+		case "editor":
+			return []string{"app:editor"}, "Editor", true
+		case "idle":
+			return nil, "Idle", true
+		}
+		return nil, "", false
+	}}, self: -1}
+	a := c.closeApp()
+	p, err := a.Plan(context.Background(), actions.Request{Target: "editor"})
+	if err != nil || len(p.Items) != 2 || p.Items[0].ID != "pid:300:999" || p.Items[1].ID != "pid:301:999" || a.Risk != actions.Destructive {
+		t.Fatalf("%+v %v", p, err)
+	}
+	for _, id := range []string{"idle", "unknown"} {
+		if _, err := a.Plan(context.Background(), actions.Request{Target: id}); err == nil {
+			t.Errorf("%s planned", id)
+		}
+	}
+	for _, bad := range []actions.Request{{Target: "../x"}, {Target: "editor", Params: map[string]string{"nice": "1"}}} {
+		if a.Validate(bad) == nil {
+			t.Errorf("%+v accepted", bad)
 		}
 	}
 }

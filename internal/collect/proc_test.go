@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 )
@@ -167,7 +168,8 @@ func TestGroupFor(t *testing.T) {
 		{u + "app.slice/app-gnome-org.gnome.TextEditor-99.scope", "gnome-text-editor", "app:org.gnome.TextEditor", KindApp, "TextEditor"},
 		{u + "app.slice/app-flatpak-org.mozilla.firefox@12.service", "firefox", "app:org.mozilla.firefox", KindApp, "firefox"},
 		{u + "app.slice/app-org.gnome.Terminal.service", "gnome-terminal", "app:org.gnome.Terminal", KindApp, "Terminal"},
-		{u + "app.slice/hearth-app-steam-3.scope", "steam", "app:steam", KindApp, "steam"},
+		{u + "app.slice/app-hearth-steam@3fa2c1.service", "steam", "app:steam", KindApp, "steam"},
+		{u + "app.slice/app-hearth-firefox\\x2desr@1.service", "firefox-esr", "app:firefox-esr", KindApp, "firefox-esr"},
 		{u + "app.slice/app-my\\x2dtool-5.scope", "x", "app:my-tool", KindApp, "my-tool"},
 		{u + "app.slice/gnome-keyring-daemon.service", "gnome-keyring-d", "user-unit:gnome-keyring-daemon.service", KindUserService, "gnome-keyring-daemon"},
 		{"/system.slice/system-syncnotes.slice/syncnotes@me.service", "syncnotes", "unit:syncnotes@me.service", KindService, "syncnotes@me"},
@@ -253,5 +255,45 @@ func TestLookup(t *testing.T) {
 	}
 	if got, _ := ps.Lookup("", 500, 1); len(got) != 0 {
 		t.Fatalf("stale start time matched: %+v", got)
+	}
+}
+
+func TestLookupGroups(t *testing.T) {
+	f := newProcFixture(t)
+	const slice = "/user.slice/user-1000.slice/user@1000.service/app.slice/"
+	f.proc(400, "firefox", slice+"app-hearth-firefox@1a.service", 0, 0, 20)
+	f.proc(401, "firefox", slice+"app-gnome-firefox-77.scope", 0, 0, 20)
+	f.proc(402, "code", slice+"app-code-3.scope", 0, 0, 20)
+	ps := NewProcSampler(ProcConfig{ProcRoot: f.root, CgroupRoot: f.cgrp, Log: discard(),
+		Users: func() map[int]string { return map[int]string{1000: "me"} }})
+	got, err := ps.LookupGroups([]string{"app:firefox", "app:org.mozilla.firefox"})
+	if err != nil || len(got) != 2 || got[0].Group != "app:firefox" || got[1].Group != "app:firefox" {
+		t.Fatalf("%+v %v", got, err)
+	}
+}
+
+func TestRunningApps(t *testing.T) {
+	root := t.TempDir()
+	slice := filepath.Join(root, "user.slice/user-1000.slice/user@1000.service/app.slice")
+	unit := func(rel, events string) {
+		d := filepath.Join(slice, rel)
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(d, "cgroup.events"), []byte(events), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	unit("app-hearth-org.gnome.TextEditor@1f.service", "populated 1\nfrozen 0\n")
+	unit("app-gnome-org.gnome.TextEditor-77.scope", "populated 1\nfrozen 0\n")
+	unit("app-gnome.slice/app-gnome-firefox\\x2desr-12.scope", "populated 1\nfrozen 0\n")
+	unit("app-hearth-gone@2.service", "populated 0\nfrozen 0\n")
+	unit("gnome-keyring-daemon.service", "populated 1\nfrozen 0\n")
+	got := RunningApps(root, 1000)
+	if want := []string{"firefox-esr", "org.gnome.TextEditor"}; !slices.Equal(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	if got := RunningApps(root, 1001); len(got) != 0 {
+		t.Fatalf("other uid: %v", got)
 	}
 }

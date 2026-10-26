@@ -21,6 +21,7 @@ import (
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/actions"
 	"github.com/mohammed-w-mosabeh/hearth/internal/collect"
+	"github.com/mohammed-w-mosabeh/hearth/internal/discovery"
 )
 
 // Reasons an item is blocked or failed; the UI translates them.
@@ -50,6 +51,10 @@ var sessionCritical = map[string]bool{
 type Config struct {
 	ProcRoot   string // default /proc
 	CgroupRoot string // default /sys/fs/cgroup
+	// AppGroups, if set, enables app/close: it returns the process
+	// groups ("app:<unit app ID>") an application runs in now and its
+	// name, or ok false for an unknown app.
+	AppGroups func(appID string) (groups []string, name string, ok bool)
 }
 
 type ctl struct {
@@ -207,6 +212,50 @@ func Register(reg *actions.Registry, cfg Config) {
 			n, _ := nice(r.Params)
 			return c.each(p, func(pid int, start uint64) error { return c.renice(pid, start, n) }), nil
 		}})
+	if cfg.AppGroups != nil {
+		reg.Register(c.closeApp())
+	}
+}
+
+// closeApp is app/close: end every process of an application, wherever
+// it was started from (Hearth, the desktop, Flatpak), with the same
+// checks as proc/terminate.
+func (c *ctl) closeApp() actions.Action {
+	return actions.Action{Kind: "app", Name: "close", Risk: actions.Destructive,
+		Validate: func(r actions.Request) error {
+			if !discovery.ValidID(r.Target) || len(r.Params) != 0 {
+				return errors.New("target must be an application ID and params empty")
+			}
+			return nil
+		},
+		Plan: func(_ context.Context, r actions.Request) (actions.Plan, error) {
+			groups, name, ok := c.cfg.AppGroups(r.Target)
+			if !ok {
+				return actions.Plan{}, actions.Errorf(http.StatusNotFound, "unknown application")
+			}
+			var refs []collect.ProcRef
+			if len(groups) > 0 {
+				var err error
+				if refs, err = c.sampler().LookupGroups(groups); err != nil {
+					return actions.Plan{}, err
+				}
+			}
+			if len(refs) == 0 {
+				return actions.Plan{}, actions.Errorf(http.StatusNotFound, "%s is not running", name)
+			}
+			items, blocked := c.check("terminate", refs, "")
+			p := actions.Plan{Summary: fmt.Sprintf("close %s: %d process(es)", name, len(items)), Items: items, Blocked: blocked}
+			if p.Items == nil {
+				p.Items = []actions.Item{}
+			}
+			if p.Blocked == nil {
+				p.Blocked = []actions.Blocked{}
+			}
+			return p, nil
+		},
+		Run: func(_ context.Context, _ actions.Request, p actions.Plan) (actions.Result, error) {
+			return c.each(p, func(pid int, start uint64) error { return c.signal(pid, start, syscall.SIGTERM) }), nil
+		}}
 }
 
 func nice(p map[string]string) (int, error) {

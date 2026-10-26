@@ -46,6 +46,7 @@ hearth/
     docker/       # client wrapper via broker
     pkgs/         # PackageKit + per-manager adapters
     services/     # systemd D-Bus wrapper
+    launch/       # app launch: Exec= parsing, transient app-hearth-<id>@<n>.service via the user manager (D-Bus)
     netinfo/      # sock_diag, interfaces, NM
     alerts/       # rules, evaluator, hysteresis, channels
     scheduler/    # systemd timer generator, history from journal

@@ -3,6 +3,7 @@ package discovery
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 )
 
 // maxIconIDs bounds one icon batch.
@@ -31,6 +32,22 @@ func (x *Index) HandleIcons(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "private, max-age=3600")
 	writeJSON(w, out)
+}
+
+// HandleRunning serves GET /api/v1/apps/running as {"running": [ids]}:
+// the apps that have processes now. running lists app IDs from unit
+// names (collect.RunningApps).
+func (x *Index) HandleRunning(running func() []string) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		m := x.Running(running())
+		ids := make([]string, 0, len(m))
+		for id := range m {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, map[string]any{"running": ids})
+	}
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

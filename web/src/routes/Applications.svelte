@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { api } from '../lib/api';
+  import ConfirmDialog from '../components/ConfirmDialog.svelte';
+  import { preview, run, type Plan } from '../lib/actions';
+  import { api, ApiError } from '../lib/api';
   import { CATEGORIES, SOURCES, filterApps, iconQuery, initials, rank, type App, type SourceFilter } from '../lib/apps';
   import { t } from '../lib/i18n';
   import { toast } from '../lib/toast.svelte';
@@ -8,6 +10,7 @@
   let { live }: { live: Live } = $props();
 
   const ICON_BATCH = 60; // server limit per request
+  const RUNNING_MS = 5000; // how often running apps are re-read while visible
 
   let apps = $state.raw<App[] | null>(null);
   let failed = $state(false);
@@ -16,6 +19,9 @@
   let search = $state('');
   let source = $state<SourceFilter>('all');
   let category = $state('');
+  let running = $state.raw<Set<string>>(new Set());
+  let opening = $state.raw<ReadonlySet<string>>(new Set());
+  let closing = $state<{ app: App; plan: Plan } | null>(null);
 
   async function load(): Promise<void> {
     try {
@@ -42,6 +48,72 @@
       }
     }
   }
+
+  async function loadRunning(): Promise<void> {
+    try {
+      const res = await api<{ running: string[] }>('/apps/running');
+      running = new Set(res.running);
+    } catch {
+      // keep the last known state
+    }
+  }
+
+  function errorText(err: unknown): string {
+    return err instanceof ApiError ? err.message : t('action.failed');
+  }
+
+  // Launch (ROADMAP 1.11): the server starts the app in its own systemd
+  // unit; it shows up as running once its processes are there.
+  async function launch(a: App): Promise<void> {
+    if (opening.has(a.id)) return;
+    opening = new Set([...opening, a.id]);
+    try {
+      await run('app', 'launch', a.id);
+      toast(t('apps2.opening', { name: a.name }));
+      setTimeout(() => void loadRunning(), 1500);
+    } catch (err) {
+      toast(errorText(err), { tone: 'error' });
+    } finally {
+      opening = new Set([...opening].filter((id) => id !== a.id));
+    }
+  }
+
+  // Close ends every process of the app: preview, then confirm.
+  async function askClose(a: App): Promise<void> {
+    try {
+      const plan = await preview('app', 'close', a.id);
+      if (plan.items.length === 0) {
+        toast(t('apps2.cannotClose', { name: a.name }), { tone: 'error' });
+        return;
+      }
+      closing = { app: a, plan };
+    } catch (err) {
+      toast(errorText(err), { tone: 'error' });
+      void loadRunning();
+    }
+  }
+
+  async function confirmClose(): Promise<void> {
+    if (!closing) return;
+    const { app: a, plan } = closing;
+    try {
+      const res = await run('app', 'close', a.id, {}, plan.token);
+      toast(t('result.done', { verb: t('action.close'), name: a.name, n: res.done }), { tone: res.done === 0 ? 'error' : 'info' });
+    } catch (err) {
+      toast(errorText(err), { tone: 'error' });
+    } finally {
+      closing = null;
+      setTimeout(() => void loadRunning(), 1000);
+    }
+  }
+
+  $effect(() => {
+    void loadRunning();
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') void loadRunning();
+    }, RUNNING_MS);
+    return () => clearInterval(timer);
+  });
 
   $effect(() => {
     void load();
@@ -99,17 +171,32 @@
 </div>
 
 {#snippet tile(a: App)}
-  <li class="tile">
-    <div class="icon" aria-hidden="true">
-      {#if icons[a.id]}
-        <img src={icons[a.id]} alt="" width="48" height="48" />
-      {:else}
-        <span class="letters">{initials(a.name)}</span>
-      {/if}
-    </div>
-    <span class="name" title={a.comment ?? a.name}>{a.name}</span>
-    {#if a.generic_name}<span class="generic">{a.generic_name}</span>{/if}
-    <span class="src">{t(SOURCES.find((s) => s.id === a.source)?.label ?? 'apps2.source.system')}</span>
+  <li class="tile" class:running={running.has(a.id)}>
+    <button
+      type="button"
+      class="open"
+      title={a.comment ?? a.name}
+      aria-label={t('apps2.open', { name: a.name })}
+      aria-busy={opening.has(a.id)}
+      onclick={() => launch(a)}
+    >
+      <span class="icon" aria-hidden="true">
+        {#if icons[a.id]}
+          <img src={icons[a.id]} alt="" width="48" height="48" />
+        {:else}
+          <span class="letters">{initials(a.name)}</span>
+        {/if}
+      </span>
+      <span class="name">{a.name}</span>
+      {#if a.generic_name}<span class="generic">{a.generic_name}</span>{/if}
+      <span class="src">{t(SOURCES.find((s) => s.id === a.source)?.label ?? 'apps2.source.system')}</span>
+    </button>
+    {#if running.has(a.id)}
+      <span class="state"><span class="dot" aria-hidden="true"></span>{t('apps2.running')}</span>
+      <button type="button" class="close" aria-label={t('apps2.closeLabel', { name: a.name })} onclick={() => askClose(a)}>
+        {t('apps2.close')}
+      </button>
+    {/if}
     <button
       type="button"
       class="star"
@@ -139,6 +226,14 @@
     {#each rest as a (a.id)}{@render tile(a)}{/each}
   </ul>
 {/if}
+
+<ConfirmDialog
+  plan={closing?.plan ?? null}
+  title={closing ? t('apps2.closeTitle', { name: closing.app.name }) : ''}
+  verb={t('apps2.close')}
+  onconfirm={confirmClose}
+  oncancel={() => (closing = null)}
+/>
 
 <style>
   header {
@@ -221,13 +316,62 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 2px;
-    padding: var(--space-4) var(--space-2) var(--space-3);
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-m);
     text-align: center;
     min-width: 0;
+    transition: border-color var(--motion);
+  }
+  .tile:hover {
+    border-color: var(--accent);
+  }
+  .open {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    width: 100%;
+    padding: var(--space-4) var(--space-2) var(--space-3);
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: 0;
+    border-radius: var(--radius-m);
+    cursor: pointer;
+    min-width: 0;
+  }
+  .open[aria-busy='true'] {
+    cursor: progress;
+    opacity: 0.6;
+  }
+  .state {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: 11px;
+    color: var(--ok);
+  }
+  .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--ok);
+  }
+  .close {
+    font: inherit;
+    font-size: 12px;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-s);
+    padding: 0 var(--space-3);
+    margin: var(--space-1) 0 var(--space-3);
+    cursor: pointer;
+  }
+  .close:hover {
+    border-color: var(--crit);
+    color: var(--crit);
   }
   .icon {
     width: 48px;

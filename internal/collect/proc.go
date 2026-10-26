@@ -601,9 +601,10 @@ func cgroupV2Path(b []byte) string {
 	return ""
 }
 
-// launchers are prefixes desktops put before the app ID in scope names
-// (app-gnome-org.gnome.TextEditor-1234.scope).
-var launchers = []string{"gnome-", "kde-", "flatpak-", "snap-", "xfce-", "cosmic-"}
+// launchers are prefixes desktops put before the app ID in unit names
+// (app-gnome-org.gnome.TextEditor-1234.scope; Hearth itself starts
+// app-hearth-<id>@<random>.service).
+var launchers = []string{"gnome-", "kde-", "flatpak-", "snap-", "xfce-", "cosmic-", "hearth-"}
 
 // groupFor maps a cgroup path to a group, following systemd's desktop
 // naming (systemd.special(7), "app-[<launcher>-]<ApplicationID>-<RANDOM>.scope"
@@ -614,14 +615,6 @@ func groupFor(cgroup, exe string) groupID {
 	switch {
 	case cgroup == "" || cgroup == "/":
 		return groupID{id: "exe:" + exe, kind: KindSession, name: exe}
-	case strings.HasPrefix(unit, "hearth-app-") && strings.HasSuffix(unit, ".scope"):
-		// Launched by Hearth (ROADMAP 1.11): hearth-app-<id>-<n>.scope
-		id := strings.TrimSuffix(strings.TrimPrefix(unit, "hearth-app-"), ".scope")
-		if i := strings.LastIndexByte(id, '-'); i > 0 {
-			id = id[:i]
-		}
-		id = unescapeUnit(id)
-		return groupID{id: "app:" + id, kind: KindApp, name: appName(id), unit: unit, own: true}
 	case strings.HasPrefix(unit, "app-") && (strings.HasSuffix(unit, ".scope") || strings.HasSuffix(unit, ".service")):
 		id := strings.TrimPrefix(unit, "app-")
 		if strings.HasSuffix(id, ".scope") {
@@ -736,6 +729,19 @@ type ProcRef struct {
 // for one-off use by actions; it does not disturb a running Scan loop as
 // long as each caller uses its own ProcSampler.
 func (p *ProcSampler) Lookup(id string, pid int, start uint64) ([]ProcRef, error) {
+	return p.lookup(map[string]bool{id: true}, pid, start)
+}
+
+// LookupGroups returns the processes in any of the groups ids.
+func (p *ProcSampler) LookupGroups(ids []string) ([]ProcRef, error) {
+	set := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		set[id] = true
+	}
+	return p.lookup(set, 0, 0)
+}
+
+func (p *ProcSampler) lookup(ids map[string]bool, pid int, start uint64) ([]ProcRef, error) {
 	p.users = p.cfg.Users()
 	var pids []int
 	if pid > 0 {
@@ -761,7 +767,7 @@ func (p *ProcSampler) Lookup(id string, pid int, start uint64) ([]ProcRef, error
 			continue // the pid now belongs to another process
 		}
 		info := p.readInfo(n, st)
-		if pid == 0 && info.group.id != id {
+		if pid == 0 && !ids[info.group.id] {
 			continue
 		}
 		out = append(out, ProcRef{PID: n, Start: st.start, Name: info.name, User: info.user,

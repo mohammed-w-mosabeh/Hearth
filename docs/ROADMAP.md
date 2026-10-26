@@ -28,7 +28,7 @@ Rules: one task at a time, `make check` + commit after each, tick the box in the
   - Open: network per app needs privileges (eBPF or packet capture; no unprivileged per-process byte counters). Not shown until the owner decides (broker method in phase 2, or drop).
 - [x] 1.9 Per-app actions: terminate, kill (confirm), freeze/resume, renice — with audit log
 - [x] 1.10 `discovery`: `.desktop` apps (+ Flatpak/Snap exports, AppImages) with fsnotify; Applications page (grid, search, favorites)
-- [ ] 1.11 App launch via `systemd-run --user --scope` + close action
+- [x] 1.11 App launch via a transient user unit (D-Bus `StartTransientUnit`; a scope would inherit hearthd's sandbox) + close action
 - [ ] 1.12 `services`: list system + user units via D-Bus with signals; Services page
 - [ ] 1.13 Service actions (start/stop/restart/enable/disable) via systemd D-Bus (polkit handles auth); critical-unit double confirm; journal viewer for a unit
 - [ ] 1.14 `alerts`: rule engine with duration + hysteresis, default rules, desktop notification channel, Alerts page (rules form + history)

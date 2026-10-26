@@ -51,6 +51,24 @@ func SystemBus(ctx context.Context) (*Conn, error) {
 	return &Conn{c: c}, nil
 }
 
+// SessionBus opens a private connection to the user's session bus, where
+// the systemd user manager is.
+func SessionBus(ctx context.Context) (*Conn, error) {
+	c, err := dbus.SessionBusPrivate(dbus.WithContext(ctx))
+	if err != nil {
+		return nil, fmt.Errorf("dbusx: session bus: %w", err)
+	}
+	if err := c.Auth(nil); err != nil {
+		_ = c.Close()
+		return nil, fmt.Errorf("dbusx: auth: %w", err)
+	}
+	if err := c.Hello(); err != nil {
+		_ = c.Close()
+		return nil, fmt.Errorf("dbusx: hello: %w", err)
+	}
+	return &Conn{c: c}, nil
+}
+
 // Close closes the connection.
 func (c *Conn) Close() error { return c.c.Close() }
 

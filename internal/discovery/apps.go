@@ -49,8 +49,17 @@ type App struct {
 	WorkDir   string `json:"-"`
 	WMClass   string `json:"-"`
 	FlatpakID string `json:"-"`
+	IconName  string `json:"-"` // Icon=, for the %i field code
 	iconPath  string
 }
+
+// idRe matches the app IDs the index produces: desktop file IDs and
+// "appimage.<name>".
+var idRe = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._+~@-]{0,199}$`)
+
+// ValidID reports whether s can be an app ID; requests are checked with
+// it before any lookup.
+func ValidID(s string) bool { return idRe.MatchString(s) }
 
 // Publisher is the subset of api.Hub the index needs.
 type Publisher interface {
@@ -199,7 +208,7 @@ func (x *Index) Scan() bool {
 			}
 			a := App{ID: id, Name: e.Name, GenericName: e.GenericName, Comment: e.Comment,
 				Categories: nonNil(e.Categories), Keywords: e.Keywords, Source: src, Path: p, Terminal: e.Terminal,
-				Exec: e.Exec, WorkDir: e.Path, WMClass: e.WMClass, FlatpakID: e.FlatpakID}
+				Exec: e.Exec, WorkDir: e.Path, WMClass: e.WMClass, FlatpakID: e.FlatpakID, IconName: e.Icon}
 			a.iconPath = x.icon(e.Icon, icons)
 			a.HasIcon = a.iconPath != ""
 			apps = append(apps, a)
@@ -353,6 +362,22 @@ func (x *Index) Name(appID string) (string, bool) {
 		return x.apps[i].Name, true
 	}
 	return "", false
+}
+
+// Running maps app IDs taken from unit names (collect.RunningApps) to the
+// desktop IDs they belong to; one app can run under several units (one
+// started by Hearth, one by the desktop). IDs of no known app are dropped.
+func (x *Index) Running(unitIDs []string) map[string][]string {
+	x.mu.RLock()
+	defer x.mu.RUnlock()
+	out := map[string][]string{}
+	for _, u := range unitIDs {
+		if i, ok := x.byAlias[strings.ToLower(u)]; ok {
+			id := x.apps[i].ID
+			out[id] = append(out[id], u)
+		}
+	}
+	return out
 }
 
 // Run scans, then rescans after changes to the watched directories
