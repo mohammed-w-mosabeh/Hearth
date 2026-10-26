@@ -31,6 +31,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/power"
 	"github.com/mohammed-w-mosabeh/hearth/internal/procctl"
 	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
+	"github.com/mohammed-w-mosabeh/hearth/internal/services"
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
 	"github.com/mohammed-w-mosabeh/hearth/web"
 )
@@ -168,6 +169,17 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	procsDone := make(chan struct{})
 	go func() { procs.Run(procsCtx); close(procsDone) }()
 	defer func() { stopProcs(); <-procsDone }()
+
+	// systemd units, followed over D-Bus only while the Services page is open.
+	units := services.NewWatcher(services.Config{
+		System: func(ctx context.Context) (services.Bus, error) { return dbusx.SystemBus(ctx) },
+		User:   func(ctx context.Context) (services.Bus, error) { return dbusx.SessionBus(ctx) },
+		Pub:    srv.Hub, Log: log, UID: os.Getuid(),
+	})
+	unitsCtx, stopUnits := context.WithCancel(ctx)
+	unitsDone := make(chan struct{})
+	go func() { units.Run(unitsCtx); close(unitsDone) }()
+	defer func() { stopUnits(); <-unitsDone }()
 
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve() }()

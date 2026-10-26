@@ -5,6 +5,7 @@
   import Home from './routes/Home.svelte';
   import Applications from './routes/Applications.svelte';
   import Resources from './routes/Resources.svelte';
+  import Services from './routes/Services.svelte';
   import Placeholder from './routes/Placeholder.svelte';
   import { api, setSession } from './lib/api';
   import { t } from './lib/i18n';
@@ -51,6 +52,8 @@
         {#if live}<Applications {live} />{/if}
       {:else if route?.id === 'resources'}
         {#if live}<Resources {live} />{/if}
+      {:else if route?.id === 'services'}
+        {#if live}<Services {live} />{/if}
       {:else if route}
         <Placeholder {route} />
       {:else}
