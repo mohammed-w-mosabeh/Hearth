@@ -28,6 +28,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/collect"
 	"github.com/mohammed-w-mosabeh/hearth/internal/dbusx"
 	"github.com/mohammed-w-mosabeh/hearth/internal/discovery"
+	"github.com/mohammed-w-mosabeh/hearth/internal/diskusage"
 	"github.com/mohammed-w-mosabeh/hearth/internal/launch"
 	"github.com/mohammed-w-mosabeh/hearth/internal/power"
 	"github.com/mohammed-w-mosabeh/hearth/internal/procctl"
@@ -48,6 +49,13 @@ func main() {
 	if err != nil {
 		log.Error(err.Error())
 		os.Exit(1)
+	}
+
+	// A soft heap limit inside the resource budget (CLAUDE.md: < 60 MB RSS
+	// with the UI open): the GC works harder only when heavy work such as
+	// measuring a large home pushes the heap up. GOMEMLIMIT overrides it.
+	if os.Getenv("GOMEMLIMIT") == "" {
+		debug.SetMemoryLimit(40 << 20)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -172,6 +180,14 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	srv.API.HandleFunc("GET /api/v1/apps/icons", apps.HandleIcons)
 	running := func() []string { return collect.RunningApps("", os.Getuid()) }
 	srv.API.HandleFunc("GET /api/v1/apps/running", apps.HandleRunning(running))
+
+	// Folder size explorer: the home and disks the user owns.
+	sizes := diskusage.New(diskusage.Config{
+		Roots: diskusage.UserRoots(appsCfg.Home, func() ([]string, error) { return collect.MountPoints("") }),
+	})
+	defer sizes.Close()
+	srv.API.HandleFunc("GET /api/v1/disks/roots", sizes.HandleRoots)
+	srv.API.HandleFunc("GET /api/v1/disks/usage", sizes.HandleUsage)
 
 	// Typed actions (ARCHITECTURE "Actions endpoint"), audited in db.
 	reg := actions.NewRegistry(db)

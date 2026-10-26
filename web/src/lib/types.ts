@@ -28,6 +28,13 @@ export interface Disk {
   pct: number;
 }
 
+export interface DiskIO {
+  name: string;
+  read_bps: number;
+  write_bps: number;
+  busy_pct: number;
+}
+
 export interface NetIf {
   name: string;
   rx_bps: number;
@@ -91,7 +98,7 @@ export interface Sample {
   cpu: CPU;
   mem: Mem;
   disks: Disk[] | null;
-  disk_io: unknown[] | null;
+  disk_io: DiskIO[] | null;
   net: NetIf[] | null;
   temps: Temp[] | null;
   fans: Fan[] | null;

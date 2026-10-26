@@ -6,6 +6,7 @@
   import Home from './routes/Home.svelte';
   import Alerts from './routes/Alerts.svelte';
   import Applications from './routes/Applications.svelte';
+  import Disks from './routes/Disks.svelte';
   import Resources from './routes/Resources.svelte';
   import Services from './routes/Services.svelte';
   import Placeholder from './routes/Placeholder.svelte';
@@ -69,6 +70,8 @@
         {#if live}<Services {live} />{/if}
       {:else if route?.id === 'alerts'}
         {#if live}<Alerts {live} />{/if}
+      {:else if route?.id === 'disks'}
+        {#if live}<Disks {live} />{/if}
       {:else if route}
         <Placeholder {route} />
       {:else}

@@ -258,3 +258,21 @@ func rate(prev, cur uint64, dt float64) float64 {
 	}
 	return float64(cur-prev) / dt
 }
+
+// MountPoints returns the mount points of real filesystems (one per
+// device, as the Disks list shows them), read from procRoot (default
+// /proc).
+func MountPoints(procRoot string) ([]string, error) {
+	if procRoot == "" {
+		procRoot = "/proc"
+	}
+	ms, err := readMounts(newFileReader(), procRoot)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(ms))
+	for _, m := range ms {
+		out = append(out, m.point)
+	}
+	return out, nil
+}
