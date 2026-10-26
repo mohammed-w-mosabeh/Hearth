@@ -32,7 +32,7 @@ Rules: one task at a time, `make check` + commit after each, tick the box in the
 - [x] 1.12 `services`: list system + user units via D-Bus with signals; Services page
 - [x] 1.13 Service actions (start/stop/restart/enable/disable) via systemd D-Bus (polkit handles auth); critical-unit double confirm; journal viewer for a unit
 - [x] 1.14 `alerts`: rule engine with duration + hysteresis, default rules, desktop notification channel, Alerts page (rules form + history)
-- [ ] 1.15 Command palette Ctrl+K over apps, services, pages
+- [x] 1.15 Command palette Ctrl+K over apps, services, pages
 - [ ] 1.16 Disks page: usage, folder size explorer (user-owned paths)
 
 **Gate 1:** `make bench` idle < 40 MB RSS and < 1% CPU; UI open < 60 MB / < 3%; bundle < 300 KB gz; security checklist items applicable so far pass.

@@ -22,7 +22,7 @@ export default ts.config(
         setTimeout: 'readonly', clearTimeout: 'readonly', console: 'readonly',
         Storage: 'readonly', Location: 'readonly', History: 'readonly',
         URLSearchParams: 'readonly', ResizeObserver: 'readonly', matchMedia: 'readonly', getComputedStyle: 'readonly',
-        HTMLDivElement: 'readonly', HTMLElement: 'readonly', HTMLDialogElement: 'readonly', MouseEvent: 'readonly',
+        HTMLDivElement: 'readonly', HTMLElement: 'readonly', HTMLDialogElement: 'readonly', HTMLInputElement: 'readonly', MouseEvent: 'readonly', KeyboardEvent: 'readonly',
         innerHeight: 'readonly', innerWidth: 'readonly', setInterval: 'readonly', clearInterval: 'readonly',
       },
     },

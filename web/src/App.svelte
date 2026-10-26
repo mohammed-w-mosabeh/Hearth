@@ -1,4 +1,5 @@
 <script lang="ts">
+  import CommandPalette from './components/CommandPalette.svelte';
   import Sidebar from './components/Sidebar.svelte';
   import EmptyState from './components/EmptyState.svelte';
   import Toaster from './components/Toaster.svelte';
@@ -37,7 +38,18 @@
   });
 
   const route = $derived(routes.find((r) => r.id === router.id));
+
+  // Ctrl+K (Cmd+K on a Mac keyboard) opens the command palette anywhere.
+  let palette = $state(false);
+  function onkeydown(e: KeyboardEvent): void {
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k' && key !== null) {
+      e.preventDefault();
+      palette = !palette;
+    }
+  }
 </script>
+
+<svelte:window {onkeydown} />
 
 {#if key === null}
   <main class="centered">
@@ -45,7 +57,7 @@
   </main>
 {:else}
   <div class="shell">
-    <Sidebar {status} />
+    <Sidebar {status} onsearch={() => (palette = true)} />
     <main>
       {#if route?.id === 'home'}
         {#if live}<Home {live} />{/if}
@@ -69,6 +81,7 @@
 {/if}
 
 <Toaster />
+<CommandPalette open={palette && key !== null} {live} onclose={() => (palette = false)} />
 
 <style>
   .shell {

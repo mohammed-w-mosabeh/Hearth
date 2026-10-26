@@ -1,6 +1,7 @@
 import type { MessageKey } from './i18n';
 
 // Hash routing (#/docker) keeps the Go side a plain static file server.
+// A page may take a search through "?q=" (#/services?q=cups).
 
 export interface Route {
   id: string;
@@ -23,22 +24,31 @@ export const routes: Route[] = [
 ];
 
 export function routeId(hash: string): string {
-  const id = hash.replace(/^#\/?/, '');
+  const id = hash.replace(/^#\/?/, '').replace(/\?.*$/, '');
   // "#k=<key>" is the session hand-off from /auth (session.ts strips it with
   // replaceState, which fires no hashchange): it means Home.
   return id === '' || id.startsWith('k=') ? 'home' : id;
 }
 
-function current(): string {
-  return routeId(location.hash);
+/** The "q" search of a hash ("#/services?q=cups" -> "cups"), or "". */
+export function routeQuery(hash: string): string {
+  const m = /\?(?:.*&)?q=([^&]*)/.exec(hash);
+  if (!m) return '';
+  try {
+    return decodeURIComponent((m[1] ?? '').replace(/\+/g, ' '));
+  } catch {
+    return ''; // malformed escape
+  }
 }
 
-export const router = $state({ id: current() });
+export const router = $state({ id: routeId(location.hash), q: routeQuery(location.hash) });
 
 window.addEventListener('hashchange', () => {
-  router.id = current();
+  router.id = routeId(location.hash);
+  router.q = routeQuery(location.hash);
 });
 
-export function href(id: string): string {
-  return id === 'home' ? '#/' : `#/${id}`;
+export function href(id: string, q = ''): string {
+  const base = id === 'home' ? '#/' : `#/${id}`;
+  return q ? `${base}?q=${encodeURIComponent(q)}` : base;
 }

@@ -21,6 +21,7 @@
     type UnitOp,
   } from '../lib/services';
   import { toast } from '../lib/toast.svelte';
+  import { router } from '../lib/router.svelte';
   import type { Live } from '../lib/ws';
 
   // systemd units, system and user. Following the "services" topic is what
@@ -52,6 +53,16 @@
   let stateF = $state<StateFilter>('all');
   let sortKey = $state<SortKey>('name');
   let desc = $state(false);
+
+  // Opened from the command palette (#/services?q=<unit>): show that unit.
+  $effect(() => {
+    if (router.q) {
+      search = router.q;
+      scope = 'all';
+      type = 'all';
+      stateF = 'all';
+    }
+  });
 
   const rows = $derived(units ? view(units, stats, { scope, type, state: stateF, search }, sortKey, desc) : []);
   const failed = $derived(units ? failedCount(units) : 0);
