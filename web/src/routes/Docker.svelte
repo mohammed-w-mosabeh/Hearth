@@ -291,7 +291,7 @@
                 <span class:failed={tn === 'failed'}>{c.status}</span>
                 {#if c.health && !c.status.includes(c.health)}<span class="sub">{t(healthKey[c.health] ?? 'docker.health.starting')}</span>{/if}
               </td>
-              <td class="ports">
+              <td><span class="ports">
                 {#each ports(c).slice(0, 3) as p (portText(p))}
                   {@const url = portURL(p)}
                   {#if url}
@@ -301,7 +301,7 @@
                   {/if}
                 {/each}
                 {#if ports(c).length > 3}<span class="muted">+{ports(c).length - 3}</span>{/if}
-              </td>
+              </span></td>
               <td class="num">{up && st ? pct(st.cpu, 1) : '–'}</td>
               <td class="num">{up && st ? bytes(st.mem) : '–'}</td>
               <td class="act">
@@ -500,7 +500,7 @@
     text-overflow: ellipsis;
   }
   .ports {
-    display: flex;
+    display: inline-flex;
     gap: var(--space-2);
     align-items: center;
     font-size: 12px;

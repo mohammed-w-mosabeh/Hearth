@@ -44,7 +44,7 @@ Gate 1 result (2026-10-26): **passed**. Idle 21.7 MB / 0.07% CPU. UI open: Home 
 - [x] 2.2 Broker Docker proxy: allowlisted read endpoints + container start/stop/restart/pause/remove, image remove/tag/pull, network/volume remove, prune with dry-run size; refusal rules from SECURITY S12
 - [x] 2.3 `discovery/docker`: containers, images, networks, volumes, compose projects; `/events` stream
 - [x] 2.4 Containers page: list, stats history, actions, live logs, env masking, inspect
-- [ ] 2.5 Container exec shell in terminal component (xterm lazy-loaded)
+- [x] 2.5 Container exec shell in terminal component (xterm lazy-loaded)
 - [ ] 2.6 Images page with full detail (layers + history, used-by, sizes, config) + "check for update" (registry digest) + optional Trivy
 - [ ] 2.7 Compose projects page (group actions)
 - [ ] 2.8 Cleanup view with reclaimable sizes and preview tokens

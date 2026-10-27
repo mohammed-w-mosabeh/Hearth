@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -433,8 +434,11 @@ func TestStream(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("stream method still running after the caller left")
 	}
-	if got := h.audit.results(); len(got) != 1 || got[0] != "test.stream ok: stream" {
-		t.Fatalf("audit %v", got)
+	want := []string{"test.stream ok: stream", "test.stream ended: closed"}
+	for deadline := time.Now().Add(3 * time.Second); !slices.Equal(h.audit.results(), want); time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("audit %v", h.audit.results())
+		}
 	}
 	// A stream is not a call: Call refuses its first item.
 	if err := h.client().Call(context.Background(), "test.stream", nil, nil); err == nil {
@@ -507,5 +511,62 @@ func TestStreamKeepsBrokerAwake(t *testing.T) {
 		h.done <- err
 	case <-time.After(3 * time.Second):
 		t.Fatal("did not exit once the stream ended")
+	}
+}
+
+func TestSession(t *testing.T) {
+	h := start(t, true, func(c *Config) {
+		c.Methods = append(c.Methods, Method{Name: "test.echo", Session: func(ctx context.Context, _ Caller, _ json.RawMessage, in <-chan json.RawMessage, send func(any) error) error {
+			for line := range in {
+				var s string
+				if json.Unmarshal(line, &s) != nil {
+					return Errorf(CodeBadParams, "not a string")
+				}
+				if s == "bye" {
+					return nil
+				}
+				if err := send(strings.ToUpper(s)); err != nil {
+					return err
+				}
+			}
+			return ctx.Err()
+		}}, Method{Name: "test.priv", Privileged: true, Session: func(context.Context, Caller, json.RawMessage, <-chan json.RawMessage, func(any) error) error {
+			t.Error("unauthorized session ran")
+			return nil
+		}})
+	})
+	s, err := h.client().Open(context.Background(), "test.echo", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range []string{"a", "bc"} {
+		if err := s.Send(w); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := s.Recv()
+		if err != nil || string(raw) != `"`+strings.ToUpper(w)+`"` {
+			t.Fatalf("%s: %s %v", w, raw, err)
+		}
+	}
+	_ = s.Send("bye")
+	if _, err := s.Recv(); !errors.Is(err, io.EOF) {
+		t.Fatalf("end: %v", err)
+	}
+	_ = s.Close()
+
+	s, _ = h.client().Open(context.Background(), "test.echo", nil)
+	_ = s.Send(42)
+	if _, err := s.Recv(); code(err) != CodeBadParams {
+		t.Fatalf("bad line: %v", err)
+	}
+	_ = s.Close()
+
+	s, _ = h.client().Open(context.Background(), "test.priv", nil)
+	if _, err := s.Recv(); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("privileged: %v", err)
+	}
+	_ = s.Close()
+	if err := s.Send(strings.Repeat("x", MaxLine)); err == nil {
+		t.Fatal("oversized line sent")
 	}
 }

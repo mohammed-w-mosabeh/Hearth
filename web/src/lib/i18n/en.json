@@ -523,5 +523,13 @@
   "detail.logs.endedError": "Log stream ended: {error}",
   "detail.logs.foot": "{n} line(s), newest at the bottom. Output is shown as plain text.",
   "detail.inspect.copy": "Copy",
-  "detail.inspect.copied": "Copied."
+  "detail.inspect.copied": "Copied.",
+  "detail.tab.shell": "Shell",
+  "shell.intro": "Opens /bin/sh inside the container. Your administrator password is asked every time.",
+  "shell.open": "Open shell",
+  "shell.reopen": "Open a new shell",
+  "shell.auth": "Waiting for the administrator password…",
+  "shell.exited": "The shell exited.",
+  "shell.failed": "No shell: {error}.",
+  "shell.refused": "Hearth does not open a shell in this container: it can reach the host ({why}), so a shell in it would be a root shell on this machine."
 }

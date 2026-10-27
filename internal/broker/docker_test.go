@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -211,12 +212,12 @@ func TestDockerRejectsBadArguments(t *testing.T) {
 	}
 }
 
-// SECURITY S12 / Gate 2: nothing creates a container, execs into one, or
-// reaches an arbitrary endpoint.
+// SECURITY S12 / Gate 2: nothing creates a container or reaches an
+// arbitrary endpoint; the only exec is S12a's privileged shell session.
 func TestDockerHasNoCreateExecOrPassthrough(t *testing.T) {
-	h, f, _ := dockerHarness(t, true, nil)
+	h, f, d := dockerHarness(t, true, nil)
 	for _, m := range []string{
-		"docker.containers.create", "docker.containers.exec", "docker.exec", "docker.raw", "docker.request",
+		"docker.containers.create", "docker.exec", "docker.raw", "docker.request",
 		"docker.containers.update", "docker.containers.archive", "docker.images.build", "docker.images.load",
 		"docker.images.push", "docker.volumes.create", "docker.networks.connect", "docker.plugins.install",
 		"docker.swarm.init", "docker.secrets.list",
@@ -230,8 +231,13 @@ func TestDockerHasNoCreateExecOrPassthrough(t *testing.T) {
 		t.Fatalf("reached Docker: %v", reqs)
 	}
 	for _, n := range h.client().mustPing(t).Methods {
-		if strings.Contains(n, "create") || strings.Contains(n, "exec") {
+		if strings.Contains(n, "create") || (strings.Contains(n, "exec") && n != "docker.containers.exec") {
 			t.Errorf("method %s exists", n)
+		}
+	}
+	for _, m := range DockerMethods(d) {
+		if strings.Contains(m.Name, "exec") && (!m.Privileged || m.Action != ActionDockerExec || m.Session == nil) {
+			t.Errorf("%s: must be a privileged session under %s", m.Name, ActionDockerExec)
 		}
 	}
 }
@@ -596,5 +602,189 @@ func TestDockerLogsFollow(t *testing.T) {
 		if _, err := follow(bad); code(err) != CodeBadParams {
 			t.Errorf("%s: %v", bad, err)
 		}
+	}
+}
+
+// execEngine plays the Engine's exec API: the shell answers each input
+// line with "got <line>" and exits on "exit".
+type execEngine struct {
+	mu      sync.Mutex
+	reqs    []string
+	inspect string
+}
+
+func newExecEngine(t *testing.T, inspect string) (*execEngine, string) {
+	t.Helper()
+	e := &execEngine{inspect: inspect}
+	sock := filepath.Join(t.TempDir(), "docker.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eid := strings.Repeat("e", 64)
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/"+DockerAPI)
+		body, _ := io.ReadAll(r.Body)
+		e.mu.Lock()
+		e.reqs = append(e.reqs, r.Method+" "+path+"?"+r.URL.RawQuery+" "+string(body))
+		e.mu.Unlock()
+		switch {
+		case r.Method == "GET" && path == "/containers/web/json":
+			_, _ = w.Write([]byte(e.inspect))
+		case r.Method == "POST" && path == "/containers/web/exec":
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"Id":"` + eid + `"}`))
+		case r.Method == "POST" && path == "/exec/"+eid+"/resize":
+			w.WriteHeader(http.StatusOK)
+		case r.Method == "POST" && path == "/exec/"+eid+"/start" && r.Header.Get("Upgrade") == "tcp":
+			conn, rw, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				return
+			}
+			defer func() { _ = conn.Close() }()
+			_, _ = rw.WriteString("HTTP/1.1 101 UPGRADED\r\nConnection: Upgrade\r\nUpgrade: tcp\r\n\r\n$ ")
+			_ = rw.Flush()
+			for {
+				line, err := rw.ReadString('\n')
+				if err != nil || line == "exit\n" {
+					return
+				}
+				_, _ = rw.WriteString("got " + line)
+				_ = rw.Flush()
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	srv.Listener = ln
+	srv.Start()
+	t.Cleanup(srv.Close)
+	return e, sock
+}
+
+func (e *execEngine) requests() []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return slices.Clone(e.reqs)
+}
+
+const runningSafe = `{"State":{"Running":true},"HostConfig":{"NetworkMode":"bridge"}}`
+
+func TestDockerExec(t *testing.T) {
+	e, sock := newExecEngine(t, runningSafe)
+	h := start(t, true, func(c *Config) { c.Methods = append(c.Methods, DockerMethods(NewDocker(sock))...) })
+	h.auth.allow = true
+	s, err := h.client().Open(context.Background(), "docker.containers.exec", map[string]any{"id": "web", "cols": 120, "rows": 40})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	recv := func() ExecOut {
+		t.Helper()
+		raw, err := s.Recv()
+		if err != nil {
+			t.Fatalf("recv: %v", err)
+		}
+		var o ExecOut
+		if err := json.Unmarshal(raw, &o); err != nil {
+			t.Fatal(err)
+		}
+		return o
+	}
+	if o := recv(); !o.Ready {
+		t.Fatalf("first item %+v", o)
+	}
+	if o := recv(); string(o.Out) != "$ " {
+		t.Fatalf("prompt %q", o.Out)
+	}
+	_ = s.Send(ExecIn{In: []byte("ls\n")})
+	if o := recv(); string(o.Out) != "got ls\n" {
+		t.Fatalf("output %q", o.Out)
+	}
+	_ = s.Send(ExecIn{Resize: &[2]int{100, 30}})
+	_ = s.Send(ExecIn{Resize: &[2]int{0, 30}})        // ignored
+	_ = s.Send(json.RawMessage(`{"cmd":"rm -rf /"}`)) // ignored: unknown field
+	_ = s.Send(ExecIn{In: []byte("exit\n")})
+	if _, err := s.Recv(); !errors.Is(err, io.EOF) {
+		t.Fatalf("end: %v", err)
+	}
+	reqs := e.requests()
+	if len(reqs) != 4 {
+		t.Fatalf("requests %q", reqs)
+	}
+	var create struct {
+		Cmd         []string
+		Tty         bool
+		ConsoleSize [2]int
+		User        string
+	}
+	_ = json.Unmarshal([]byte(reqs[1][strings.Index(reqs[1], " {")+1:]), &create)
+	if !slices.Equal(create.Cmd, []string{"/bin/sh"}) || !create.Tty || create.ConsoleSize != [2]int{40, 120} || create.User != "" {
+		t.Fatalf("create %s", reqs[1])
+	}
+	if !strings.Contains(reqs[3], "/resize?h=30&w=100") {
+		t.Fatalf("resize %s", reqs[3])
+	}
+	if got := h.auth.asked; len(got) != 1 || !strings.HasPrefix(got[0], ActionDockerExec) {
+		t.Fatalf("polkit asked %v", got)
+	}
+}
+
+func TestDockerExecRefusals(t *testing.T) {
+	for name, tc := range map[string]struct {
+		inspect, params string
+		allow           bool
+		want            int
+	}{
+		"unauthorized":  {runningSafe, `{"id":"web"}`, false, CodeUnauthorized},
+		"privileged":    {`{"State":{"Running":true},"HostConfig":{"Privileged":true}}`, `{"id":"web"}`, true, CodeRefused},
+		"docker socket": {`{"State":{"Running":true},"HostConfig":{"Binds":["/run/docker.sock:/var/run/docker.sock"]}}`, `{"id":"web"}`, true, CodeRefused},
+		"host pid":      {`{"State":{"Running":true},"HostConfig":{"PidMode":"host"}}`, `{"id":"web"}`, true, CodeRefused},
+		"stopped":       {`{"State":{"Running":false},"HostConfig":{}}`, `{"id":"web"}`, true, CodeConflict},
+		"paused":        {`{"State":{"Running":true,"Paused":true},"HostConfig":{}}`, `{"id":"web"}`, true, CodeConflict},
+		"command":       {runningSafe, `{"id":"web","cmd":["bash"]}`, true, CodeBadParams},
+		"user":          {runningSafe, `{"id":"web","user":"root"}`, true, CodeBadParams},
+		"bad id":        {runningSafe, `{"id":"../web"}`, true, CodeBadParams},
+		"bad size":      {runningSafe, `{"id":"web","cols":0}`, true, CodeBadParams},
+	} {
+		t.Run(name, func(t *testing.T) {
+			e, sock := newExecEngine(t, tc.inspect)
+			h := start(t, true, func(c *Config) { c.Methods = append(c.Methods, DockerMethods(NewDocker(sock))...) })
+			h.auth.allow = tc.allow
+			s, err := h.client().Open(context.Background(), "docker.containers.exec", json.RawMessage(tc.params))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = s.Close() }()
+			if _, err := s.Recv(); code(err) != tc.want {
+				t.Fatalf("got %v, want code %d", err, tc.want)
+			}
+			for _, r := range e.requests() {
+				if strings.Contains(r, "/exec") {
+					t.Fatalf("reached exec: %s", r)
+				}
+			}
+		})
+	}
+}
+
+func TestDockerExecLimit(t *testing.T) {
+	_, sock := newExecEngine(t, runningSafe)
+	h := start(t, true, func(c *Config) { c.Methods = append(c.Methods, DockerMethods(NewDocker(sock))...) })
+	h.auth.allow = true
+	var open []*Session
+	for range maxExecs {
+		s, _ := h.client().Open(context.Background(), "docker.containers.exec", map[string]string{"id": "web"})
+		if _, err := s.Recv(); err != nil {
+			t.Fatal(err)
+		}
+		open = append(open, s)
+	}
+	s, _ := h.client().Open(context.Background(), "docker.containers.exec", map[string]string{"id": "web"})
+	if _, err := s.Recv(); code(err) != CodeRefused {
+		t.Fatalf("third session: %v", err)
+	}
+	for _, o := range append(open, s) {
+		_ = o.Close()
 	}
 }

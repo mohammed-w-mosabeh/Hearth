@@ -316,3 +316,11 @@ export function envPairs(env: string[] | null | undefined): [string, string][] {
     return i < 0 ? [e, ''] : [e.slice(0, i), e.slice(i + 1)];
   });
 }
+
+/** The WebSocket URL of a container shell (internal/docker HandleExec). */
+export function execURL(base: string, id: string, cols: number, rows: number): string {
+  const url = new URL(`/api/v1/docker/exec/${encodeURIComponent(id)}`, base);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  url.search = new URLSearchParams({ cols: String(cols), rows: String(rows) }).toString();
+  return url.toString();
+}

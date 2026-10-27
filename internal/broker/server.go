@@ -47,6 +47,11 @@ type Method struct {
 	// for each item until it returns or ctx ends (the caller closed the
 	// connection). Streams have no timeout.
 	Stream func(ctx context.Context, c Caller, params json.RawMessage, send func(any) error) error
+	// Session, instead of Handle or Stream, is a stream that also reads:
+	// each line the caller sends after the request arrives on in (closed
+	// when the caller closes the connection). Lines are bounded by
+	// MaxLine and are not audited; the method must validate each.
+	Session func(ctx context.Context, c Caller, params json.RawMessage, in <-chan json.RawMessage, send func(any) error) error
 }
 
 // Authority decides privileged calls (polkit in production).
@@ -126,7 +131,13 @@ func NewServer(cfg Config) (*Server, error) {
 	}
 	s := &Server{cfg: cfg, methods: map[string]Method{}, slots: make(chan struct{}, cfg.MaxConns), last: time.Now()}
 	for _, m := range cfg.Methods {
-		if m.Name == "" || (m.Handle == nil) == (m.Stream == nil) {
+		kinds := 0
+		for _, set := range []bool{m.Handle != nil, m.Stream != nil, m.Session != nil} {
+			if set {
+				kinds++
+			}
+		}
+		if m.Name == "" || kinds != 1 {
 			return nil, fmt.Errorf("broker: bad method %q", m.Name)
 		}
 		if _, dup := s.methods[m.Name]; dup {
@@ -260,7 +271,7 @@ func (s *Server) serveConn(ctx context.Context, conn net.Conn) {
 			_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			return enc.Encode(resp)
 		}
-		if !s.call(ctx, c, bytes.TrimSpace(line), conn, send) {
+		if !s.call(ctx, c, bytes.TrimSpace(line), conn, r, send) {
 			return
 		}
 	}
@@ -268,7 +279,7 @@ func (s *Server) serveConn(ctx context.Context, conn net.Conn) {
 
 // call runs one request line and reports whether the connection takes
 // another request (not after a failed write or a stream).
-func (s *Server) call(ctx context.Context, c Caller, line []byte, conn net.Conn, send func(Response) error) bool {
+func (s *Server) call(ctx context.Context, c Caller, line []byte, conn net.Conn, r *bufio.Reader, send func(Response) error) bool {
 	var req Request
 	dec := json.NewDecoder(bytes.NewReader(line))
 	dec.DisallowUnknownFields()
@@ -307,8 +318,8 @@ func (s *Server) call(ctx context.Context, c Caller, line []byte, conn net.Conn,
 			return send(Response{ID: req.ID, Error: Errorf(CodeUnauthorized, "not authorized")}) == nil
 		}
 	}
-	if m.Stream != nil {
-		s.stream(ctx, c, req, m, conn, send)
+	if m.Stream != nil || m.Session != nil {
+		s.stream(ctx, c, req, m, conn, r, send)
 		return false
 	}
 	hctx, cancel := context.WithTimeout(ctx, timeout)
@@ -326,21 +337,33 @@ func (s *Server) call(ctx context.Context, c Caller, line []byte, conn net.Conn,
 	return send(Response{ID: req.ID, Result: raw}) == nil
 }
 
-// stream runs a streaming method: each item is a response with More set,
-// then a last one without (an error, or no result). It ends when the
-// method does or the caller closes the connection, which is the only
-// thing a caller may do during a stream; the connection is closed after.
-func (s *Server) stream(ctx context.Context, c Caller, req Request, m Method, conn net.Conn, send func(Response) error) {
+// stream runs a streaming method or a session: each item is a response
+// with More set, then a last one without (an error, or no result). It
+// ends when the method does or the caller closes the connection; the
+// connection is closed after. During a stream the caller may only close
+// the connection; during a session it sends lines for the method.
+func (s *Server) stream(ctx context.Context, c Caller, req Request, m Method, conn net.Conn, r *bufio.Reader, send func(Response) error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	_ = conn.SetReadDeadline(time.Time{})
+	in := make(chan json.RawMessage, 16)
 	go func() {
-		var b [1]byte
-		_, _ = conn.Read(b[:]) // EOF (or anything) ends the stream
-		cancel()
+		defer cancel() // EOF (or anything, during a stream) ends it
+		defer close(in)
+		for {
+			line, err := r.ReadSlice('\n')
+			if err != nil || m.Session == nil {
+				return // includes a line over MaxLine
+			}
+			select {
+			case in <- json.RawMessage(bytes.Clone(bytes.TrimSpace(line))):
+			case <-ctx.Done():
+				return
+			}
+		}
 	}()
 	s.audit(c, req.Method, req.Params, "ok: stream")
-	err := m.Stream(ctx, c, req.Params, func(v any) error {
+	item := func(v any) error {
 		raw, err := json.Marshal(v)
 		if err != nil {
 			return Errorf(CodeInternal, "item could not be encoded")
@@ -350,8 +373,15 @@ func (s *Server) stream(ctx context.Context, c Caller, req Request, m Method, co
 			return err
 		}
 		return nil
-	})
+	}
+	var err error
+	if m.Session != nil {
+		err = m.Session(ctx, c, req.Params, in, item)
+	} else {
+		err = m.Stream(ctx, c, req.Params, item)
+	}
 	if ctx.Err() != nil {
+		s.audit(c, req.Method, nil, "ended: closed")
 		return // the caller left, or the broker is stopping
 	}
 	final := Response{ID: req.ID}
@@ -362,6 +392,8 @@ func (s *Server) stream(ctx context.Context, c Caller, req Request, m Method, co
 		}
 		final.Error = be
 		s.audit(c, req.Method, req.Params, "error: stream: "+be.Message)
+	} else {
+		s.audit(c, req.Method, nil, "ended")
 	}
 	_ = send(final)
 }

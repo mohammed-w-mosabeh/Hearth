@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 )
@@ -35,6 +36,7 @@ const DockerAPI = "v1.44"
 const (
 	ActionDockerControl = "org.hearth.docker.control"
 	ActionDockerRemove  = "org.hearth.docker.remove"
+	ActionDockerExec    = "org.hearth.docker.exec" // auth_admin every time (SECURITY S12a)
 )
 
 // maxDockerBody bounds a Docker answer the broker forwards, leaving room
@@ -43,8 +45,9 @@ const maxDockerBody = 12 << 20
 
 // Docker is a client for the Engine API on a Unix socket.
 type Docker struct {
-	hc  *http.Client
-	now func() time.Time
+	hc    *http.Client
+	now   func() time.Time
+	execs atomic.Int32 // open exec sessions
 }
 
 // NewDocker returns a client for the Engine at socket.
@@ -70,13 +73,32 @@ func NewDocker(socket string) *Docker {
 // send makes one request. path must already be escaped. A 304 (already
 // started, already stopped) is success with no body.
 func (d *Docker) send(ctx context.Context, method, path string, q url.Values) (*http.Response, error) {
+	return d.sendBody(ctx, method, path, q, nil, nil)
+}
+
+// sendBody is send with a JSON body (if not nil) and extra headers.
+func (d *Docker) sendBody(ctx context.Context, method, path string, q url.Values, body any, hdr http.Header) (*http.Response, error) {
 	u := "http://docker/" + DockerAPI + path
 	if len(q) > 0 {
 		u += "?" + q.Encode()
 	}
-	req, err := http.NewRequestWithContext(ctx, method, u, nil)
+	var rd io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return nil, Errorf(CodeInternal, "bad request")
+		}
+		rd = bytes.NewReader(b)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, u, rd)
 	if err != nil {
 		return nil, Errorf(CodeInternal, "bad request")
+	}
+	for k, v := range hdr {
+		req.Header[k] = v
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
 	resp, err := d.hc.Do(req)
 	if err != nil {
@@ -231,6 +253,8 @@ func DockerMethods(d *Docker) []Method {
 		change("docker.networks.remove", ActionDockerRemove, 0, d.networkRemove),
 		change("docker.volumes.remove", ActionDockerRemove, 0, d.volumeRemove),
 		change("docker.prune", ActionDockerRemove, 30*time.Minute, d.prune),
+
+		{Name: "docker.containers.exec", Privileged: true, Action: ActionDockerExec, Session: d.containerExec},
 	}
 }
 

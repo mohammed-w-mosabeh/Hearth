@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ContainerShell from './ContainerShell.svelte';
   import Sparkline from './Sparkline.svelte';
   import { api, ApiError } from '../lib/api';
   import {
@@ -28,13 +29,16 @@
     onclose,
   }: { container: Container | null; history: Point[]; live: Live; onclose: () => void } = $props();
 
-  type Tab = 'overview' | 'stats' | 'logs' | 'inspect';
-  const tabs: { id: Tab; label: MessageKey }[] = [
+  type Tab = 'overview' | 'stats' | 'logs' | 'shell' | 'inspect';
+  const allTabs: { id: Tab; label: MessageKey }[] = [
     { id: 'overview', label: 'detail.tab.overview' },
     { id: 'stats', label: 'detail.tab.stats' },
     { id: 'logs', label: 'detail.tab.logs' },
+    { id: 'shell', label: 'detail.tab.shell' },
     { id: 'inspect', label: 'detail.tab.inspect' },
   ];
+  // A shell needs a running container.
+  const tabs = $derived(allTabs.filter((tb) => tb.id !== 'shell' || container?.state === 'running'));
 
   interface Inspect {
     Id: string;
@@ -101,6 +105,7 @@
 
   $effect(() => {
     if (!container) info = null;
+    else if (tab === 'shell' && container.state !== 'running') tab = 'overview';
   });
 
   // Live logs while the Logs tab is open.
@@ -333,6 +338,12 @@
           <p class="note" role="status">{ended.error ? t('detail.logs.endedError', { error: ended.error }) : t('detail.logs.ended')}</p>
         {/if}
         <p class="note small">{t('detail.logs.foot', { n: lines.length })}</p>
+      {:else if tab === 'shell'}
+        {#if !info}
+          <p class="note">{t('detail.loading')}</p>
+        {:else}
+          <ContainerShell id={c.id} refused={info.risks.map(riskText)} />
+        {/if}
       {:else if tab === 'inspect'}
         {#if !ins}
           <p class="note">{t('detail.loading')}</p>

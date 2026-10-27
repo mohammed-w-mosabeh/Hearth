@@ -242,6 +242,12 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	defer func() { stopDocker(); dockerWG.Wait() }()
 	srv.API.HandleFunc("GET /api/v1/docker", dockerObjs.HandleSnapshot)
 	srv.API.HandleFunc("GET /api/v1/docker/containers/{id}", docker.HandleInspect(brokerClient))
+	srv.API.HandleFunc("GET /api/v1/docker/exec/{id}", docker.HandleExec(docker.ExecConfig{
+		Open: func(ctx context.Context, method string, params any) (docker.ExecSession, error) {
+			return brokerClient.Open(ctx, method, params)
+		},
+		Audit: db.Audit, UID: os.Getuid(), Log: log,
+	}))
 
 	// Process scanning runs only while a client follows the procs topic.
 	procs := collect.NewProcSampler(collect.ProcConfig{Pub: srv.Hub, Log: log, AppName: apps.Name})

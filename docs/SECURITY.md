@@ -26,8 +26,9 @@ Hearth is effectively a root-capable control panel. Assume any web page the user
 - S10. `hearthd` refuses to run as root.
 - S11. `hearth-broker`: socket-activated, exits after 60 s idle; verifies caller via `SO_PEERCRED`; static method allowlist; destructive methods require polkit authorization of the calling uid; every call written to the audit log; hardened unit (see below).
 - S12. Docker via broker only, and only an API subset. Refuse from the UI: creating containers with `Privileged`, `CapAdd`, host PID/network/IPC namespaces, or bind mounts of `/`, `/etc`, `/root`, `/var/run/docker.sock`, `/proc`, `/sys`, `/dev`. (Viewing such existing containers is fine and flagged in Security posture.)
+- S12a. Container exec shell (owner decision, 2026-10-27): broker method `docker.containers.exec` only. Fixed command `/bin/sh` (no caller-chosen command, user or env); running containers only; refused for any container with an S12 risk (privileged, added capabilities, host PID/network/IPC, risky bind mounts or the Docker socket), since a shell there is a host root shell; polkit `org.hearth.docker.exec` is `auth_admin` with no keep, so every session asks for the password; at most 2 sessions at once; start and end audited by the broker and by hearthd. Never offered to phone sessions.
 - S13. Root scheduled jobs: script copied to `/var/lib/hearth/jobs/<id>/run` owned by root mode `0755`; never executed from a user-writable path. Requires polkit.
-- S14. Terminal runs as the user. Never a root shell from the UI. Disabled for phone sessions unless re-enabled with password re-entry.
+- S14. Terminal runs as the user. Never a root shell on the host from the UI (container shells: S12a only). Disabled for phone sessions unless re-enabled with password re-entry.
 
 ### Destructive actions
 - S15. Preview/simulate first (apt simulate, Docker reclaimable size, file list), return a short-lived preview token; execute only with that token.

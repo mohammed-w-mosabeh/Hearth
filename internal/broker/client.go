@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -143,6 +145,69 @@ func (c *Client) Stream(ctx context.Context, method string, params any, fn func(
 			return err
 		}
 	}
+}
+
+// Session is an open session method (Client.Open): items from the
+// broker with Recv, lines to it with Send.
+type Session struct {
+	conn net.Conn
+	r    *bufio.Reader
+	id   int64
+	stop func() bool
+	wmu  sync.Mutex
+}
+
+// Open starts a session method. A privileged one is authorized before
+// its first item, so the first Recv may wait for a polkit dialog. The
+// session ends when ctx does or Close is called.
+func (c *Client) Open(ctx context.Context, method string, params any) (*Session, error) {
+	conn, req, err := c.dial(ctx, method, params)
+	if err != nil {
+		return nil, err
+	}
+	return &Session{
+		conn: conn, r: bufio.NewReaderSize(conn, 64<<10), id: req.ID,
+		stop: context.AfterFunc(ctx, func() { _ = conn.Close() }),
+	}, nil
+}
+
+// Recv returns the next item: io.EOF when the session ended, the
+// broker's *Error when it failed.
+func (s *Session) Recv() (json.RawMessage, error) {
+	resp, err := readResponse(s.r)
+	switch {
+	case err != nil:
+		return nil, err
+	case resp.Error != nil:
+		return nil, resp.Error
+	case resp.ID != s.id:
+		return nil, errors.New("broker: response to another request")
+	case !resp.More:
+		return nil, io.EOF
+	}
+	return resp.Result, nil
+}
+
+// Send sends v as one line; it may be called alongside Recv.
+func (s *Session) Send(v any) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	if len(b) >= MaxLine {
+		return errors.New("broker: message too large")
+	}
+	s.wmu.Lock()
+	defer s.wmu.Unlock()
+	_ = s.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	_, err = s.conn.Write(append(b, '\n'))
+	return err
+}
+
+// Close ends the session.
+func (s *Session) Close() error {
+	s.stop()
+	return s.conn.Close()
 }
 
 // Status is GET /api/v1/broker/status.

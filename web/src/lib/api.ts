@@ -20,6 +20,11 @@ export function setSession(key: () => string | null, unauthorized: () => void): 
   onUnauthorized = unauthorized;
 }
 
+/** The session key, for WebSockets other than Live (they send it as a subprotocol). */
+export function sessionKey(): string | null {
+  return getKey();
+}
+
 /** fetch for /api/v1 with the bearer key (SECURITY S2). */
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);

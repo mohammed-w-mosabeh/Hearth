@@ -4,6 +4,7 @@ import {
   available,
   columns,
   envPairs,
+  execURL,
   exitCode,
   filterLogs,
   imageName,
@@ -139,5 +140,12 @@ describe('env', () => {
   it('splits pairs', () => {
     expect(envPairs(['A=1', 'B=x=y', 'C', 'D_PASSWORD=••••'])).toEqual([['A', '1'], ['B', 'x=y'], ['C', ''], ['D_PASSWORD', '••••']]);
     expect(envPairs(null)).toEqual([]);
+  });
+});
+
+describe('exec', () => {
+  it('builds the shell URL', () => {
+    expect(execURL('http://127.0.0.1:7171/#/docker', 'web', 80, 24)).toBe('ws://127.0.0.1:7171/api/v1/docker/exec/web?cols=80&rows=24');
+    expect(execURL('https://h:1/', 'a/b', 1, 2)).toBe('wss://h:1/api/v1/docker/exec/a%2Fb?cols=1&rows=2');
   });
 });

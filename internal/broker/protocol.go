@@ -63,6 +63,7 @@ const (
 	CodeNotFound     = 4 // the object does not exist (Docker 404)
 	CodeConflict     = 5 // the object is in use or in the wrong state (Docker 409)
 	CodeNoDocker     = 6 // the Docker Engine is not running or not installed
+	CodeRefused      = 7 // refused by policy (SECURITY), whoever asks
 )
 
 // Error is a call's failure.

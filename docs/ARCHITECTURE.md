@@ -23,7 +23,7 @@ Phone (opt-in, LAN, TLS + paired key) ─────┤
 ```
 
 - **hearthd**: `/usr/bin/hearthd`, unit `/usr/lib/systemd/user/hearthd.service`. Never root (refuses to start if `euid == 0`).
-- **hearth-broker**: `/usr/bin/hearth-broker`, `hearth-broker.socket` at `/run/hearth/broker.sock` mode `0660`, group `hearth`. Speaks a small JSON-RPC over the Unix socket. Checks the caller with `SO_PEERCRED` (uid must be in group `hearth`). Every method is in a static allowlist; destructive methods call polkit `CheckAuthorization` for the caller before acting. No "exec arbitrary command" method exists.
+- **hearth-broker**: `/usr/bin/hearth-broker`, `hearth-broker.socket` at `/run/hearth/broker.sock` mode `0660`, group `hearth`. Speaks a small JSON-RPC over the Unix socket. Checks the caller with `SO_PEERCRED` (uid must be in group `hearth`). Every method is in a static allowlist; destructive methods call polkit `CheckAuthorization` for the caller before acting. No "exec arbitrary command" method exists; the one interactive method, `docker.containers.exec`, runs a fixed `/bin/sh` under SECURITY S12a. Methods are calls (one answer), streams (items until the end) or sessions (items both ways, e.g. terminal input and resize).
 
 ## Directory layout
 
