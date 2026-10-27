@@ -678,5 +678,14 @@
   "tile.earlier": "Move {name} earlier",
   "tile.later": "Move {name} later",
   "tile.editOne": "Edit",
-  "tile.delete": "Delete"
+  "tile.delete": "Delete",
+  "tiles.suggest": "Find services",
+  "tiles.suggestHint": "Looks for published container ports and local web servers, and asks each one for its page title. Nothing is added until you save the form.",
+  "tiles.suggesting": "Looking…",
+  "tiles.suggestNone": "No new web services found on this machine.",
+  "tiles.suggestHide": "Hide suggestions",
+  "tile.suggestAdd": "Add?",
+  "tile.fromContainer": "container {name}",
+  "tile.fromProcess": "program {name}",
+  "tile.fromPort": "local web server"
 }

@@ -4,7 +4,7 @@
   import { reasonKey, run } from '../lib/actions';
   import { api, ApiError } from '../lib/api';
   import type { Container, Snapshot } from '../lib/docker';
-  import { builtinName, emptyForm, formOf, groupTiles, hostOf, moved, type HomepageMsg, type Status, type Tile, type TileForm as Form } from '../lib/homepage';
+  import { builtinName, emptyForm, formOf, groupTiles, hostOf, moved, suggestionForm, type HomepageMsg, type Status, type Suggestion, type Tile, type TileForm as Form } from '../lib/homepage';
   import { t } from '../lib/i18n';
   import { toast } from '../lib/toast.svelte';
   import type { Live } from '../lib/ws';
@@ -17,7 +17,11 @@
   let status = $state.raw<Record<string, Status>>({});
   let containers = $state.raw<Container[]>([]);
   let editing = $state(false);
-  let formFor = $state<{ form: Form; id: number | null; iconData?: string } | null>(null);
+  let formFor = $state<{ form: Form; id: number | null; iconData?: string; from?: Suggestion } | null>(null);
+  // Suggestions (ROADMAP 2.10): looked for only when the user asks, since
+  // it probes local ports; null while not shown.
+  let suggestions = $state.raw<Suggestion[] | null>(null);
+  let suggesting = $state(false);
 
   async function load(): Promise<void> {
     try {
@@ -67,12 +71,28 @@
       if (edit.id === null) await api('/homepage/tiles', { method: 'POST', body: JSON.stringify(f) });
       else await api(`/homepage/tiles/${edit.id}`, { method: 'PUT', body: JSON.stringify(f) });
       formFor = null;
+      const from = edit.from;
+      if (from && suggestions) suggestions = suggestions.filter((x) => x !== from);
       await load();
       return null;
     } catch (err) {
       return err instanceof ApiError ? err.message : t('action.failed');
     }
   }
+
+  async function suggest(): Promise<void> {
+    suggesting = true;
+    try {
+      suggestions = (await api<{ suggestions: Suggestion[] }>('/homepage/suggestions')).suggestions;
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+    } finally {
+      suggesting = false;
+    }
+  }
+
+  const sourceText = (x: Suggestion): string =>
+    x.container ? t('tile.fromContainer', { name: x.container }) : x.process ? t('tile.fromProcess', { name: x.process }) : t('tile.fromPort');
 
   async function remove(x: Tile): Promise<void> {
     try {
@@ -129,6 +149,11 @@
     {#if (tiles ?? []).length > 0}
       <button type="button" class="plain" aria-pressed={editing} onclick={() => (editing = !editing)}>{editing ? t('tiles.done') : t('tiles.edit')}</button>
     {/if}
+    {#if suggestions === null}
+      <button type="button" class="plain" title={t('tiles.suggestHint')} disabled={suggesting} onclick={suggest}>{suggesting ? t('tiles.suggesting') : t('tiles.suggest')}</button>
+    {:else}
+      <button type="button" class="plain" onclick={() => (suggestions = null)}>{t('tiles.suggestHide')}</button>
+    {/if}
     <button type="button" class="plain" onclick={() => (formFor = { form: emptyForm(), id: null })}>{t('tiles.add')}</button>
   </header>
 
@@ -181,6 +206,27 @@
       {/each}
     </ul>
   {/each}
+
+  {#if suggestions !== null}
+    {#if suggestions.length === 0}
+      <p class="note">{t('tiles.suggestNone')}</p>
+    {:else}
+      <ul class="tiles suggested">
+        {#each suggestions as x (x.url)}
+          <li class="tile ghost">
+            <button type="button" class="open" title={x.url} onclick={() => (formFor = { form: suggestionForm(x), id: null, from: x })}>
+              <span class="icon" aria-hidden="true"><span class="letter">{(x.name[0] ?? '?').toUpperCase()}</span></span>
+              <span class="text">
+                <span class="name">{x.name}</span>
+                <span class="desc">{hostOf(x.url)} · {sourceText(x)}</span>
+              </span>
+            </button>
+            <div class="foot"><span class="muted">{t('tile.suggestAdd')}</span></div>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  {/if}
 </section>
 
 <TileForm
@@ -248,6 +294,27 @@
     color: var(--text);
     text-decoration: none;
     min-width: 0;
+  }
+  .suggested {
+    margin-top: var(--space-3);
+  }
+  .ghost {
+    background: transparent;
+    border-style: dashed;
+    box-shadow: none;
+    color: var(--text-muted);
+  }
+  button.open {
+    font: inherit;
+    background: none;
+    border: 0;
+    padding: 0;
+    text-align: start;
+    cursor: pointer;
+    color: var(--text-muted);
+  }
+  .ghost .icon {
+    color: var(--text-muted);
   }
   .open:hover .name,
   .open:focus-visible .name {

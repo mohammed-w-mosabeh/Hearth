@@ -43,6 +43,22 @@ export function formOf(t: Tile): TileForm {
   return { name, url, description, icon, group, container, health_check };
 }
 
+/** A service hearthd found (GET /homepage/suggestions); never saved by itself. */
+export interface Suggestion {
+  name: string;
+  url: string;
+  source: 'container' | 'listener';
+  container?: string;
+  process?: string;
+  title?: string; // the page's <title>
+}
+
+/** The tile form pre-filled from a suggestion. */
+export function suggestionForm(s: Suggestion): TileForm {
+  const description = s.title && s.title !== s.name ? s.title : '';
+  return { ...emptyForm(), name: s.name, url: s.url, description, container: s.container ?? '' };
+}
+
 /** Built-in icons (components/Icon.svelte names) offered in the form. */
 export const BUILTIN_ICONS = [
   'globe', 'server', 'database', 'cloud', 'home', 'chart', 'code', 'terminal', 'box', 'shield', 'mail', 'book',

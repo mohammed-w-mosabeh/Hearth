@@ -49,7 +49,7 @@ Gate 1 result (2026-10-26): **passed**. Idle 21.7 MB / 0.07% CPU. UI open: Home 
 - [x] 2.7 Compose projects page (group actions)
 - [x] 2.8 Cleanup view with reclaimable sizes and preview tokens
 - [x] 2.9 Homepage tiles: form (name, URL, description, icon, group, linked container, health check), icon set + safe upload, health checker (SECURITY S21)
-- [ ] 2.10 Homepage suggestions from published ports / local HTTP listeners (pre-filled form, never auto-saved)
+- [x] 2.10 Homepage suggestions from published ports / local HTTP listeners (pre-filled form, never auto-saved)
 - [ ] 2.11 Docker resource cards on Home + container alerts (exited unexpectedly)
 
 **Gate 2:** broker tests (unknown method, wrong group, unauthorized destructive, privileged container create, forbidden bind mounts) all rejected; manual pentest of broker by the owner; resource budget still met.

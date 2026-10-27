@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { builtinName, groupTiles, hostOf, moved, urlProblem, type Tile } from './homepage';
+import { builtinName, groupTiles, hostOf, moved, suggestionForm, urlProblem, type Tile } from './homepage';
 
 const tile = (id: number, group: string, position: number): Tile => ({
   id, name: `t${id}`, url: 'http://x/', description: '', icon: '', group, container: '', health_check: false, position,
@@ -30,5 +30,13 @@ describe('homepage', () => {
     expect(moved(ts, 2, -1)).toEqual([2, 1, 3]);
     expect(moved(ts, 3, 1)).toEqual([1, 2, 3]);
     expect(moved(ts, 9, 1)).toEqual([1, 2, 3]);
+  });
+  it('pre-fills the form from a suggestion', () => {
+    expect(suggestionForm({ name: 'filestore', url: 'http://127.0.0.1:9000/', source: 'container', container: 'filestore', title: 'Files Console' })).toEqual({
+      name: 'filestore', url: 'http://127.0.0.1:9000/', description: 'Files Console', icon: '', group: '', container: 'filestore', health_check: true,
+    });
+    const f = suggestionForm({ name: 'Jellyfin', url: 'http://127.0.0.1:8096/', source: 'listener', process: 'jellyfin', title: 'Jellyfin' });
+    expect(f.description).toBe('');
+    expect(f.container).toBe('');
   });
 });

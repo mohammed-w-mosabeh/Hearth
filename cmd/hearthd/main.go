@@ -280,7 +280,12 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 
 	// Homepage tiles; their URLs are checked only while Home is open.
 	checker := homepage.NewChecker(db, srv.Hub, log)
-	(&homepage.API{DB: db, Checker: checker}).Register(srv.API)
+	homepageAPI := &homepage.API{DB: db, Checker: checker}
+	homepageAPI.Register(srv.API)
+	// Suggestions are found only when the user asks for them.
+	srv.API.HandleFunc("GET /api/v1/homepage/suggestions", homepageAPI.HandleSuggestions(&homepage.Suggester{
+		Docker: brokerClient, SelfPort: srv.Port(), Probe: homepage.HTTPProbe(nil),
+	}))
 	checkCtx, stopCheck := context.WithCancel(ctx)
 	checkDone := make(chan struct{})
 	go func() { checker.Run(checkCtx); close(checkDone) }()
