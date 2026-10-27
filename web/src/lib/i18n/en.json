@@ -606,5 +606,21 @@
   "image.scan.package": "Package",
   "image.scan.installed": "Installed",
   "image.scan.fixed": "Fixed in",
-  "image.scan.severity": "Severity"
+  "image.scan.severity": "Severity",
+  "docker.section.compose": "Compose",
+  "compose.search": "Search projects, services or folders",
+  "compose.none": "No Compose projects. Containers started with docker compose appear here, grouped by project.",
+  "compose.state.running": "all {n} running",
+  "compose.state.partial": "{running} of {n} running",
+  "compose.state.stopped": "stopped ({n} containers)",
+  "compose.dir": "Project folder",
+  "compose.file": "Compose file",
+  "compose.services": "Services: {list}",
+  "compose.done.start": "Started {name}.",
+  "compose.done.stop": "Stopped {name}.",
+  "compose.done.restart": "Restarted {name}.",
+  "compose.partial": "{op} {name}: {done} done, {failed} failed — {who}: {reason}.",
+  "compose.reason.gone": "the project has no containers any more",
+  "compose.footnote": "Actions run on the project's existing containers, dependencies first when starting and last when stopping. Changing the compose file, creating or recreating containers is done with docker compose itself.",
+  "compose.finished": "{n} finished (ran once and exited cleanly)"
 }

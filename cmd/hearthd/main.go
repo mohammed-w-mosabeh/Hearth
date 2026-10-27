@@ -226,6 +226,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	brokerClient := &broker.Client{}
 	docker.Register(reg, brokerClient)
 	docker.RegisterImages(reg, brokerClient)
+	docker.RegisterProjects(reg, brokerClient)
 	srv.API.HandleFunc("POST /api/v1/actions/{kind}/{action}", reg.Handle)
 	srv.API.HandleFunc("GET /api/v1/broker/status", brokerClient.HandleStatus)
 	srv.API.HandleFunc("GET /api/v1/services/journal", services.HandleJournal(safeexec.Run, services.CanReadSystemJournal))

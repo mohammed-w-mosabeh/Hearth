@@ -46,7 +46,7 @@ Gate 1 result (2026-10-26): **passed**. Idle 21.7 MB / 0.07% CPU. UI open: Home 
 - [x] 2.4 Containers page: list, stats history, actions, live logs, env masking, inspect
 - [x] 2.5 Container exec shell in terminal component (xterm lazy-loaded)
 - [x] 2.6 Images page with full detail (layers + history, used-by, sizes, config) + "check for update" (registry digest) + optional Trivy
-- [ ] 2.7 Compose projects page (group actions)
+- [x] 2.7 Compose projects page (group actions)
 - [ ] 2.8 Cleanup view with reclaimable sizes and preview tokens
 - [ ] 2.9 Homepage tiles: form (name, URL, description, icon, group, linked container, health check), icon set + safe upload, health checker (SECURITY S21)
 - [ ] 2.10 Homepage suggestions from published ports / local HTTP listeners (pre-filled form, never auto-saved)

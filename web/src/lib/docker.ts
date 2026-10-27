@@ -416,3 +416,45 @@ export function vulnURL(id: string): string | null {
   if (/^GHSA(-[23456789cfghjmpqrvwx]{4}){3}$/.test(id)) return `https://github.com/advisories/${id}`;
   return null;
 }
+
+// --- compose projects ---
+
+export type ProjectState = 'running' | 'partial' | 'stopped';
+
+/**
+ * Containers of a project that ran to completion (exit 0), like
+ * one-shot init services; they do not make a running project partial.
+ */
+export function finished(p: Project, byId: ReadonlyMap<string, Container>): number {
+  return p.containers.filter((id) => {
+    const c = byId.get(id);
+    return c?.state === 'exited' && exitCode(c.status) === 0;
+  }).length;
+}
+
+export function projectState(p: Project, byId: ReadonlyMap<string, Container> = new Map()): ProjectState {
+  if (p.running === 0) return 'stopped';
+  return p.running + finished(p, byId) >= p.containers.length ? 'running' : 'partial';
+}
+
+export type ProjectOp = 'start' | 'stop' | 'restart';
+
+/** The group actions that make sense for a project now. */
+export function projectOps(p: Project, byId: ReadonlyMap<string, Container> = new Map()): ProjectOp[] {
+  const st = projectState(p, byId);
+  if (st === 'stopped') return ['start'];
+  if (st === 'running') return ['stop', 'restart'];
+  return ['start', 'stop', 'restart'];
+}
+
+/** Projects matching search (name, service or directory), running ones first, then by name. */
+export function projectView(list: Project[], search: string, byId: ReadonlyMap<string, Container> = new Map()): Project[] {
+  const words = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const order: Record<ProjectState, number> = { partial: 0, running: 1, stopped: 2 };
+  return list
+    .filter((p) => {
+      const hay = `${p.name} ${p.services.join(' ')} ${p.working_dir ?? ''}`.toLowerCase();
+      return words.every((w) => hay.includes(w));
+    })
+    .sort((a, b) => order[projectState(a, byId)] - order[projectState(b, byId)] || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}

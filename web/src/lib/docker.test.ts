@@ -4,6 +4,11 @@ import {
   available,
   columns,
   envPairs,
+  finished,
+  projectOps,
+  projectState,
+  projectView,
+  type Project,
   imageTitle,
   imageView,
   layerCommand,
@@ -193,5 +198,34 @@ describe('images', () => {
     expect(vulnURL('GHSA-jfh8-c2jp-5v3q')).toBe('https://github.com/advisories/GHSA-jfh8-c2jp-5v3q');
     expect(vulnURL('javascript:alert(1)')).toBeNull();
     expect(vulnURL('DLA-1234-1')).toBeNull();
+  });
+});
+
+describe('compose projects', () => {
+  const p = (name: string, running: number, n: number, extra: Partial<Project> = {}): Project => ({
+    name, config_files: [], services: [], containers: Array.from({ length: n }, (_, i) => `${name}${i}`), running, ...extra,
+  });
+  it('reads state and actions', () => {
+    expect(projectState(p('a', 0, 2))).toBe('stopped');
+    expect(projectState(p('a', 2, 2))).toBe('running');
+    expect(projectState(p('a', 1, 2))).toBe('partial');
+    expect(projectOps(p('a', 0, 2))).toEqual(['start']);
+    expect(projectOps(p('a', 2, 2))).toEqual(['stop', 'restart']);
+    expect(projectOps(p('a', 1, 2))).toEqual(['start', 'stop', 'restart']);
+  });
+  it('counts finished one-shot containers as done', () => {
+    const init = c('init', 'exited', { id: 'x1' });
+    const crashed = c('bad', 'exited', { id: 'x1', status: 'Exited (1) now' });
+    const proj = p('x', 1, 2);
+    expect(finished(proj, new Map([['x1', init]]))).toBe(1);
+    expect(projectState(proj, new Map([['x1', init]]))).toBe('running');
+    expect(projectState(proj, new Map([['x1', crashed]]))).toBe('partial');
+    expect(projectState(p('x', 0, 2), new Map([['x1', init]]))).toBe('stopped');
+  });
+  it('searches and sorts', () => {
+    const list = [p('zeta', 0, 1), p('alpha', 1, 1), p('beta', 1, 2, { services: ['db'], working_dir: '/home/me/beta' })];
+    expect(projectView(list, '').map((x) => x.name)).toEqual(['beta', 'alpha', 'zeta']);
+    expect(projectView(list, 'DB').map((x) => x.name)).toEqual(['beta']);
+    expect(projectView(list, 'home/me').map((x) => x.name)).toEqual(['beta']);
   });
 });
