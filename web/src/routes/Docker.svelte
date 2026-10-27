@@ -3,6 +3,7 @@
   import ContainerDetail from '../components/ContainerDetail.svelte';
   import EmptyState from '../components/EmptyState.svelte';
   import ComposeProjects from '../components/ComposeProjects.svelte';
+  import DockerCleanup from '../components/DockerCleanup.svelte';
   import ImagesTable from '../components/ImagesTable.svelte';
   import { preview, reasonKey, run, type Plan, type Result } from '../lib/actions';
   import { api, ApiError } from '../lib/api';
@@ -61,12 +62,13 @@
     }
   }
 
-  type Section = 'containers' | 'compose' | 'images';
+  type Section = 'containers' | 'compose' | 'images' | 'cleanup';
   let section = $state<Section>('containers');
   const sections: { id: Section; label: MessageKey }[] = [
     { id: 'containers', label: 'docker.section.containers' },
     { id: 'compose', label: 'docker.section.compose' },
     { id: 'images', label: 'docker.section.images' },
+    { id: 'cleanup', label: 'docker.section.cleanup' },
   ];
 
   let search = $state('');
@@ -244,12 +246,14 @@
   <div class="sections" role="tablist" aria-label={t('docker.sections')}>
     {#each sections as sec (sec.id)}
       <button type="button" role="tab" aria-selected={section === sec.id} class:on={section === sec.id} onclick={() => (section = sec.id)}>
-        {t(sec.label)}{#if snap}<span class="count">{sec.id === 'images' ? snap.images.length : sec.id === 'compose' ? snap.projects.length : containers.length}</span>{/if}
+        {t(sec.label)}{#if snap && sec.id !== 'cleanup'}<span class="count">{sec.id === 'images' ? snap.images.length : sec.id === 'compose' ? snap.projects.length : containers.length}</span>{/if}
       </button>
     {/each}
   </div>
 
-  {#if section === 'images' || section === 'compose'}
+  {#if section === 'cleanup'}
+    <DockerCleanup />
+  {:else if section === 'images' || section === 'compose'}
     {#if snap === null}
       <p class="note">{t('docker.loading')}</p>
     {:else if section === 'images'}

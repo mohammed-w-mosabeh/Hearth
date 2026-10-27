@@ -4,6 +4,7 @@ import {
   available,
   columns,
   envPairs,
+  pruneTotal,
   finished,
   projectOps,
   projectState,
@@ -227,5 +228,16 @@ describe('compose projects', () => {
     expect(projectView(list, '').map((x) => x.name)).toEqual(['beta', 'alpha', 'zeta']);
     expect(projectView(list, 'DB').map((x) => x.name)).toEqual(['beta']);
     expect(projectView(list, 'home/me').map((x) => x.name)).toEqual(['beta']);
+  });
+});
+
+describe('cleanup', () => {
+  it('totals reclaimable space', () => {
+    expect(pruneTotal([
+      { kind: 'containers', count: 1, reclaimable: 10, items: [] },
+      { kind: 'build', count: 2, reclaimable: 5, items: [], error: 'x' },
+      { kind: 'volumes', count: 1, reclaimable: -1, items: [] },
+      { kind: 'images', count: 1, reclaimable: 30, items: [] },
+    ])).toBe(40);
   });
 });

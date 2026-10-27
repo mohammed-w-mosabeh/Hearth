@@ -227,6 +227,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	docker.Register(reg, brokerClient)
 	docker.RegisterImages(reg, brokerClient)
 	docker.RegisterProjects(reg, brokerClient)
+	docker.RegisterPrune(reg, brokerClient)
 	srv.API.HandleFunc("POST /api/v1/actions/{kind}/{action}", reg.Handle)
 	srv.API.HandleFunc("GET /api/v1/broker/status", brokerClient.HandleStatus)
 	srv.API.HandleFunc("GET /api/v1/services/journal", services.HandleJournal(safeexec.Run, services.CanReadSystemJournal))
@@ -250,6 +251,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	srv.API.HandleFunc("GET /api/v1/docker/images/{id}/updates", images.HandleUpdates)
 	srv.API.HandleFunc("POST /api/v1/docker/images/{id}/scan", images.HandleScan)
 	srv.API.HandleFunc("GET /api/v1/docker/trivy", images.HandleTrivy)
+	srv.API.HandleFunc("GET /api/v1/docker/cleanup", docker.HandleCleanup(brokerClient))
 	srv.API.HandleFunc("GET /api/v1/docker/exec/{id}", docker.HandleExec(docker.ExecConfig{
 		Open: func(ctx context.Context, method string, params any) (docker.ExecSession, error) {
 			return brokerClient.Open(ctx, method, params)

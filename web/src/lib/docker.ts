@@ -458,3 +458,26 @@ export function projectView(list: Project[], search: string, byId: ReadonlyMap<s
     })
     .sort((a, b) => order[projectState(a, byId)] - order[projectState(b, byId)] || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
+
+// --- cleanup ---
+
+export type PruneKind = 'containers' | 'images' | 'networks' | 'volumes' | 'build';
+
+export interface PruneItem {
+  id: string;
+  name?: string;
+  size: number; // -1 when Docker does not know
+}
+
+export interface KindSummary {
+  kind: PruneKind;
+  count: number;
+  reclaimable: number;
+  items: PruneItem[];
+  error?: string;
+}
+
+/** Bytes every kind together would free (kinds that failed count as 0). */
+export function pruneTotal(kinds: KindSummary[]): number {
+  return kinds.reduce((n, k) => n + (k.error ? 0 : Math.max(0, k.reclaimable)), 0);
+}
