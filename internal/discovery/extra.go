@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -146,14 +147,31 @@ func Flatpak(c ExtraConfig) ExtraList {
 			}
 		}
 	}
+	// Extensions of a runtime in use (GL drivers, codecs, Compat.i386,
+	// Locale) are in use by the same apps: "<runtime id>.<name>", any
+	// branch, same architecture.
+	extUsers := map[string][]string{} // "<runtime id>/<arch>" -> apps
+	for k, apps := range usedBy {
+		f := strings.Split(k, "/") // installation/id/arch/branch
+		extUsers[f[1]+"/"+f[2]] = append(extUsers[f[1]+"/"+f[2]], apps...)
+	}
 	for i, p := range out.Packages {
 		if p.Kind != "runtime" {
 			continue
 		}
 		f := strings.SplitN(p.ID, "/", 5)
-		if apps := usedBy[f[0]+"/"+f[2]+"/"+f[3]+"/"+f[4]]; len(apps) > 0 {
+		apps := usedBy[f[0]+"/"+f[2]+"/"+f[3]+"/"+f[4]]
+		if len(apps) == 0 {
+			for k, users := range extUsers {
+				rt, arch, _ := strings.Cut(k, "/")
+				if arch == f[3] && strings.HasPrefix(f[2], rt+".") {
+					apps = append(apps, users...)
+				}
+			}
+		}
+		if len(apps) > 0 {
 			sort.Strings(apps)
-			out.Packages[i].UsedBy = apps
+			out.Packages[i].UsedBy = slices.Compact(apps)
 			out.Packages[i].Removable, out.Packages[i].Why = false, WhyInUse
 		}
 	}

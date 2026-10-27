@@ -24,6 +24,9 @@ CapabilityBoundingSet=
 AmbientCapabilities=
 NoNewPrivileges=yes
 ProtectSystem=strict
+# pkg.hold: apt-mark hold runs dpkg --set-selections, which rewrites
+# dpkg's database (root-owned: no capability needed).
+ReadWritePaths=/var/lib/dpkg
 ProtectHome=yes
 PrivateTmp=yes
 PrivateDevices=yes

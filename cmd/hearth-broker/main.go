@@ -19,6 +19,7 @@ import (
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/broker"
 	"github.com/mohammed-w-mosabeh/hearth/internal/dbusx"
+	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
 )
 
 // stateDir is the unit's StateDirectory= (created by systemd, mode 0700).
@@ -43,6 +44,7 @@ func run(log *slog.Logger) error {
 	var srv *broker.Server
 	methods := broker.BaseMethods(version(), func() []string { return srv.Names() })
 	methods = append(methods, broker.DockerMethods(broker.NewDocker(broker.DockerSocket))...)
+	methods = append(methods, broker.PackageMethods(safeexec.Run)...)
 	srv, err = broker.NewServer(broker.Config{
 		Methods:   methods,
 		InGroup:   broker.GroupMember(broker.Group),

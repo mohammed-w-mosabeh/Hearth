@@ -335,3 +335,7 @@ func (d *Dpkg) HandleList(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, map[string]any{"manager": "dpkg", "packages": pkgs})
 }
+
+// FileStamp is the sizes and modification times of paths, for caches
+// that must notice when they change.
+func FileStamp(paths ...string) string { return stampOf(paths...) }

@@ -173,6 +173,12 @@ func plan(ctx context.Context, cfg Config, op Op, target string) (actions.Plan, 
 	if err != nil {
 		return p, err
 	}
+	return simulated(ctx, cfg, op, name, idList, p)
+}
+
+// simulated fills p from a simulation of op on idList: every package it
+// changes, blocked as a whole if it would remove a protected one.
+func simulated(ctx context.Context, cfg Config, op Op, name string, idList []string, p actions.Plan) (actions.Plan, error) {
 	sim, err := cfg.PK.Simulate(ctx, op, idList)
 	if err != nil {
 		var te *TxError

@@ -351,3 +351,24 @@ func FuzzImageRef(f *testing.F) {
 		}
 	})
 }
+
+func TestDebPackageArchAndOneOf(t *testing.T) {
+	for _, ok := range []string{"vim", "libc6:amd64", "g++", "libstdc++6:i386"} {
+		if err := DebPackageArch(ok); err != nil {
+			t.Errorf("%q: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"", "-vim", "vim:", "vim:AMD64", "vim:amd64:x", "a b", "vim\x00", ":amd64"} {
+		if err := DebPackageArch(bad); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+	v := OneOf("hold", "unhold")
+	if v("hold") != nil || v("unhold") != nil || v("purge") == nil || v("") == nil {
+		t.Error("OneOf")
+	}
+	if Check("apt-mark-hold", "hold", "vim") != nil || Check("apt-mark-hold", "purge", "vim") == nil ||
+		Check("apt-mark-hold", "hold", "--option=x") == nil || Check("apt-mark-hold", "hold", "vim", "bash") == nil {
+		t.Error("apt-mark-hold spec")
+	}
+}

@@ -57,6 +57,13 @@ var allowlist = map[string]Spec{
 		Validate: exactly(Literal("--version")),
 		Timeout:  5 * time.Second,
 	},
+	// apt-mark hold|unhold <package[:arch]>, run by hearth-broker as root
+	// (broker pkg.hold, after polkit). PackageKit has no hold.
+	"apt-mark-hold": {
+		Paths:    []string{"/usr/bin/apt-mark"},
+		Validate: exactly(OneOf("hold", "unhold"), DebPackageArch),
+		Timeout:  30 * time.Second,
+	},
 	// journalctl reading one unit's recent entries as JSON (services
 	// journal viewer). Only the shape journalArgs accepts.
 	"journalctl-unit": {

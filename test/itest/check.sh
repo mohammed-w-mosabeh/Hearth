@@ -226,6 +226,27 @@ rm -f /etc/polkit-1/rules.d/51-hearth-itest-exec.rules
 systemctl stop fakedocker
 rm -f /etc/polkit-1/rules.d/50-hearth-itest.rules
 
+echo "== broker: packages"
+check "pkg.hold refused without polkit authorization" call_says "not authorized" pkg.hold '{"package":"curl","hold":true}'
+check "pkg.hold: bad name refused before polkit" call_says "Debian package name" pkg.hold '{"package":"-o=Dir=/tmp","hold":true}'
+check "pkg.hold: extra params refused" call_says "bad params" pkg.hold '{"package":"curl","hold":true,"args":["x"]}'
+check "nothing held by refused calls" test -z "$(apt-mark showhold)"
+cat >/etc/polkit-1/rules.d/50-hearth-itest.rules <<'RULES'
+polkit.addRule(function(action, subject) {
+	if (action.id == "org.hearth.packages.hold" && subject.user == "tester") {
+		return polkit.Result.YES;
+	}
+});
+RULES
+sleep 1
+check "pkg.hold holds curl through apt-mark" call_says '"held":true' pkg.hold '{"package":"curl","hold":true}'
+check "dpkg has curl on hold" grep -qx curl <<<"$(apt-mark showhold)"
+check "pkg.hold unholds curl" call_says '"held":false' pkg.hold '{"package":"curl"}'
+check "curl no longer held" test -z "$(apt-mark showhold)"
+check "pkg.hold on a package that is not installed fails cleanly" call_says "not installed\\|apt-mark" pkg.hold '{"package":"no-such-pkg-xyz","hold":true}'
+check "audit records pkg.hold" grep -q '"method":"pkg.hold"' /var/lib/hearth/audit.jsonl
+rm -f /etc/polkit-1/rules.d/50-hearth-itest.rules
+
 exposure=$(systemd-analyze security hearth-broker.service --no-pager 2>/dev/null | tail -1 || true)
 echo "  $exposure"
 check "broker exposure level at most 2.0" awk -v s="$exposure" 'BEGIN { if (match(s, /: [0-9.]+/)) exit !(substr(s, RSTART + 2, RLENGTH - 2) + 0 <= 2.0); exit 1 }'
@@ -257,6 +278,19 @@ check "extra managers listed inside the sandbox" grep -q '"manager":"pip","avail
 check "unknown manager refused" test "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/pkgs/apt-get")" = 404
 check "removing a flatpak that is not installed is refused" grep -q 'not installed' <<<"$(curl -s -X POST -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$port" \
 	-d '{"target":"system/app/org.example.App/x86_64/stable","preview":true}' "http://127.0.0.1:$port/api/v1/actions/flatpak/remove")"
+
+detail=$(pkgs_api "pkgs/apt/bash:$(dpkg --print-architecture)")
+check "package detail lists bash's files" grep -q '"/usr/bin/bash"\|"/bin/bash"' <<<"$detail"
+check "package detail lists installed reverse deps" grep -q '"reverse_deps":\[' <<<"$detail"
+check "detail of a missing package is 404" test "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/pkgs/apt/nope:amd64")" = 404
+echo "  updates without PackageKit: $(pkgs_api pkgs/updates)"
+check "without PackageKit updates say so" grep -q 'PackageKit' <<<"$(pkgs_api pkgs/updates)"
+hold_preview() {
+	curl -s -X POST -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$port" \
+		-d "{\"target\":\"$1\",\"preview\":true}" "http://127.0.0.1:$port/api/v1/actions/package/hold"
+}
+check "hold preview names the package" grep -q '"name":"curl"' <<<"$(hold_preview curl)"
+check "hold of a package that is not installed is refused" grep -q 'not installed' <<<"$(hold_preview no-such-pkg-xyz)"
 
 echo "== purge"
 apt-get purge -y -qq hearth >/dev/null

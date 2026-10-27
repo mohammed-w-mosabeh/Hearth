@@ -152,3 +152,36 @@ func TestSnap(t *testing.T) {
 		t.Error("available without snapd")
 	}
 }
+
+// Extensions of a runtime in use (GL drivers, Compat.i386) are in use by
+// its apps; those of an unused runtime, or another arch, are not.
+func TestFlatpakRuntimeExtensions(t *testing.T) {
+	sys := t.TempDir()
+	deploy(t, sys, "app", "com.valvesoftware.Steam", "x86_64", "stable",
+		"[Application]\nruntime=org.freedesktop.Platform/x86_64/25.08\n", "")
+	deploy(t, sys, "runtime", "org.freedesktop.Platform", "x86_64", "25.08", "[Runtime]\n", "")
+	deploy(t, sys, "runtime", "org.freedesktop.Platform.GL.default", "x86_64", "25.08-extra", "[Runtime]\n", "")
+	deploy(t, sys, "runtime", "org.freedesktop.Platform.Compat.i386", "x86_64", "25.08", "[Runtime]\n", "")
+	deploy(t, sys, "runtime", "org.freedesktop.Platform.GL.default", "aarch64", "25.08", "[Runtime]\n", "")
+	deploy(t, sys, "runtime", "org.freedesktop.PlatformTheme", "x86_64", "1", "[Runtime]\n", "") // not "<id>."
+	deploy(t, sys, "runtime", "org.gnome.Platform.Locale", "x86_64", "47", "[Runtime]\n", "")
+	l := Flatpak(ExtraConfig{Home: t.TempDir(), Roots: []string{sys}})
+	got := map[string]bool{}
+	for _, p := range l.Packages {
+		got[p.ID] = p.Removable
+		if !p.Removable && (len(p.UsedBy) != 1 || p.UsedBy[0] != "com.valvesoftware.Steam") {
+			t.Errorf("%s used by %v", p.ID, p.UsedBy)
+		}
+	}
+	for id, removable := range map[string]bool{
+		"system/runtime/org.freedesktop.Platform.GL.default/x86_64/25.08-extra": false,
+		"system/runtime/org.freedesktop.Platform.Compat.i386/x86_64/25.08":      false,
+		"system/runtime/org.freedesktop.Platform.GL.default/aarch64/25.08":      true,
+		"system/runtime/org.freedesktop.PlatformTheme/x86_64/1":                 true,
+		"system/runtime/org.gnome.Platform.Locale/x86_64/47":                    true,
+	} {
+		if got[id] != removable {
+			t.Errorf("%s removable=%v, want %v", id, got[id], removable)
+		}
+	}
+}

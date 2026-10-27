@@ -8,6 +8,7 @@
   import Applications from './routes/Applications.svelte';
   import Disks from './routes/Disks.svelte';
   import Docker from './routes/Docker.svelte';
+  import Packages from './routes/Packages.svelte';
   import Resources from './routes/Resources.svelte';
   import Services from './routes/Services.svelte';
   import Placeholder from './routes/Placeholder.svelte';
@@ -75,6 +76,8 @@
         {#if live}<Disks {live} />{/if}
       {:else if route?.id === 'docker'}
         {#if live}<Docker {live} />{/if}
+      {:else if route?.id === 'packages'}
+        {#if live}<Packages {live} />{/if}
       {:else if route}
         <Placeholder {route} />
       {:else}

@@ -58,6 +58,18 @@ func Literal(want string) Validator {
 	}
 }
 
+// OneOf returns a validator that accepts exactly one of wants.
+func OneOf(wants ...string) Validator {
+	return func(s string) error {
+		for _, w := range wants {
+			if s == w {
+				return nil
+			}
+		}
+		return invalid("want one of %q, got %q", wants, s)
+	}
+}
+
 var debPackageRe = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]+$`)
 
 // DebPackage validates a Debian package name (Debian Policy 5.6.1).
@@ -67,6 +79,21 @@ func DebPackage(s string) error {
 	}
 	if !debPackageRe.MatchString(s) {
 		return invalid("%q is not a Debian package name", s)
+	}
+	return nil
+}
+
+var debArchRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
+
+// DebPackageArch validates a Debian package name, optionally with
+// ":arch", as dpkg and apt name an installed package.
+func DebPackageArch(s string) error {
+	name, arch, ok := strings.Cut(s, ":")
+	if err := DebPackage(name); err != nil {
+		return err
+	}
+	if ok && !debArchRe.MatchString(arch) {
+		return invalid("%q is not a Debian architecture", arch)
 	}
 	return nil
 }

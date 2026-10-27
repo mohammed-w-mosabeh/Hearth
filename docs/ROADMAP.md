@@ -59,7 +59,7 @@ Gate 2 result (2026-10-27): **automated checks passed; owner pentest pending** (
 ## Phase 3 — Packages, network, terminal, scheduler (~3 weeks)
 - [x] 3.1 `pkgs`: dpkg status parser + fsnotify; PackageKit D-Bus for install/remove/update with simulate; essential/required protection
 - [x] 3.2 Flatpak, Snap adapters; pip --user, npm -g, cargo, go bin listing (+ remove where safe)
-- [ ] 3.3 Packages page (unified + per manager, updates with security flag, hold, files/deps)
+- [x] 3.3 Packages page (unified + per manager, updates with security flag, hold, files/deps)
 - [ ] 3.4 `discovery/path`: Tools page (owner package, version, whatis), open in terminal / man
 - [ ] 3.5 `netinfo`: listeners via netlink sock_diag + inode→pid mapping (broker for other users' processes), connections, interfaces, NM state, firewall status
 - [ ] 3.6 Network page + lineage view (port → process → unit → package → container)

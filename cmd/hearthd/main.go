@@ -233,10 +233,17 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	go func() { dpkgDB.Run(pkgsCtx); close(pkgsDone) }()
 	defer func() { stopPkgs(); <-pkgsDone }()
 	srv.API.HandleFunc("GET /api/v1/pkgs", dpkgDB.HandleList)
-	pkgs.Register(reg, pkgs.Config{
+	srv.API.HandleFunc("GET /api/v1/pkgs/apt/{id}", dpkgDB.HandleDetail)
+	pkgCfg := pkgs.Config{
 		PK:   &pkgs.Client{Dial: func(ctx context.Context) (pkgs.Bus, error) { return dbusx.SystemBus(ctx) }},
 		Dpkg: dpkgDB,
-	})
+	}
+	pkgs.Register(reg, pkgCfg)
+	// Updates are cached until dpkg's database or apt's lists change.
+	updates := &pkgs.Updates{PK: pkgCfg.PK, Stamp: func() string {
+		return discovery.FileStamp("/var/lib/dpkg/status", "/var/lib/apt/lists")
+	}}
+	srv.API.HandleFunc("GET /api/v1/pkgs/updates", updates.HandleList)
 	// Flatpak, Snap, pip --user, npm -g, cargo and Go binaries: listed
 	// from their files; removed by the manager's own uninstall as a
 	// transient user unit (outside this sandbox), or through snapd.
@@ -247,6 +254,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		LogDir: filepath.Join(paths.DataDir, "runs"),
 	}})
 	brokerClient := &broker.Client{}
+	pkgs.RegisterHold(reg, pkgCfg, brokerClient) // apt hold: no PackageKit API, so the broker
 	docker.Register(reg, brokerClient)
 	docker.RegisterImages(reg, brokerClient)
 	docker.RegisterProjects(reg, brokerClient)

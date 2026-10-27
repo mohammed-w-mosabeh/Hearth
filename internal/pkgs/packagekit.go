@@ -51,8 +51,12 @@ type Change struct {
 	Version string `json:"version"`
 	Arch    string `json:"arch"`
 	Info    string `json:"info"` // installing, removing, updating, ...
-	Summary string `json:"summary,omitempty"`
-	ID      string `json:"-"` // PackageKit's "name;version;arch;data"
+	// Severity of an update (security, important, bugfix, ...), which
+	// PackageKit 1.2.6+ sends in the upper 16 bits of the info; "" from
+	// older versions, whose info is the severity.
+	Severity string `json:"severity,omitempty"`
+	Summary  string `json:"summary,omitempty"`
+	ID       string `json:"-"` // PackageKit's "name;version;arch;data"
 }
 
 // Bus is a system bus connection (dbusx.Conn in production).
@@ -170,11 +174,12 @@ func (c *Client) transaction(ctx context.Context, interactive bool, method strin
 				if !ok {
 					continue
 				}
-				in := infoNames[info]
+				in := infoNames[info&0xffff]
 				if in == "" {
-					in = fmt.Sprint("info-", info)
+					in = fmt.Sprint("info-", info&0xffff)
 				}
-				out = append(out, Change{Name: name, Version: version, Arch: arch, Info: in, Summary: summary, ID: id})
+				sev := infoNames[info>>16]
+				out = append(out, Change{Name: name, Version: version, Arch: arch, Info: in, Severity: sev, Summary: summary, ID: id})
 			case pkTx + ".ErrorCode":
 				if len(s.Body) == 2 {
 					code, _ := s.Body[0].(uint32)
