@@ -45,6 +45,9 @@ type Response struct {
 	ID     int64           `json:"id"`
 	Result json.RawMessage `json:"result,omitempty"`
 	Error  *Error          `json:"error,omitempty"`
+	// More marks one item of a stream; the stream's last response has
+	// no More (and an Error if it failed).
+	More bool `json:"more,omitempty"`
 }
 
 // Error codes: JSON-RPC's own, then the broker's.
@@ -59,6 +62,7 @@ const (
 	CodeFailed       = 3 // the method ran and failed
 	CodeNotFound     = 4 // the object does not exist (Docker 404)
 	CodeConflict     = 5 // the object is in use or in the wrong state (Docker 409)
+	CodeNoDocker     = 6 // the Docker Engine is not running or not installed
 )
 
 // Error is a call's failure.
@@ -85,6 +89,7 @@ var (
 	ErrNotMember    = &Error{Code: CodeNotMember, Message: "not a member of group " + Group}
 	ErrUnauthorized = &Error{Code: CodeUnauthorized, Message: "not authorized"}
 	ErrNoMethod     = &Error{Code: CodeNoMethod, Message: "unknown method"}
+	ErrNoDocker     = &Error{Code: CodeNoDocker, Message: "docker is not available"}
 )
 
 // PingResult is broker.ping's result.

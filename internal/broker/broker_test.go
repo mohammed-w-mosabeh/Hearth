@@ -386,3 +386,126 @@ func TestFileAudit(t *testing.T) {
 		t.Fatalf("%s", b)
 	}
 }
+
+// streamMethods adds "test.stream", which sends n items and then waits
+// for the caller to leave (left is closed the first time), and
+// "test.change.stream", privileged.
+func streamMethods(n int, left chan<- struct{}) func(*Config) {
+	var once sync.Once
+	return func(c *Config) {
+		run := func(ctx context.Context, _ Caller, _ json.RawMessage, send func(any) error) error {
+			for i := range n {
+				if err := send(i); err != nil {
+					return err
+				}
+			}
+			<-ctx.Done()
+			once.Do(func() { close(left) })
+			return ctx.Err()
+		}
+		c.Methods = append(c.Methods,
+			Method{Name: "test.stream", Stream: run},
+			Method{Name: "test.change.stream", Privileged: true, Stream: run},
+		)
+	}
+}
+
+func TestStream(t *testing.T) {
+	left := make(chan struct{})
+	h := start(t, true, streamMethods(3, left))
+	ctx, cancel := context.WithCancel(context.Background())
+	var got []int
+	err := h.client().Stream(ctx, "test.stream", nil, func(raw json.RawMessage) error {
+		var i int
+		if err := json.Unmarshal(raw, &i); err != nil {
+			return err
+		}
+		if got = append(got, i); len(got) == 3 {
+			cancel()
+		}
+		return nil
+	})
+	if !errors.Is(err, context.Canceled) || len(got) != 3 || got[2] != 2 {
+		t.Fatalf("err %v, got %v", err, got)
+	}
+	select {
+	case <-left: // closing the connection ends the method
+	case <-time.After(3 * time.Second):
+		t.Fatal("stream method still running after the caller left")
+	}
+	if got := h.audit.results(); len(got) != 1 || got[0] != "test.stream ok: stream" {
+		t.Fatalf("audit %v", got)
+	}
+	// A stream is not a call: Call refuses its first item.
+	if err := h.client().Call(context.Background(), "test.stream", nil, nil); err == nil {
+		t.Fatal("Call accepted a stream")
+	}
+}
+
+func TestStreamEndsAndFails(t *testing.T) {
+	h := start(t, true, func(c *Config) {
+		c.Methods = append(c.Methods,
+			Method{Name: "test.done", Stream: func(_ context.Context, _ Caller, _ json.RawMessage, send func(any) error) error {
+				return send("only")
+			}},
+			Method{Name: "test.broken", Stream: func(context.Context, Caller, json.RawMessage, func(any) error) error {
+				return Errorf(CodeFailed, "pipe burst")
+			}},
+		)
+	})
+	n := 0
+	if err := h.client().Stream(context.Background(), "test.done", nil, func(json.RawMessage) error { n++; return nil }); err != nil || n != 1 {
+		t.Fatalf("err %v, n %d", err, n)
+	}
+	err := h.client().Stream(context.Background(), "test.broken", nil, func(json.RawMessage) error { return nil })
+	if code(err) != CodeFailed || !strings.Contains(err.Error(), "pipe burst") {
+		t.Fatalf("err %v", err)
+	}
+	if err := h.client().Stream(context.Background(), "no.such", nil, func(json.RawMessage) error { return nil }); code(err) != CodeNoMethod {
+		t.Fatalf("unknown: %v", err)
+	}
+}
+
+func TestStreamRefusals(t *testing.T) {
+	left := make(chan struct{})
+	h := start(t, false, streamMethods(1, left))
+	if err := h.client().Stream(context.Background(), "test.stream", nil, func(json.RawMessage) error { return nil }); !errors.Is(err, ErrNotMember) {
+		t.Fatalf("non-member: %v", err)
+	}
+	h = start(t, true, streamMethods(1, left))
+	if err := h.client().Stream(context.Background(), "test.change.stream", nil, func(json.RawMessage) error { return nil }); code(err) != CodeUnauthorized {
+		t.Fatalf("unauthorized: %v", err)
+	}
+	bad := Config{InGroup: func(uint32) bool { return true }, Authority: &authority{}, Audit: &memAudit{}, Methods: []Method{{
+		Name:   "both",
+		Handle: func(context.Context, Caller, json.RawMessage) (any, error) { return nil, nil },
+		Stream: func(context.Context, Caller, json.RawMessage, func(any) error) error { return nil },
+	}}}
+	if _, err := NewServer(bad); err == nil {
+		t.Fatal("method with Handle and Stream accepted")
+	}
+}
+
+func TestStreamKeepsBrokerAwake(t *testing.T) {
+	left := make(chan struct{})
+	h := start(t, true, func(c *Config) { c.Idle = 100 * time.Millisecond; streamMethods(0, left)(c) })
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- h.client().Stream(ctx, "test.stream", nil, func(json.RawMessage) error { return nil }) }()
+	time.Sleep(500 * time.Millisecond)
+	select {
+	case err := <-h.done:
+		t.Fatalf("exited during a stream (%v)", err)
+	default:
+	}
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("stream ended with %v", err)
+	}
+	select {
+	case err := <-h.done:
+		h.done <- err
+	case <-time.After(3 * time.Second):
+		t.Fatal("did not exit once the stream ended")
+	}
+}

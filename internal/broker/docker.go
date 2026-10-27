@@ -83,7 +83,7 @@ func (d *Docker) send(ctx context.Context, method, path string, q url.Values) (*
 		if ctx.Err() != nil {
 			return nil, Errorf(CodeFailed, "docker: timed out")
 		}
-		return nil, Errorf(CodeFailed, "docker is not available")
+		return nil, Errorf(CodeNoDocker, "docker is not available")
 	}
 	if resp.StatusCode >= 400 || (resp.StatusCode >= 300 && resp.StatusCode != http.StatusNotModified) {
 		defer func() { _ = resp.Body.Close() }()
@@ -215,6 +215,7 @@ func DockerMethods(d *Docker) []Method {
 		read("docker.volumes.list", plain("/volumes")),
 		read("docker.volumes.inspect", d.volumeInspect),
 		read("docker.prune.preview", d.prunePreview),
+		{Name: "docker.events", Stream: d.dockerEvents},
 
 		change("docker.containers.start", ActionDockerControl, 0, d.containerAction("start")),
 		change("docker.containers.stop", ActionDockerControl, stopWait, d.containerAction("stop")),

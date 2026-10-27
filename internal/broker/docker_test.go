@@ -447,7 +447,7 @@ func TestDockerPrunePreviewAndPrune(t *testing.T) {
 func TestDockerUnavailable(t *testing.T) {
 	d := NewDocker(filepath.Join(t.TempDir(), "none.sock"))
 	h := start(t, true, func(c *Config) { c.Methods = append(c.Methods, DockerMethods(d)...) })
-	if err := call(t, h, "docker.version", "", nil); err == nil || !strings.Contains(err.Error(), "docker is not available") {
+	if err := call(t, h, "docker.version", "", nil); !errors.Is(err, ErrNoDocker) {
 		t.Fatalf("%v", err)
 	}
 }
@@ -507,4 +507,45 @@ func TestDockerLive(t *testing.T) {
 		t.Errorf("history %s: %v", img.Image, err)
 	}
 	t.Logf("%d containers; %s risks %v, %d log lines", len(cs), cs[0].Names, in.Risks, len(l.Lines))
+}
+
+func TestDockerEvents(t *testing.T) {
+	events := strings.Join([]string{
+		`{"Type":"container","Action":"start","Actor":{"ID":"c1","Attributes":{"name":"web","image":"nginx","SECRET_LABEL":"x"}},"timeNano":5}`,
+		`{"Type":"container","Action":"exec_start: pg_isready","Actor":{"ID":"c1"}}`, // health check noise
+		`{"Type":"daemon","Action":"reload","Actor":{"ID":"d"}}`,
+		`not json`,
+		`{"Type":"volume","Action":"create","Actor":{"ID":"v1","Attributes":{"name":"` + strings.Repeat("v", 70<<10) + `"}}}`, // oversized
+		`{"Type":"image","Action":"pull","Actor":{"ID":"nginx:latest","Attributes":{"name":"nginx"}},"timeNano":7}`,
+	}, "\n") + "\n"
+	h, f, _ := dockerHarness(t, false, map[string]answer{"GET /events": {body: events}})
+	var got []DockerEvent
+	err := h.client().Stream(context.Background(), "docker.events", nil, func(raw json.RawMessage) error {
+		if strings.Contains(string(raw), "SECRET_LABEL") {
+			t.Errorf("attributes forwarded: %s", raw)
+		}
+		var e DockerEvent
+		if err := json.Unmarshal(raw, &e); err != nil {
+			return err
+		}
+		got = append(got, e)
+		return nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "event stream ended") {
+		t.Fatalf("end: %v", err)
+	}
+	want := []DockerEvent{
+		{Type: "container", Action: "start", ID: "c1", Name: "web", Image: "nginx", Time: 5},
+		{Type: "image", Action: "pull", ID: "nginx:latest", Name: "nginx", Time: 7},
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("got %+v", got)
+	}
+	reqs := f.requests()
+	if len(reqs) != 1 || reqs[0] != "GET /events?"+(url.Values{"filters": {`{"type":["container","image","network","volume"]}`}}).Encode() {
+		t.Fatalf("requests %v", reqs)
+	}
+	if err := h.client().Stream(context.Background(), "docker.events", json.RawMessage(`{"since":0}`), func(json.RawMessage) error { return nil }); code(err) != CodeBadParams {
+		t.Fatalf("params: %v", err)
+	}
 }

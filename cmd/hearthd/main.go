@@ -225,6 +225,14 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	srv.API.HandleFunc("GET /api/v1/broker/status", brokerClient.HandleStatus)
 	srv.API.HandleFunc("GET /api/v1/services/journal", services.HandleJournal(safeexec.Run, services.CanReadSystemJournal))
 
+	// Docker objects through the broker, followed only while a Docker page is open.
+	docker := discovery.NewDockerWatcher(discovery.DockerConfig{Broker: brokerClient, Pub: srv.Hub, Log: log})
+	dockerCtx, stopDocker := context.WithCancel(ctx)
+	dockerDone := make(chan struct{})
+	go func() { docker.Run(dockerCtx); close(dockerDone) }()
+	defer func() { stopDocker(); <-dockerDone }()
+	srv.API.HandleFunc("GET /api/v1/docker", docker.HandleSnapshot)
+
 	// Process scanning runs only while a client follows the procs topic.
 	procs := collect.NewProcSampler(collect.ProcConfig{Pub: srv.Hub, Log: log, AppName: apps.Name})
 	procsCtx, stopProcs := context.WithCancel(ctx)

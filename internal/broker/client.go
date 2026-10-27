@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"net"
 	"net/http"
@@ -25,11 +24,8 @@ type Client struct {
 	ids  atomic.Int64
 }
 
-// Call runs method with params and decodes its result into out (if not
-// nil). Errors: ErrUnavailable; ErrNotMember when the user is not in the
-// hearth group (the socket refuses the connection, or the broker does);
-// otherwise the broker's *Error.
-func (c *Client) Call(ctx context.Context, method string, params, out any) error {
+// dial connects and sends one request.
+func (c *Client) dial(ctx context.Context, method string, params any) (net.Conn, Request, error) {
 	path := c.Path
 	if path == "" {
 		path = SocketPath
@@ -38,9 +34,60 @@ func (c *Client) Call(ctx context.Context, method string, params, out any) error
 	conn, err := d.DialContext(ctx, "unix", path)
 	switch {
 	case errors.Is(err, syscall.EACCES) || errors.Is(err, fs.ErrPermission):
-		return ErrNotMember
+		return nil, Request{}, ErrNotMember
 	case err != nil:
-		return fmt.Errorf("%w: %w", ErrUnavailable, err)
+		return nil, Request{}, fmt.Errorf("%w: %w", ErrUnavailable, err)
+	}
+	req := Request{ID: c.ids.Add(1), Method: method}
+	if params != nil {
+		if req.Params, err = json.Marshal(params); err != nil {
+			_ = conn.Close()
+			return nil, Request{}, err
+		}
+	}
+	// A refused caller gets its answer and the connection closed at once,
+	// possibly before the request is written: the answer is read anyway,
+	// and a write error only counts when there is none.
+	_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	if werr := json.NewEncoder(conn).Encode(req); werr != nil {
+		req.ID = -1 // no response can match
+	}
+	_ = conn.SetWriteDeadline(time.Time{})
+	return conn, req, nil
+}
+
+// readResponse reads one response line of at most MaxResponse bytes.
+func readResponse(r *bufio.Reader) (Response, error) {
+	var line []byte
+	for {
+		chunk, err := r.ReadSlice('\n')
+		if len(line)+len(chunk) > MaxResponse {
+			return Response{}, errors.New("broker: response too large")
+		}
+		line = append(line, chunk...)
+		if errors.Is(err, bufio.ErrBufferFull) {
+			continue
+		}
+		if err != nil {
+			return Response{}, fmt.Errorf("%w: %w", ErrUnavailable, err)
+		}
+		break
+	}
+	var resp Response
+	if err := json.Unmarshal(line, &resp); err != nil {
+		return Response{}, fmt.Errorf("broker: bad response: %w", err)
+	}
+	return resp, nil
+}
+
+// Call runs method with params and decodes its result into out (if not
+// nil). Errors: ErrUnavailable; ErrNotMember when the user is not in the
+// hearth group (the socket refuses the connection, or the broker does);
+// otherwise the broker's *Error.
+func (c *Client) Call(ctx context.Context, method string, params, out any) error {
+	conn, req, err := c.dial(ctx, method, params)
+	if err != nil {
+		return err
 	}
 	defer func() { _ = conn.Close() }()
 	if dl, ok := ctx.Deadline(); ok {
@@ -48,36 +95,54 @@ func (c *Client) Call(ctx context.Context, method string, params, out any) error
 	} else {
 		_ = conn.SetDeadline(time.Now().Add(4 * time.Minute)) // a polkit dialog can take a while
 	}
-	req := Request{ID: c.ids.Add(1), Method: method}
-	if params != nil {
-		if req.Params, err = json.Marshal(params); err != nil {
-			return err
-		}
-	}
-	// A refused caller gets its answer and the connection closed at once,
-	// possibly before the request is written: read the answer anyway.
-	werr := json.NewEncoder(conn).Encode(req)
-	line, err := bufio.NewReader(io.LimitReader(conn, MaxResponse)).ReadBytes('\n')
+	resp, err := readResponse(bufio.NewReaderSize(conn, 64<<10))
 	if err != nil {
-		if werr != nil {
-			err = werr
-		}
-		return fmt.Errorf("%w: %w", ErrUnavailable, err)
-	}
-	var resp Response
-	if err := json.Unmarshal(line, &resp); err != nil {
-		return fmt.Errorf("broker: bad response: %w", err)
+		return err
 	}
 	if resp.Error != nil {
 		return resp.Error
 	}
-	if werr != nil || resp.ID != req.ID {
+	if resp.ID != req.ID || resp.More {
 		return errors.New("broker: response to another request")
 	}
 	if out != nil {
 		return json.Unmarshal(resp.Result, out)
 	}
 	return nil
+}
+
+// Stream runs a streaming method, calling fn with each item until the
+// stream ends (nil), fails, fn returns an error, or ctx ends (ctx.Err()).
+func (c *Client) Stream(ctx context.Context, method string, params any, fn func(json.RawMessage) error) error {
+	conn, req, err := c.dial(ctx, method, params)
+	if err != nil {
+		return err
+	}
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stop()
+	defer func() { _ = conn.Close() }()
+	r := bufio.NewReaderSize(conn, 64<<10)
+	for {
+		resp, err := readResponse(r)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err != nil {
+			return err
+		}
+		if resp.Error != nil {
+			return resp.Error
+		}
+		if resp.ID != req.ID {
+			return errors.New("broker: response to another request")
+		}
+		if !resp.More {
+			return nil
+		}
+		if err := fn(resp.Result); err != nil {
+			return err
+		}
+	}
 }
 
 // Status is GET /api/v1/broker/status.

@@ -43,6 +43,10 @@ type Method struct {
 	// Handle runs the method. Params are the raw "params"; the method
 	// must validate them and reject anything unexpected.
 	Handle func(ctx context.Context, c Caller, params json.RawMessage) (any, error)
+	// Stream, instead of Handle, runs a streaming method: it calls send
+	// for each item until it returns or ctx ends (the caller closed the
+	// connection). Streams have no timeout.
+	Stream func(ctx context.Context, c Caller, params json.RawMessage, send func(any) error) error
 }
 
 // Authority decides privileged calls (polkit in production).
@@ -122,7 +126,7 @@ func NewServer(cfg Config) (*Server, error) {
 	}
 	s := &Server{cfg: cfg, methods: map[string]Method{}, slots: make(chan struct{}, cfg.MaxConns), last: time.Now()}
 	for _, m := range cfg.Methods {
-		if m.Name == "" || m.Handle == nil {
+		if m.Name == "" || (m.Handle == nil) == (m.Stream == nil) {
 			return nil, fmt.Errorf("broker: bad method %q", m.Name)
 		}
 		if _, dup := s.methods[m.Name]; dup {
@@ -252,36 +256,47 @@ func (s *Server) serveConn(ctx context.Context, conn net.Conn) {
 			}
 			return
 		}
-		resp := s.call(ctx, c, bytes.TrimSpace(line))
-		_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-		if err := enc.Encode(resp); err != nil {
+		send := func(resp Response) error {
+			_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			return enc.Encode(resp)
+		}
+		if !s.call(ctx, c, bytes.TrimSpace(line), conn, send) {
 			return
 		}
 	}
 }
 
-// call runs one request line.
-func (s *Server) call(ctx context.Context, c Caller, line []byte) Response {
+// call runs one request line and reports whether the connection takes
+// another request (not after a failed write or a stream).
+func (s *Server) call(ctx context.Context, c Caller, line []byte, conn net.Conn, send func(Response) error) bool {
 	var req Request
 	dec := json.NewDecoder(bytes.NewReader(line))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil || dec.More() {
 		s.audit(c, "(malformed)", line, "refused: not a request")
-		return Response{Error: Errorf(CodeParse, "not a JSON request")}
+		return send(Response{Error: Errorf(CodeParse, "not a JSON request")}) == nil
 	}
 	m, ok := s.methods[req.Method]
 	if !ok {
 		s.audit(c, req.Method, req.Params, "refused: unknown method")
-		return Response{ID: req.ID, Error: Errorf(CodeNoMethod, "unknown method %q", req.Method)}
+		return send(Response{ID: req.ID, Error: Errorf(CodeNoMethod, "unknown method %q", req.Method)}) == nil
+	}
+	fail := func(err error) bool {
+		var be *Error
+		if !errors.As(err, &be) {
+			be = Errorf(CodeFailed, "%v", err)
+		}
+		s.audit(c, req.Method, req.Params, "error: "+be.Message)
+		return send(Response{ID: req.ID, Error: be}) == nil
 	}
 	timeout := s.cfg.CallTimeout
 	if m.Timeout > 0 {
 		timeout = m.Timeout
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 	if m.Privileged {
-		ok, err := s.cfg.Authority.Check(ctx, c, m.Action)
+		actx, cancel := context.WithTimeout(ctx, timeout)
+		ok, err := s.cfg.Authority.Check(actx, c, m.Action)
+		cancel()
 		if err != nil || !ok {
 			// Fail closed: a polkit error is a refusal.
 			why := "refused: not authorized"
@@ -289,25 +304,66 @@ func (s *Server) call(ctx context.Context, c Caller, line []byte) Response {
 				why = "refused: authorization failed: " + err.Error()
 			}
 			s.audit(c, req.Method, req.Params, why)
-			return Response{ID: req.ID, Error: Errorf(CodeUnauthorized, "not authorized")}
+			return send(Response{ID: req.ID, Error: Errorf(CodeUnauthorized, "not authorized")}) == nil
 		}
 	}
-	res, err := m.Handle(ctx, c, req.Params)
+	if m.Stream != nil {
+		s.stream(ctx, c, req, m, conn, send)
+		return false
+	}
+	hctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	res, err := m.Handle(hctx, c, req.Params)
+	if err != nil {
+		return fail(err)
+	}
+	raw, err := json.Marshal(res)
+	if err != nil {
+		s.audit(c, req.Method, req.Params, "error: result")
+		return send(Response{ID: req.ID, Error: Errorf(CodeInternal, "result could not be encoded")}) == nil
+	}
+	s.audit(c, req.Method, req.Params, "ok")
+	return send(Response{ID: req.ID, Result: raw}) == nil
+}
+
+// stream runs a streaming method: each item is a response with More set,
+// then a last one without (an error, or no result). It ends when the
+// method does or the caller closes the connection, which is the only
+// thing a caller may do during a stream; the connection is closed after.
+func (s *Server) stream(ctx context.Context, c Caller, req Request, m Method, conn net.Conn, send func(Response) error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	_ = conn.SetReadDeadline(time.Time{})
+	go func() {
+		var b [1]byte
+		_, _ = conn.Read(b[:]) // EOF (or anything) ends the stream
+		cancel()
+	}()
+	s.audit(c, req.Method, req.Params, "ok: stream")
+	err := m.Stream(ctx, c, req.Params, func(v any) error {
+		raw, err := json.Marshal(v)
+		if err != nil {
+			return Errorf(CodeInternal, "item could not be encoded")
+		}
+		if err := send(Response{ID: req.ID, Result: raw, More: true}); err != nil {
+			cancel()
+			return err
+		}
+		return nil
+	})
+	if ctx.Err() != nil {
+		return // the caller left, or the broker is stopping
+	}
+	final := Response{ID: req.ID}
 	if err != nil {
 		var be *Error
 		if !errors.As(err, &be) {
 			be = Errorf(CodeFailed, "%v", err)
 		}
-		s.audit(c, req.Method, req.Params, "error: "+be.Message)
-		return Response{ID: req.ID, Error: be}
+		final.Error = be
+		s.audit(c, req.Method, req.Params, "error: stream: "+be.Message)
 	}
-	raw, err := json.Marshal(res)
-	if err != nil {
-		s.audit(c, req.Method, req.Params, "error: result")
-		return Response{ID: req.ID, Error: Errorf(CodeInternal, "result could not be encoded")}
-	}
-	s.audit(c, req.Method, req.Params, "ok")
-	return Response{ID: req.ID, Result: raw}
+	_ = send(final)
 }
 
 // peerCred reads SO_PEERCRED of a Unix socket connection.

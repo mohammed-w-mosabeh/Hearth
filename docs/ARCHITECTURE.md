@@ -79,7 +79,7 @@ hearth/
 
 - **Go**: Go 1.22+ `net/http` routing (`mux.HandleFunc("GET /api/v1/containers", ...)`). Context everywhere, timeouts on every external call (D-Bus 5 s, exec 10 s default). Errors wrapped with `%w`. `log/slog` JSON logs, never log secrets.
 - **os/exec only inside `internal/safeexec`**. `safeexec.Run(ctx, bin, args...)` resolves `bin` against an allowlist of absolute paths, validates each arg with a per-command validator, never uses a shell. A lint rule forbids importing `os/exec` elsewhere.
-- **API**: REST under `/api/v1`, JSON. Live data over one WebSocket `/api/v1/ws` with topic subscriptions (`metrics`, `procs`, `docker.events`, `alerts`, `logs:<id>`, `term:<id>`). Server sends only deltas.
+- **API**: REST under `/api/v1`, JSON. Live data over one WebSocket `/api/v1/ws` with topic subscriptions (`metrics`, `procs`, `docker` (snapshots + events), `alerts`, `logs:<id>`, `term:<id>`). Server sends only deltas.
 - **Actions endpoint**: `POST /api/v1/actions/{kind}/{action}` body `{ "target": "...", "params": {...}, "preview": true|false, "confirm": "<name>" }`. `preview: true` returns what would happen without doing it. Destructive actions without a prior preview token are rejected.
 - **Database**: migrations in `internal/store/migrations/NNNN_*.sql`, applied at start. Tables: `items_override`, `homepage_tiles`, `alert_rules`, `alert_events`, `metrics_1m`, `metrics_1h`, `audit_log`, `jobs`, `profiles`, `devices` (phone), `settings`.
 - **Sampling**: 1 s while a UI client subscribes to live metrics; 15 s otherwise (alerts only). Process sampling only while the processes page is open (or for alert rules that need it).
