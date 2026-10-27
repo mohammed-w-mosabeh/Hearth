@@ -183,6 +183,17 @@ check "path injection refused" call_says "id must be" docker.containers.inspect 
 check "engine only got allowlisted requests" not grep -vE '^(GET /v1.44/(version|containers/json\?all=true&size=false|containers/web/json)|POST /v1.44/containers/web/start)$' /run/fakedocker.log
 check "audit records the docker refusal" grep -q 'docker.containers.remove.*refused: not authorized' /var/lib/hearth/audit.jsonl
 echo "  engine log: $(tr '\n' ';' </run/fakedocker.log)"
+
+echo "== broker: pentest probes (test/pentest/brokerprobe, as a member)"
+: >/run/fakedocker.log
+probe_out=$(asuser /usr/local/bin/hearth-brokerprobe -privileged 2>&1) && probe_ok=1 || probe_ok=0
+grep -E '^(FAIL|INFO)' <<<"$probe_out" | sed 's/^/  /' || true
+echo "  $(grep -c '^PASS' <<<"$probe_out") probes refused as expected"
+check "no broker probe got through" test "$probe_ok" = 1
+# Probes name only hearth-pentest-nx; anything else reaching the engine
+# is an injection that got past validation.
+check "engine got nothing but lookups of the probe name" not grep -vE '^GET /v1.44/(containers|images|volumes|networks)/hearth-pentest-nx(/json|/logs\?[a-z=&0-9-]*)?$' /run/fakedocker.log
+echo "  engine log: $(tr '\n' ';' </run/fakedocker.log)"
 systemctl stop fakedocker
 rm -f /etc/polkit-1/rules.d/50-hearth-itest.rules
 

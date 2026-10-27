@@ -3,8 +3,10 @@
 # install the .deb, run the checks, purge. The container is --rm.
 set -euo pipefail
 
-deb=${1:?usage: run.sh path/to/hearth.deb path/to/fakedocker}
-fakedocker=${2:?usage: run.sh path/to/hearth.deb path/to/fakedocker}
+usage="usage: run.sh path/to/hearth.deb path/to/fakedocker path/to/brokerprobe"
+deb=${1:?$usage}
+fakedocker=${2:?$usage}
+probe=${3:?$usage}
 here=$(cd "$(dirname "$0")" && pwd)
 image=hearth-itest:debian13
 name=hearth-itest-$$
@@ -36,4 +38,5 @@ esac
 
 docker cp "$deb" "$name:/root/hearth.deb"
 docker cp "$fakedocker" "$name:/root/fakedocker"
+docker cp "$probe" "$name:/usr/local/bin/hearth-brokerprobe" # run by the test user
 docker exec "$name" hearth-itest-check /root/hearth.deb

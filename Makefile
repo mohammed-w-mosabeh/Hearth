@@ -111,7 +111,8 @@ check: lint test vuln ## lint + test + vuln
 .PHONY: itest
 itest: deb ## Install/uninstall the .deb in a Debian 13 container with systemd
 	CGO_ENABLED=0 $(GO) build $(GO_BUILD_FLAGS) -o dist/itest-fakedocker ./test/itest/fakedocker
-	./test/itest/run.sh $(DEB) dist/itest-fakedocker
+	CGO_ENABLED=0 $(GO) build $(GO_BUILD_FLAGS) -o dist/brokerprobe ./test/pentest/brokerprobe
+	./test/itest/run.sh $(DEB) dist/itest-fakedocker dist/brokerprobe
 
 .PHONY: bench
 bench: build ## Measure hearthd idle RSS/CPU over BENCH_SECONDS (default 60) against the budget
