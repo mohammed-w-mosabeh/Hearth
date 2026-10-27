@@ -37,6 +37,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/discovery"
 	"github.com/mohammed-w-mosabeh/hearth/internal/diskusage"
 	"github.com/mohammed-w-mosabeh/hearth/internal/docker"
+	"github.com/mohammed-w-mosabeh/hearth/internal/homepage"
 	"github.com/mohammed-w-mosabeh/hearth/internal/launch"
 	"github.com/mohammed-w-mosabeh/hearth/internal/power"
 	"github.com/mohammed-w-mosabeh/hearth/internal/procctl"
@@ -276,6 +277,14 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	unitsDone := make(chan struct{})
 	go func() { units.Run(unitsCtx); close(unitsDone) }()
 	defer func() { stopUnits(); <-unitsDone }()
+
+	// Homepage tiles; their URLs are checked only while Home is open.
+	checker := homepage.NewChecker(db, srv.Hub, log)
+	(&homepage.API{DB: db, Checker: checker}).Register(srv.API)
+	checkCtx, stopCheck := context.WithCancel(ctx)
+	checkDone := make(chan struct{})
+	go func() { checker.Run(checkCtx); close(checkDone) }()
+	defer func() { stopCheck(); <-checkDone }()
 
 	if serverHook != nil {
 		serverHook(srv) // every route is registered by now

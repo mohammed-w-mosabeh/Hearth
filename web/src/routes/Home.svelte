@@ -1,4 +1,5 @@
 <script lang="ts">
+  import HomeTiles from '../components/HomeTiles.svelte';
   import CpuCard from '../components/cards/CpuCard.svelte';
   import DiskCard from '../components/cards/DiskCard.svelte';
   import GpuCard from '../components/cards/GpuCard.svelte';
@@ -102,6 +103,8 @@
     </button>
   {/if}
 </header>
+
+<HomeTiles {live} />
 
 {#if saveFailed}
   <p class="error" role="status">{t('home.saveFailed')}</p>
