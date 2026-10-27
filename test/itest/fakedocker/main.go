@@ -29,6 +29,11 @@ var answers = map[string]struct {
 	"GET /v1.44/containers/web/json": {200, `{"Id":"` + id + `","Name":"/web",
 		"Config":{"Tty":false,"Env":["PATH=/bin","DB_PASSWORD=hunter2"]},
 		"HostConfig":{"Privileged":true,"Binds":["/etc:/host-etc"]}}`},
+	// Running and privileged with / mounted: a shell here is host root
+	// (SECURITY S12a), so exec must be refused before any exec request.
+	"GET /v1.44/containers/risky/json": {200, `{"Id":"` + id + `","Name":"/risky",
+		"State":{"Running":true,"Paused":false},
+		"HostConfig":{"Privileged":true,"Binds":["/:/host"]}}`},
 	"POST /v1.44/containers/web/start": {204, ""},
 	"DELETE /v1.44/containers/web":     {204, ""},
 }

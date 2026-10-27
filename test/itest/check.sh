@@ -148,6 +148,16 @@ check "privileged call refused without polkit authorization" call_says "not auth
 bpid=$(pgrep -x hearth-broker || true)
 check "broker runs as root" test "$(stat -c %u /proc/"$bpid" 2>/dev/null)" = 0
 check "broker has no capabilities" grep -Eq '^CapEff:\s+0+$' /proc/"$bpid"/status
+check "broker NoNewPrivs=1" grep -Eq '^NoNewPrivs:\s+1$' /proc/"$bpid"/status
+check "broker seccomp filter active" grep -Eq '^Seccomp:\s+2$' /proc/"$bpid"/status
+# Between calls the broker holds sockets only: the audit log and the
+# Docker socket are opened per call. (The Go runtime keeps its cgroup's
+# cpu.max open, read-only, to size GOMAXPROCS.)
+echo "  broker fds: $(for f in /proc/"$bpid"/fd/*; do readlink "$f"; done | tr "\n" " ")"
+check "broker holds no files between calls" not grep -vE '^(socket|anon_inode):|^/dev/null$|^/sys/fs/cgroup/.*/cpu\.max$' <<<"$(for f in /proc/"$bpid"/fd/*; do readlink "$f"; done)"
+policy=/usr/share/polkit-1/actions/org.hearth.policy
+check "no polkit action is granted without a password" not grep -Eq '<allow_(any|inactive|active)>yes<' "$policy"
+check "exec asks every time (auth_admin, no keep)" grep -Pzq '(?s)org\.hearth\.docker\.exec">.*?<allow_active>auth_admin</allow_active>' "$policy"
 check "broker has no network" not grep -q AF_INET <<<"$(systemctl show -p RestrictAddressFamilies --value hearth-broker.service)"
 check "audit log root 0600" test "$(stat -c '%U %a' /var/lib/hearth/audit.jsonl)" = "root 600"
 check "audit records the refusals" grep -q 'refused: unknown method' /var/lib/hearth/audit.jsonl
@@ -192,12 +202,33 @@ echo "  $(grep -c '^PASS' <<<"$probe_out") probes refused as expected"
 check "no broker probe got through" test "$probe_ok" = 1
 # Probes name only hearth-pentest-nx; anything else reaching the engine
 # is an injection that got past validation.
+check "audit holds params hashes, never raw params" not grep -Eq 'hearth-pentest-nx|\.\./|detachKeys|LD_PRELOAD' /var/lib/hearth/audit.jsonl
+check "audit recorded the privileged refusals" grep -q 'docker.containers.exec.*error: bad params' /var/lib/hearth/audit.jsonl
+check "the test user cannot read the audit log" not asuser cat /var/lib/hearth/audit.jsonl
 check "engine got nothing but lookups of the probe name" not grep -vE '^GET /v1.44/(containers|images|volumes|networks)/hearth-pentest-nx(/json|/logs\?[a-z=&0-9-]*)?$' /run/fakedocker.log
 echo "  engine log: $(tr '\n' ';' </run/fakedocker.log)"
+
+echo "== broker: exec into a risky container (S12a)"
+# Authorize exec for the test user, so the refusal tested is the broker's
+# own risk check and not polkit's.
+cat >/etc/polkit-1/rules.d/51-hearth-itest-exec.rules <<'RULES'
+polkit.addRule(function(action, subject) {
+	if (action.id == "org.hearth.docker.exec" && subject.user == "tester") {
+		return polkit.Result.YES;
+	}
+});
+RULES
+sleep 1
+: >/run/fakedocker.log
+check "exec refused in a privileged container with / mounted" call_says "would reach the host (privileged" docker.containers.exec '{"id":"risky"}'
+check "engine never got an exec request" not grep -q '/exec' /run/fakedocker.log
+rm -f /etc/polkit-1/rules.d/51-hearth-itest-exec.rules
 systemctl stop fakedocker
 rm -f /etc/polkit-1/rules.d/50-hearth-itest.rules
 
-systemd-analyze security hearth-broker.service --no-pager 2>/dev/null | tail -1 | sed 's/^/  /' || true
+exposure=$(systemd-analyze security hearth-broker.service --no-pager 2>/dev/null | tail -1 || true)
+echo "  $exposure"
+check "broker exposure level at most 2.0" awk -v s="$exposure" 'BEGIN { if (match(s, /: [0-9.]+/)) exit !(substr(s, RSTART + 2, RLENGTH - 2) + 0 <= 2.0); exit 1 }'
 check "broker exits after 60 s idle" wait_until 80 not systemctl is-active hearth-broker.service
 check "socket still listening after it exits" systemctl is-active hearth-broker.socket
 check "socket starts it again" call_says "broker.ping" broker.ping
