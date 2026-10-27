@@ -300,3 +300,54 @@ func FuzzJournalArgs(f *testing.F) {
 		}
 	})
 }
+
+func TestImageRef(t *testing.T) {
+	runCases(t, ImageRef, []vcase{
+		{"nginx", true}, {"nginx:1.27-alpine", true}, {"ghcr.io/photos-app/photos-server:v3", true},
+		{"localhost:5000/app:dev", true}, {"sha256:" + strings.Repeat("a", 64), true},
+		{"", false}, {"-q", false}, {"--input=/etc/shadow", false}, {"Nginx", false}, {"nginx:", false},
+		{"a/../b", false}, {"nginx latest", false}, {"nginx\n", false}, {"nginx@sha256:abc", false},
+		{"/abs", false}, {"a:b:c", false},
+	})
+}
+
+func TestTrivyCacheDir(t *testing.T) {
+	runCases(t, TrivyCacheDir, []vcase{
+		{"--cache-dir=/home/me/.local/share/hearth/trivy", true},
+		{"--cache-dir=relative/hearth/trivy", false}, {"--cache-dir=/home/me/../x/hearth/trivy", false},
+		{"--cache-dir=/tmp", false}, {"/home/me/.local/share/hearth/trivy", false}, {"--cache-dir=", false},
+	})
+}
+
+func TestTrivyArgs(t *testing.T) {
+	ok := []string{"image", "--quiet", "--scanners=vuln", "--timeout=9m", "--format=template",
+		"--template=" + TrivyTemplate, "--cache-dir=/h/.local/share/hearth/trivy", "nginx:latest"}
+	if err := allowlist["trivy-image"].Validate(ok); err != nil {
+		t.Fatal(err)
+	}
+	for i, bad := range [][]string{
+		append(append([]string{}, ok[:7]...), "--server=http://x"),
+		append([]string{"image", "--quiet", "--scanners=vuln,secret"}, ok[3:]...),
+		append(append([]string{}, ok...), "extra"),
+		append(append([]string{}, ok[:5]...), "--template=@/etc/passwd", ok[6], ok[7]),
+	} {
+		if allowlist["trivy-image"].Validate(bad) == nil {
+			t.Errorf("case %d accepted", i)
+		}
+	}
+}
+
+func FuzzImageRef(f *testing.F) {
+	for _, s := range []string{"nginx:1", "ghcr.io/a/b:v", "-q", "a/../b", "x\x00"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		if ImageRef(s) != nil {
+			return
+		}
+		checkAccepted(t, s)
+		if strings.ContainsAny(s, " =@\\") || strings.Contains(s, "..") {
+			t.Fatalf("accepted %q", s)
+		}
+	})
+}

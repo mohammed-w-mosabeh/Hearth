@@ -36,7 +36,7 @@ const (
 	]`
 	dockerImages = `[
 	 {"Id":"sha256:old","RepoTags":["<none>:<none>"],"RepoDigests":["<none>@<none>"],"Created":1,"Size":5},
-	 {"Id":"sha256:ngx","RepoTags":["nginx:latest"],"RepoDigests":["nginx@sha256:abc"],"Created":100,"Size":190},
+	 {"Id":"sha256:ngx","RepoTags":["nginx:latest"],"RepoDigests":["nginx@sha256:abc"],"Created":100,"Size":190,"SharedSize":60},
 	 {"Id":"sha256:pg","RepoTags":["postgres:16"],"RepoDigests":null,"Created":50,"Size":400}
 	]`
 	dockerNetworks = `[
@@ -218,6 +218,9 @@ func TestDockerSnapshot(t *testing.T) {
 	}
 	if old := s.Images[2]; !old.Dangling || len(old.Tags) != 0 || len(old.Digests) != 0 || old.Containers == nil {
 		t.Fatalf("dangling %+v", old)
+	}
+	if ngx := s.Images[0]; ngx.SharedSize != 60 {
+		t.Fatalf("shared size %+v", ngx)
 	}
 	if pg := s.Images[1]; !slices.Equal(pg.Containers, []string{"c2"}) || pg.Digests == nil {
 		t.Fatalf("pg %+v", pg)

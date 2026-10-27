@@ -4,6 +4,13 @@ import {
   available,
   columns,
   envPairs,
+  imageTitle,
+  imageView,
+  layerCommand,
+  shortID,
+  uniqueSize,
+  vulnURL,
+  type Image,
   execURL,
   exitCode,
   filterLogs,
@@ -147,5 +154,44 @@ describe('exec', () => {
   it('builds the shell URL', () => {
     expect(execURL('http://127.0.0.1:7171/#/docker', 'web', 80, 24)).toBe('ws://127.0.0.1:7171/api/v1/docker/exec/web?cols=80&rows=24');
     expect(execURL('https://h:1/', 'a/b', 1, 2)).toBe('wss://h:1/api/v1/docker/exec/a%2Fb?cols=1&rows=2');
+  });
+});
+
+describe('images', () => {
+  const im = (id: string, tags: string[], extra: Partial<Image> = {}): Image => ({
+    id: `sha256:${id.padEnd(64, '0')}`, tags, digests: [], created: 0, size: 100, shared_size: -1,
+    dangling: tags.length === 0, containers: [], ...extra,
+  });
+  it('names and sizes', () => {
+    expect(imageTitle(im('abc', ['nginx:latest']))).toBe('nginx:latest');
+    expect(imageTitle(im('abcdef123456789', []))).toBe('abcdef123456');
+    expect(shortID('sha256:0123456789abcdef')).toBe('0123456789ab');
+    expect(uniqueSize(im('a', [], { shared_size: 30 }))).toBe(70);
+    expect(uniqueSize(im('a', []))).toBeNull();
+  });
+  it('filters and sorts', () => {
+    const list = [
+      im('1', ['redis:7'], { containers: ['c'], size: 50, created: 3 }),
+      im('2', ['nginx:latest'], { size: 300, created: 1 }),
+      im('3', [], { size: 10, created: 2 }),
+    ];
+    const t = (l: Image[]) => l.map(imageTitle);
+    expect(t(imageView(list, 'all', '', 'name', false))).toEqual(['300000000000', 'nginx:latest', 'redis:7']);
+    expect(t(imageView(list, 'used', '', 'name', false))).toEqual(['redis:7']);
+    expect(t(imageView(list, 'unused', '', 'size', true))).toEqual(['nginx:latest', '300000000000']);
+    expect(t(imageView(list, 'dangling', '', 'name', false))).toEqual(['300000000000']);
+    expect(t(imageView(list, 'all', 'NGI', 'name', false))).toEqual(['nginx:latest']);
+    expect(t(imageView(list, 'all', '', 'created', true))).toEqual(['redis:7', '300000000000', 'nginx:latest']);
+  });
+  it('cleans layer commands', () => {
+    expect(layerCommand('/bin/sh -c #(nop)  CMD ["nginx" "-g"]')).toBe('CMD ["nginx" "-g"]');
+    expect(layerCommand('/bin/sh -c apt-get update &&   apt-get install x')).toBe('RUN apt-get update && apt-get install x');
+    expect(layerCommand('RUN /bin/sh -c echo hi # buildkit')).toBe('RUN /bin/sh -c echo hi # buildkit');
+  });
+  it('links known vulnerability IDs only', () => {
+    expect(vulnURL('CVE-2024-12345')).toBe('https://nvd.nist.gov/vuln/detail/CVE-2024-12345');
+    expect(vulnURL('GHSA-jfh8-c2jp-5v3q')).toBe('https://github.com/advisories/GHSA-jfh8-c2jp-5v3q');
+    expect(vulnURL('javascript:alert(1)')).toBeNull();
+    expect(vulnURL('DLA-1234-1')).toBeNull();
   });
 });

@@ -2,6 +2,7 @@
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import ContainerDetail from '../components/ContainerDetail.svelte';
   import EmptyState from '../components/EmptyState.svelte';
+  import ImagesTable from '../components/ImagesTable.svelte';
   import { preview, reasonKey, run, type Plan, type Result } from '../lib/actions';
   import { api, ApiError } from '../lib/api';
   import {
@@ -58,6 +59,13 @@
       toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
     }
   }
+
+  type Section = 'containers' | 'images';
+  let section = $state<Section>('containers');
+  const sections: { id: Section; label: MessageKey }[] = [
+    { id: 'containers', label: 'docker.section.containers' },
+    { id: 'images', label: 'docker.section.images' },
+  ];
 
   let search = $state('');
   let stateF = $state<StateFilter>('all');
@@ -231,6 +239,21 @@
     <p>{snap ? t('docker.version', { version: snap.version ?? '?', n: containers.length }) : t('docker.intro')}</p>
   </header>
 
+  <div class="sections" role="tablist" aria-label={t('docker.sections')}>
+    {#each sections as sec (sec.id)}
+      <button type="button" role="tab" aria-selected={section === sec.id} class:on={section === sec.id} onclick={() => (section = sec.id)}>
+        {t(sec.label)}{#if snap}<span class="count">{sec.id === 'images' ? snap.images.length : containers.length}</span>{/if}
+      </button>
+    {/each}
+  </div>
+
+  {#if section === 'images'}
+    {#if snap === null}
+      <p class="note">{t('docker.loading')}</p>
+    {:else}
+      <ImagesTable images={snap.images} {containers} />
+    {/if}
+  {:else}
   {#if problems > 0}
     <div class="banner" role="status">
       <span>{t('docker.problemBanner', { n: problems })}</span>
@@ -320,6 +343,7 @@
     </div>
     <p class="foot">{t('docker.footnote')}</p>
   {/if}
+  {/if}
 {/if}
 
 <!-- Not a role="menu": a group of buttons in a popover (no arrow-key contract). -->
@@ -356,6 +380,31 @@
   header p {
     color: var(--text-muted);
     margin: var(--space-1) 0 0;
+  }
+  .sections {
+    display: flex;
+    gap: var(--space-1);
+    border-bottom: 1px solid var(--border);
+    margin-bottom: var(--space-4);
+  }
+  .sections button {
+    font: inherit;
+    font-size: 14px;
+    color: var(--text-muted);
+    background: none;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    padding: var(--space-2) var(--space-3);
+    cursor: pointer;
+  }
+  .sections button.on {
+    color: var(--text);
+    border-bottom-color: var(--accent);
+  }
+  .count {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-inline-start: var(--space-2);
   }
   .banner {
     display: flex;

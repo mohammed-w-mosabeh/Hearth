@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -224,6 +225,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	})
 	brokerClient := &broker.Client{}
 	docker.Register(reg, brokerClient)
+	docker.RegisterImages(reg, brokerClient)
 	srv.API.HandleFunc("POST /api/v1/actions/{kind}/{action}", reg.Handle)
 	srv.API.HandleFunc("GET /api/v1/broker/status", brokerClient.HandleStatus)
 	srv.API.HandleFunc("GET /api/v1/services/journal", services.HandleJournal(safeexec.Run, services.CanReadSystemJournal))
@@ -242,6 +244,11 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	defer func() { stopDocker(); dockerWG.Wait() }()
 	srv.API.HandleFunc("GET /api/v1/docker", dockerObjs.HandleSnapshot)
 	srv.API.HandleFunc("GET /api/v1/docker/containers/{id}", docker.HandleInspect(brokerClient))
+	images := &docker.Images{B: brokerClient, Registry: docker.NewRegistry(), Run: safeexec.Run, CacheDir: filepath.Join(paths.DataDir, "trivy")}
+	srv.API.HandleFunc("GET /api/v1/docker/images/{id}", images.HandleDetail)
+	srv.API.HandleFunc("GET /api/v1/docker/images/{id}/updates", images.HandleUpdates)
+	srv.API.HandleFunc("POST /api/v1/docker/images/{id}/scan", images.HandleScan)
+	srv.API.HandleFunc("GET /api/v1/docker/trivy", images.HandleTrivy)
 	srv.API.HandleFunc("GET /api/v1/docker/exec/{id}", docker.HandleExec(docker.ExecConfig{
 		Open: func(ctx context.Context, method string, params any) (docker.ExecSession, error) {
 			return brokerClient.Open(ctx, method, params)

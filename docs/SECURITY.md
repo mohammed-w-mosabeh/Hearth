@@ -40,6 +40,7 @@ Hearth is effectively a root-capable control panel. Assume any web page the user
 - S19. Mask env values whose key matches `(?i)(pass|pwd|token|secret|key|auth|cred)`; reveal only on explicit click, never in logs, reports or exports.
 - S20. DB, config and token files mode `0600`, dirs `0700`.
 - S21. Health checks (Homepage): only user-entered URLs, `GET/HEAD`, 5 s timeout, max 1 redirect to the same host, no credentials unless the user configured them, response body discarded after 64 KiB.
+- S21a. Image update check (Docker images): only when the user asks; HTTPS only; anonymous pull tokens from the registry's Bearer challenge (HTTPS realm only), never the user's Docker credentials; manifest HEAD/GET only, 10 s timeout, redirects only within the host, bodies bounded (manifest 4 MiB, token 64 KiB).
 
 ### Phone link (phase 5)
 - S22. Off by default. When enabled: TLS with a self-signed cert generated on first enable, pinned by paired devices; pairing via one-time 6-digit code shown on the desktop + fingerprint confirmation; per-device keys revocable; phone sessions have no terminal and no destructive actions unless the user grants them per device.

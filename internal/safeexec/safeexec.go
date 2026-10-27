@@ -60,16 +60,30 @@ func Run(ctx context.Context, name string, args ...string) (Result, error) {
 	return run(ctx, spec, args)
 }
 
-func run(ctx context.Context, spec Spec, args []string) (Result, error) {
+// Check reports whether Run would accept name with args, without running
+// anything.
+func Check(name string, args ...string) error {
+	spec, ok := allowlist[name]
+	if !ok {
+		return fmt.Errorf("%w: %q", ErrUnknownCommand, name)
+	}
+	return check(spec, args)
+}
+
+func check(spec Spec, args []string) error {
 	for _, a := range args {
 		if err := baseCheck(a); err != nil {
-			return Result{}, err
+			return err
 		}
 	}
 	if spec.Validate == nil {
-		return Result{}, fmt.Errorf("%w: spec has no validator", ErrInvalidArg)
+		return fmt.Errorf("%w: spec has no validator", ErrInvalidArg)
 	}
-	if err := spec.Validate(args); err != nil {
+	return spec.Validate(args)
+}
+
+func run(ctx context.Context, spec Spec, args []string) (Result, error) {
+	if err := check(spec, args); err != nil {
 		return Result{}, err
 	}
 	bin, err := resolve(spec.Paths)

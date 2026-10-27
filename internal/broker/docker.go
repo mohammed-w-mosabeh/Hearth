@@ -229,7 +229,7 @@ func DockerMethods(d *Docker) []Method {
 		read("docker.containers.inspect", d.containerInspect),
 		read("docker.containers.stats", d.containerStats),
 		read("docker.containers.logs", d.containerLogs),
-		read("docker.images.list", plain("/images/json")),
+		read("docker.images.list", d.imagesList),
 		read("docker.images.inspect", d.imageInspect),
 		read("docker.images.history", d.imageHistory),
 		read("docker.networks.list", plain("/networks")),
@@ -508,6 +508,20 @@ func imagePath(p json.RawMessage) (string, error) {
 		return "", badParam("id must be an image ID or reference")
 	}
 	return "/images/" + v.ID, nil
+}
+
+func (d *Docker) imagesList(ctx context.Context, p json.RawMessage) (any, error) {
+	var v struct {
+		SharedSize bool `json:"shared_size"` // fill SharedSize (layers other images use too)
+	}
+	if err := decodeParams(p, &v); err != nil {
+		return nil, err
+	}
+	var q url.Values
+	if v.SharedSize {
+		q = url.Values{"shared-size": {"true"}}
+	}
+	return d.get(ctx, "/images/json", q)
 }
 
 func (d *Docker) imageInspect(ctx context.Context, p json.RawMessage) (any, error) {

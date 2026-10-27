@@ -81,6 +81,7 @@ type Image struct {
 	Digests    []string `json:"digests"`
 	Created    int64    `json:"created"` // Unix s
 	Size       int64    `json:"size"`
+	SharedSize int64    `json:"shared_size"` // with other images; -1 if unknown
 	Dangling   bool     `json:"dangling"`
 	Containers []string `json:"containers"` // IDs of containers using it
 }
@@ -334,6 +335,7 @@ type (
 		RepoDigests []string
 		Created     int64
 		Size        int64
+		SharedSize  int64
 	}
 	rawNetwork struct {
 		ID       string `json:"Id"`
@@ -375,7 +377,7 @@ func (w *DockerWatcher) Snapshot(ctx context.Context) DockerSnapshot {
 	}
 	call("docker.version", nil, &ver)
 	call("docker.containers.list", map[string]bool{"all": true}, &cs)
-	call("docker.images.list", nil, &is)
+	call("docker.images.list", map[string]bool{"shared_size": true}, &is)
 	call("docker.networks.list", nil, &ns)
 	call("docker.volumes.list", nil, &vs)
 	s.Time = time.Now().UnixMilli()
@@ -458,7 +460,7 @@ func images(raw []rawImage, cs []Container) []Image {
 	}
 	out := make([]Image, 0, len(raw))
 	for _, r := range raw {
-		im := Image{ID: r.ID, Tags: nonNil(r.RepoTags), Digests: nonNil(r.RepoDigests), Created: r.Created, Size: r.Size, Containers: nonNil(users[r.ID])}
+		im := Image{ID: r.ID, Tags: nonNil(r.RepoTags), Digests: nonNil(r.RepoDigests), Created: r.Created, Size: r.Size, SharedSize: r.SharedSize, Containers: nonNil(users[r.ID])}
 		// Docker lists an untagged image as "<none>:<none>" (or not at all).
 		im.Tags = without(im.Tags, "<none>:<none>")
 		im.Digests = without(im.Digests, "<none>@<none>")

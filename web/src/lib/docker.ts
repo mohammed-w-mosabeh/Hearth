@@ -42,6 +42,7 @@ export interface Image {
   digests: string[];
   created: number;
   size: number;
+  shared_size: number; // -1 when unknown
   dangling: boolean;
   containers: string[];
 }
@@ -323,4 +324,95 @@ export function execURL(base: string, id: string, cols: number, rows: number): s
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   url.search = new URLSearchParams({ cols: String(cols), rows: String(rows) }).toString();
   return url.toString();
+}
+
+// --- images ---
+
+/** The name an image is shown by: its first tag, else its short ID. */
+export function imageTitle(im: Image): string {
+  return im.tags[0] ?? shortID(im.id);
+}
+
+/** "sha256:0123456789ab…" -> "0123456789ab". */
+export function shortID(id: string): string {
+  return id.replace(/^sha256:/, '').slice(0, 12);
+}
+
+/** Bytes only this image uses (its size minus layers shared with others), or null. */
+export function uniqueSize(im: Image): number | null {
+  return im.shared_size >= 0 ? Math.max(0, im.size - im.shared_size) : null;
+}
+
+export type ImageFilter = 'all' | 'used' | 'unused' | 'dangling';
+export type ImageSort = 'name' | 'size' | 'created';
+
+/** Images matching the filter and search, sorted; ties by ID. */
+export function imageView(list: Image[], filter: ImageFilter, search: string, sort: ImageSort, desc: boolean): Image[] {
+  const words = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const out = list.filter((im) => {
+    if (filter === 'used' && im.containers.length === 0) return false;
+    if (filter === 'unused' && im.containers.length > 0) return false;
+    if (filter === 'dangling' && !im.dangling) return false;
+    const hay = `${im.tags.join(' ')} ${shortID(im.id)}`.toLowerCase();
+    return words.every((w) => hay.includes(w));
+  });
+  const dir = desc ? -1 : 1;
+  const value = (im: Image): number | string =>
+    sort === 'size' ? im.size : sort === 'created' ? im.created : imageTitle(im).toLowerCase();
+  return out.sort((a, b) => {
+    const va = value(a);
+    const vb = value(b);
+    if (va < vb) return -dir;
+    if (va > vb) return dir;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
+}
+
+/** One layer of an image's history (Docker's /images/{id}/history). */
+export interface Layer {
+  Id: string;
+  Created: number;
+  CreatedBy: string;
+  Size: number;
+  Comment?: string;
+}
+
+/** A layer's command without the legacy shell wrapper and #(nop) marker. */
+export function layerCommand(createdBy: string): string {
+  return createdBy
+    .replace(/^\/bin\/sh -c #\(nop\)\s*/, '')
+    .replace(/^\/bin\/sh -c /, 'RUN ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export interface TagUpdate {
+  tag: string;
+  status: 'current' | 'update' | 'local' | 'unknown';
+  local?: string;
+  remote?: string;
+  error?: string;
+}
+
+export interface Vuln {
+  id: string;
+  package: string;
+  installed: string;
+  fixed?: string;
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'UNKNOWN';
+}
+
+export interface Scan {
+  counts: Partial<Record<Vuln['severity'], number>>;
+  vulns: Vuln[];
+  truncated: boolean;
+}
+
+export const SEVERITIES: Vuln['severity'][] = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN'];
+
+/** A link to a vulnerability's public record, for known ID schemes; else null. */
+export function vulnURL(id: string): string | null {
+  if (/^CVE-\d{4}-\d{4,}$/.test(id)) return `https://nvd.nist.gov/vuln/detail/${id}`;
+  if (/^GHSA(-[23456789cfghjmpqrvwx]{4}){3}$/.test(id)) return `https://github.com/advisories/${id}`;
+  return null;
 }

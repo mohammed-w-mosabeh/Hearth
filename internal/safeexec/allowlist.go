@@ -2,6 +2,7 @@ package safeexec
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -38,6 +39,24 @@ var allowlist = map[string]Spec{
 		),
 		Timeout: 2 * time.Second,
 	},
+	// trivy scanning one image for known vulnerabilities (optional, if
+	// installed; Docker images page). One fixed shape: vulnerabilities
+	// only, quiet, TrivyTemplate output, the cache under Hearth's data
+	// directory (hearthd's home is read-only), then the image.
+	"trivy-image": {
+		Paths: []string{"/usr/bin/trivy", "/usr/local/bin/trivy"},
+		Validate: exactly(
+			Literal("image"), Literal("--quiet"), Literal("--scanners=vuln"), Literal("--timeout=9m"),
+			Literal("--format=template"), Literal("--template="+TrivyTemplate), TrivyCacheDir, ImageRef,
+		),
+		Env:     []string{"HOME", "XDG_RUNTIME_DIR"},
+		Timeout: 10 * time.Minute,
+	},
+	"trivy-version": {
+		Paths:    []string{"/usr/bin/trivy", "/usr/local/bin/trivy"},
+		Validate: exactly(Literal("--version")),
+		Timeout:  5 * time.Second,
+	},
 	// journalctl reading one unit's recent entries as JSON (services
 	// journal viewer). Only the shape journalArgs accepts.
 	"journalctl-unit": {
@@ -45,6 +64,33 @@ var allowlist = map[string]Spec{
 		Validate: journalArgs,
 		Timeout:  5 * time.Second,
 	},
+}
+
+// TrivyTemplate prints one vulnerability per line: ID, package,
+// installed version, fixed version and severity, tab-separated. The tabs
+// and newlines are template escapes: arguments carry no control characters.
+const TrivyTemplate = `{{range .}}{{range .Vulnerabilities}}{{.VulnerabilityID}}{{"\t"}}{{.PkgName}}{{"\t"}}{{.InstalledVersion}}{{"\t"}}{{.FixedVersion}}{{"\t"}}{{.Severity}}{{"\n"}}{{end}}{{end}}`
+
+var imageRefRe = regexp.MustCompile(`^(?:sha256:[a-f0-9]{64}|[a-z0-9][a-z0-9._-]*(?::[0-9]{1,5})?(?:/[a-z0-9][a-z0-9._-]*)*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?)$`)
+
+// ImageRef validates an image ID or "name[:tag]" reference.
+func ImageRef(s string) error {
+	if err := baseCheck(s); err != nil {
+		return err
+	}
+	if len(s) > 255 || !imageRefRe.MatchString(s) || strings.Contains(s, "..") {
+		return invalid("%q is not an image reference", s)
+	}
+	return nil
+}
+
+// TrivyCacheDir validates --cache-dir=<abs>/hearth/trivy.
+func TrivyCacheDir(s string) error {
+	dir, ok := strings.CutPrefix(s, "--cache-dir=")
+	if !ok || !filepath.IsAbs(dir) || filepath.Clean(dir) != dir || !strings.HasSuffix(dir, "/hearth/trivy") || strings.ContainsAny(dir, "\x00\n") {
+		return invalid("%q is not Hearth's trivy cache", s)
+	}
+	return nil
 }
 
 // JournalFixedArgs start every journalctl-unit command line.

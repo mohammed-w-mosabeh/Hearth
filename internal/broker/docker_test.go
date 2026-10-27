@@ -788,3 +788,16 @@ func TestDockerExecLimit(t *testing.T) {
 		_ = o.Close()
 	}
 }
+
+func TestDockerImagesListSharedSize(t *testing.T) {
+	h, f, _ := dockerHarness(t, false, map[string]answer{"GET /images/json": {body: `[]`}})
+	if err := call(t, h, "docker.images.list", `{"shared_size":true}`, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := call(t, h, "docker.images.list", `{"all":true}`, nil); code(err) != CodeBadParams {
+		t.Fatalf("unknown param: %v", err)
+	}
+	if r := f.requests(); len(r) != 1 || r[0] != "GET /images/json?shared-size=true" {
+		t.Fatalf("%v", r)
+	}
+}
