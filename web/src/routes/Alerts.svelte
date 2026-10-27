@@ -124,6 +124,7 @@
   const eventText = (e: AlertEvent) => {
     const m = metricOf(e.metric);
     if (e.metric === 'unit.failed') return t('alerts.event.unit', { unit: e.instance });
+    if (e.metric === 'container.exited') return t('alerts.event.container', { name: e.instance });
     const where = e.instance ? ` (${e.instance})` : '';
     return `${metricLabel(m, e.metric)}${where}: ${valueText(e.value, m)}, ${t('alerts.event.peak', { v: valueText(e.peak, m) })}`;
   };

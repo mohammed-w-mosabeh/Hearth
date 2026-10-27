@@ -1,6 +1,7 @@
 <script lang="ts">
   import HomeTiles from '../components/HomeTiles.svelte';
   import CpuCard from '../components/cards/CpuCard.svelte';
+  import DockerCard from '../components/cards/DockerCard.svelte';
   import DiskCard from '../components/cards/DiskCard.svelte';
   import GpuCard from '../components/cards/GpuCard.svelte';
   import MemCard from '../components/cards/MemCard.svelte';
@@ -8,6 +9,7 @@
   import PowerCard from '../components/cards/PowerCard.svelte';
   import TempsCard from '../components/cards/TempsCard.svelte';
   import { api } from '../lib/api';
+  import type { UsageMsg } from '../lib/docker';
   import { t } from '../lib/i18n';
   import { arrange, moveTo, sanitize, setHidden, step, type Layout } from '../lib/layout';
   import { LiveMetrics } from '../lib/metrics.svelte';
@@ -17,13 +19,13 @@
   let { live }: { live: Live } = $props();
 
   type Card =
-    | { id: string; kind: 'cpu' | 'mem' | 'temps' | 'net' | 'power'; title: string }
+    | { id: string; kind: 'cpu' | 'mem' | 'temps' | 'net' | 'power' | 'docker'; title: string }
     | { id: string; kind: 'disk'; title: string; disk: Disk }
     | { id: string; kind: 'gpu'; title: string; gpu: GPU };
 
   // Cards in their natural order; ids are stable across restarts (mount
   // point, PCI address) so the saved layout keeps applying.
-  function cardsFor(s: Sample): Card[] {
+  function cardsFor(s: Sample, docker: boolean): Card[] {
     const cards: Card[] = [
       { id: 'cpu', kind: 'cpu', title: t('card.cpu') },
       { id: 'mem', kind: 'mem', title: t('card.mem') },
@@ -41,8 +43,22 @@
       cards.push({ id: 'power', kind: 'power', title: (p.batteries ?? []).length > 0 ? t('card.battery') : t('card.power') });
     }
     cards.push({ id: 'net', kind: 'net', title: t('card.net') });
+    if (docker) cards.push({ id: 'docker', kind: 'docker', title: t('card.docker') });
     return cards;
   }
+
+  // Containers' usage from hearthd's cgroup reader; following the topic
+  // makes it read every 2 s instead of 15 s, without waking the broker.
+  let usage = $state.raw<UsageMsg | null>(null);
+  $effect(() => {
+    api<UsageMsg>('/docker/usage')
+      .then((u) => (usage ??= u))
+      .catch(() => {});
+    return live.subscribe('docker.usage', (data) => {
+      const u = data as UsageMsg;
+      if (u && Array.isArray(u.running)) usage = u;
+    });
+  });
 
   let metrics = $state.raw<LiveMetrics | null>(null);
   $effect(() => {
@@ -78,7 +94,7 @@
   }
 
   const sample = $derived(metrics?.latest ?? null);
-  const cards = $derived(sample ? cardsFor(sample) : []);
+  const cards = $derived(sample ? cardsFor(sample, usage?.available === true) : []);
   const byId = $derived(new Map(cards.map((c) => [c.id, c])));
   const arranged = $derived(arrange(layout, cards.map((c) => c.id)));
 
@@ -168,6 +184,8 @@
             <PowerCard power={sample.power} {metrics} />
           {:else if card.kind === 'net'}
             <NetCard {sample} {metrics} />
+          {:else if card.kind === 'docker' && usage}
+            <DockerCard {usage} />
           {/if}
         </li>
       {/if}

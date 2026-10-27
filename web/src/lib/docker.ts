@@ -134,6 +134,22 @@ export const STATS_WINDOW_S = 300;
 /** Lines kept in a log view. */
 export const MAX_LOG_LINES = 5000;
 
+/** A running container's CPU and memory (topic "docker.usage", from cgroups). */
+export interface Usage {
+  id: string;
+  name: string;
+  cpu: number; // percent of one CPU
+  mem: number; // bytes
+}
+
+export interface UsageMsg {
+  available: boolean; // Docker is installed
+  running: Usage[]; // busiest first
+  stopped: number;
+  unexpected: string[]; // containers that stopped on their own
+  time: number;
+}
+
 export type Tone = 'running' | 'paused' | 'changing' | 'failed' | 'stopped';
 
 // Exit codes of a normal stop: done, or ended by a signal from Ctrl+C or

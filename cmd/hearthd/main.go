@@ -246,6 +246,15 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	}
 	defer func() { stopDocker(); dockerWG.Wait() }()
 	srv.API.HandleFunc("GET /api/v1/docker", dockerObjs.HandleSnapshot)
+	// Container usage for Home and the "container exited" alert, from the
+	// cgroups; the broker is asked only when the running set changes.
+	dockerMon := &docker.Monitor{B: brokerClient, Pub: srv.Hub, Log: log,
+		Observe: func(ctx context.Context, now time.Time, v map[string]float64) {
+			engine.Observe(ctx, now, "container.exited", v)
+		}}
+	dockerWG.Add(1)
+	go func() { defer dockerWG.Done(); dockerMon.Run(dockerCtx) }()
+	srv.API.HandleFunc("GET /api/v1/docker/usage", dockerMon.HandleUsage)
 	srv.API.HandleFunc("GET /api/v1/docker/containers/{id}", docker.HandleInspect(brokerClient))
 	images := &docker.Images{B: brokerClient, Registry: docker.NewRegistry(), Run: safeexec.Run, CacheDir: filepath.Join(paths.DataDir, "trivy")}
 	srv.API.HandleFunc("GET /api/v1/docker/images/{id}", images.HandleDetail)
