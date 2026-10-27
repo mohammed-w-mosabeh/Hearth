@@ -237,6 +237,15 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		PK:   &pkgs.Client{Dial: func(ctx context.Context) (pkgs.Bus, error) { return dbusx.SystemBus(ctx) }},
 		Dpkg: dpkgDB,
 	})
+	// Flatpak, Snap, pip --user, npm -g, cargo and Go binaries: listed
+	// from their files; removed by the manager's own uninstall as a
+	// transient user unit (outside this sandbox), or through snapd.
+	extraFind := discovery.ExtraConfig{Home: appsCfg.Home, Getenv: os.Getenv}
+	srv.API.HandleFunc("GET /api/v1/pkgs/{manager}", discovery.HandleExtra(extraFind))
+	pkgs.RegisterExtra(reg, pkgs.ExtraConfig{Find: extraFind, Run: &pkgs.UserRunner{
+		Bus:    func(ctx context.Context) (pkgs.Bus, error) { return dbusx.SessionBus(ctx) },
+		LogDir: filepath.Join(paths.DataDir, "runs"),
+	}})
 	brokerClient := &broker.Client{}
 	docker.Register(reg, brokerClient)
 	docker.RegisterImages(reg, brokerClient)

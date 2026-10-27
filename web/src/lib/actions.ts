@@ -66,6 +66,9 @@ const reasons: Record<string, MessageKey> = {
   essential: 'reason.essential',
   protected: 'reason.protected',
   required: 'reason.required',
+  manager: 'reason.manager',
+  root: 'reason.root',
+  pip: 'reason.pip',
 };
 
 /** The i18n key explaining why an item was blocked or failed. */

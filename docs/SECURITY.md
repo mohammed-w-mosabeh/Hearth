@@ -32,7 +32,8 @@ Hearth is effectively a root-capable control panel. Assume any web page the user
 
 ### Destructive actions
 - S15. Preview/simulate first (apt simulate, Docker reclaimable size, file list), return a short-lived preview token; execute only with that token.
-- S16. Block removal of `Essential: yes` / `Priority: required` packages and of Hearth itself. Double confirm for critical units.
+- S16. Block removal of `Essential: yes` / `Protected: yes` / `Priority: required` packages and of Hearth itself, also when another change would take one along. Double confirm for critical units.
+- S16a. Packages outside dpkg: snaps are removed through snapd (polkit); Flatpak, npm (user-owned prefix only), cargo and Go binaries by the manager's own uninstall (`gio trash` for a Go binary) run as a transient unit of the user's systemd manager, as the user and outside hearthd's sandbox, with a fixed argv built from the listing (validated names, no shell, no environment expansion). pip `--user` packages are listed, never removed (it would need `--break-system-packages`). Runtimes in use, system snaps, npm itself and root-owned prefixes are blocked.
 - S17. Files go to the XDG trash (`gio trash` semantics) instead of unlinking, where applicable.
 - S18. Audit log: append-only table (time, origin, uid, action, target, params hash, result). Viewable in the Change timeline.
 

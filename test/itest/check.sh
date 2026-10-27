@@ -253,6 +253,10 @@ check "no token for a blocked removal" not grep -q '"token"' <<<"$(preview_remov
 # previewed, and says why instead of failing open.
 echo "  remove curl without PackageKit: $(preview_remove curl)"
 check "without PackageKit a removal is refused" grep -q 'PackageKit' <<<"$(preview_remove curl)"
+check "extra managers listed inside the sandbox" grep -q '"manager":"pip","available"' <<<"$(pkgs_api pkgs/pip)"
+check "unknown manager refused" test "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/pkgs/apt-get")" = 404
+check "removing a flatpak that is not installed is refused" grep -q 'not installed' <<<"$(curl -s -X POST -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$port" \
+	-d '{"target":"system/app/org.example.App/x86_64/stable","preview":true}' "http://127.0.0.1:$port/api/v1/actions/flatpak/remove")"
 
 echo "== purge"
 apt-get purge -y -qq hearth >/dev/null
