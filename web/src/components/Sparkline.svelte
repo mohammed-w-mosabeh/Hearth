@@ -10,6 +10,7 @@
     min = 0,
     max,
     height = 44,
+    span = WINDOW_S,
     label,
   }: {
     data: [number[], ...(number | null)[][]];
@@ -17,6 +18,7 @@
     min?: number;
     max?: number;
     height?: number;
+    span?: number; // seconds shown
     label: string;
   } = $props();
 
@@ -48,7 +50,7 @@
         select: { show: false, left: 0, top: 0, width: 0, height: 0 },
         axes: [{ show: false }, { show: false }],
         scales: {
-          x: { time: true, range: (_u, _lo, hi) => [hi - WINDOW_S, hi] },
+          x: { time: true, range: (_u, _lo, hi) => [hi - span, hi] },
           y: { range: (_u, _lo, hi) => [min, max ?? Math.max(hi * 1.1, min + 1)] },
         },
         series: [

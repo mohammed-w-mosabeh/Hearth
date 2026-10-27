@@ -216,6 +216,7 @@ func DockerMethods(d *Docker) []Method {
 		read("docker.volumes.inspect", d.volumeInspect),
 		read("docker.prune.preview", d.prunePreview),
 		{Name: "docker.events", Stream: d.dockerEvents},
+		{Name: "docker.containers.logs.follow", Stream: d.containerLogsFollow},
 
 		change("docker.containers.start", ActionDockerControl, 0, d.containerAction("start")),
 		change("docker.containers.stop", ActionDockerControl, stopWait, d.containerAction("stop")),

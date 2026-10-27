@@ -549,3 +549,52 @@ func TestDockerEvents(t *testing.T) {
 		t.Fatalf("params: %v", err)
 	}
 }
+
+func TestDockerLogsFollow(t *testing.T) {
+	frame := func(stream byte, s string) string {
+		h := make([]byte, 8)
+		h[0] = stream
+		binary.BigEndian.PutUint32(h[4:], uint32(len(s))) // #nosec G115 -- short test strings
+		return string(h) + s
+	}
+	long := strings.Repeat("x", maxFollowLine+100)
+	h, f, _ := dockerHarness(t, false, map[string]answer{
+		"GET /containers/web/json": {body: `{"Config":{"Tty":false}}`},
+		// A line split over two frames, an over-long line, a last line
+		// without a newline.
+		"GET /containers/web/logs": {body: frame(1, "hel") + frame(1, "lo\nworld\n") + frame(2, "oops\r\n") + frame(1, long+"\n") + frame(1, "end")},
+		"GET /containers/tty/json": {body: `{"Config":{"Tty":true}}`},
+		"GET /containers/tty/logs": {body: "a\r\nb\xff\n"},
+	})
+	follow := func(params string) ([]LogLine, error) {
+		var got []LogLine
+		err := h.client().Stream(context.Background(), "docker.containers.logs.follow", json.RawMessage(params), func(raw json.RawMessage) error {
+			var batch []LogLine
+			if err := json.Unmarshal(raw, &batch); err != nil {
+				return err
+			}
+			got = append(got, batch...)
+			return nil
+		})
+		return got, err
+	}
+	got, err := follow(`{"id":"web","tail":10}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []LogLine{{"stdout", "hello"}, {"stdout", "world"}, {"stderr", "oops"}, {"stdout", long[:maxFollowLine]}, {"stdout", "end"}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("%d lines: %.200v", len(got), got)
+	}
+	if r := f.requests()[1]; r != "GET /containers/web/logs?follow=true&stderr=true&stdout=true&tail=10" {
+		t.Fatalf("%s", r)
+	}
+	if got, err := follow(`{"id":"tty"}`); err != nil || !slices.Equal(got, []LogLine{{"stdout", "a"}, {"stdout", "b�"}}) {
+		t.Fatalf("tty: %v %+v", err, got)
+	}
+	for _, bad := range []string{`{"id":"../x"}`, `{"id":"web","tail":-1}`, `{"id":"web","tail":5001}`, `{"id":"web","since":1}`} {
+		if _, err := follow(bad); code(err) != CodeBadParams {
+			t.Errorf("%s: %v", bad, err)
+		}
+	}
+}

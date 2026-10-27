@@ -475,6 +475,32 @@ func TestWebSocketSubscribePublish(t *testing.T) {
 	}
 }
 
+func TestWebSocketPrefixWatch(t *testing.T) {
+	h := newHarness(t)
+	watch := h.s.Hub.Watch("docker.logs:")
+	conn, _, _, err := h.dialWS(t, h.origin(), auth.Subprotocol, "hearth.key."+h.key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.CloseNow() }()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for _, topic := range []string{"docker.logs:abc", "docker.logs:def", "metrics"} {
+		if err := conn.Write(ctx, websocket.MessageText, []byte(`{"op":"sub","topic":"`+topic+`"}`)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	waitFor(t, func() bool { return h.s.Hub.Subscribers("metrics") == 1 })
+	select {
+	case <-watch:
+	case <-time.After(2 * time.Second):
+		t.Fatal("prefix Watch not signalled")
+	}
+	if got := h.s.Hub.Topics("docker.logs:"); len(got) != 2 || got["docker.logs:abc"] != 1 || got["docker.logs:def"] != 1 {
+		t.Fatalf("topics %v", got)
+	}
+}
+
 func TestWebSocketBadMessages(t *testing.T) {
 	h := newHarness(t)
 	for _, msg := range []string{

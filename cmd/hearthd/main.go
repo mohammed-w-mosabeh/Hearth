@@ -22,6 +22,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -34,6 +35,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/dbusx"
 	"github.com/mohammed-w-mosabeh/hearth/internal/discovery"
 	"github.com/mohammed-w-mosabeh/hearth/internal/diskusage"
+	"github.com/mohammed-w-mosabeh/hearth/internal/docker"
 	"github.com/mohammed-w-mosabeh/hearth/internal/launch"
 	"github.com/mohammed-w-mosabeh/hearth/internal/power"
 	"github.com/mohammed-w-mosabeh/hearth/internal/procctl"
@@ -220,18 +222,26 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		System: func(ctx context.Context) (unitctl.Bus, error) { return dbusx.SystemBus(ctx) },
 		User:   func(ctx context.Context) (unitctl.Bus, error) { return dbusx.SessionBus(ctx) },
 	})
-	srv.API.HandleFunc("POST /api/v1/actions/{kind}/{action}", reg.Handle)
 	brokerClient := &broker.Client{}
+	docker.Register(reg, brokerClient)
+	srv.API.HandleFunc("POST /api/v1/actions/{kind}/{action}", reg.Handle)
 	srv.API.HandleFunc("GET /api/v1/broker/status", brokerClient.HandleStatus)
 	srv.API.HandleFunc("GET /api/v1/services/journal", services.HandleJournal(safeexec.Run, services.CanReadSystemJournal))
 
-	// Docker objects through the broker, followed only while a Docker page is open.
-	docker := discovery.NewDockerWatcher(discovery.DockerConfig{Broker: brokerClient, Pub: srv.Hub, Log: log})
+	// Docker through the broker: objects, live logs and stats, each
+	// followed only while a Docker page asks for it.
+	dockerObjs := discovery.NewDockerWatcher(discovery.DockerConfig{Broker: brokerClient, Pub: srv.Hub, Log: log})
+	dockerLogs := docker.NewLogs(brokerClient, srv.Hub, log)
+	dockerStats := docker.NewStats(brokerClient, srv.Hub, log, 0)
 	dockerCtx, stopDocker := context.WithCancel(ctx)
-	dockerDone := make(chan struct{})
-	go func() { docker.Run(dockerCtx); close(dockerDone) }()
-	defer func() { stopDocker(); <-dockerDone }()
-	srv.API.HandleFunc("GET /api/v1/docker", docker.HandleSnapshot)
+	var dockerWG sync.WaitGroup
+	for _, run := range []func(context.Context){dockerObjs.Run, dockerLogs.Run, dockerStats.Run} {
+		dockerWG.Add(1)
+		go func() { defer dockerWG.Done(); run(dockerCtx) }()
+	}
+	defer func() { stopDocker(); dockerWG.Wait() }()
+	srv.API.HandleFunc("GET /api/v1/docker", dockerObjs.HandleSnapshot)
+	srv.API.HandleFunc("GET /api/v1/docker/containers/{id}", docker.HandleInspect(brokerClient))
 
 	// Process scanning runs only while a client follows the procs topic.
 	procs := collect.NewProcSampler(collect.ProcConfig{Pub: srv.Hub, Log: log, AppName: apps.Name})
