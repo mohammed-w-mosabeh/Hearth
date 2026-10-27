@@ -237,6 +237,38 @@ func TestPrivilegedNeedsPolkit(t *testing.T) {
 	}
 }
 
+// A privileged call whose params are refused anyway raises no polkit
+// dialog: Check runs first.
+func TestCheckBeforePolkit(t *testing.T) {
+	h := start(t, true, nil)
+	if err := h.client().Call(context.Background(), "broker.authorize", map[string]int{"x": 1}, nil); code(err) != CodeBadParams {
+		t.Fatalf("got %v", err)
+	}
+	if len(h.auth.asked) != 0 {
+		t.Fatalf("polkit asked: %v", h.auth.asked)
+	}
+	if audit := strings.Join(h.audit.results(), "\n"); !strings.Contains(audit, "broker.authorize error: ") {
+		t.Errorf("audit:\n%s", audit)
+	}
+}
+
+// A caller that connects and writes half a request loses its slot after
+// RequestTimeout, not after the 60 s idle time.
+func TestRequestTimeout(t *testing.T) {
+	h := start(t, true, func(c *Config) { c.RequestTimeout = 100 * time.Millisecond })
+	conn, err := net.Dial("unix", h.sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	_, _ = io.WriteString(conn, `{"id":1,"method":"broker.pi`)
+	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	start := time.Now()
+	if _, err := conn.Read(make([]byte, 1)); !errors.Is(err, io.EOF) || time.Since(start) > 2*time.Second {
+		t.Fatalf("still open: %v after %s", err, time.Since(start))
+	}
+}
+
 func TestOversizedLine(t *testing.T) {
 	h := start(t, true, nil)
 	resp := h.raw(`{"id":1,"method":"broker.ping","params":"` + strings.Repeat("a", MaxLine) + `"}`)

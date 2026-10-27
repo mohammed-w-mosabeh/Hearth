@@ -141,7 +141,7 @@ func BaseMethods(version string, names func() []string) []Method {
 			}
 			return PingResult{Version: version, UID: c.UID, Methods: names()}, nil
 		}},
-		{Name: "broker.authorize", Privileged: true, Handle: func(_ context.Context, _ Caller, p json.RawMessage) (any, error) {
+		{Name: "broker.authorize", Privileged: true, Check: func(_ context.Context, p json.RawMessage) error { return noParams(p) }, Handle: func(_ context.Context, _ Caller, p json.RawMessage) (any, error) {
 			if err := noParams(p); err != nil {
 				return nil, err
 			}

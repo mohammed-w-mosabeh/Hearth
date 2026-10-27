@@ -291,6 +291,32 @@ func TestDockerChangesNeedPolkit(t *testing.T) {
 	}
 }
 
+// Privileged calls with bad params are refused before polkit (no
+// dialog), by a dry run of the handler that cannot reach the Engine.
+func TestDockerBadParamsBeforePolkit(t *testing.T) {
+	h, f, _ := dockerHarness(t, true, nil)
+	for m, p := range map[string]string{
+		"docker.containers.remove": `{"id":"../../containers/web"}`,
+		"docker.containers.stop":   `{"id":"web","timeout":-1}`,
+		"docker.containers.start":  `{"id":"web","timeout":5}`,
+		"docker.images.remove":     `{"id":"a/../b"}`,
+		"docker.images.tag":        `{"id":"nginx","repo":"../x","tag":"1"}`,
+		"docker.prune":             `{"kind":"system","until":1800000000}`,
+		"docker.volumes.remove":    `{"name":"../x"}`,
+		"docker.containers.exec":   `{"id":"web","cmd":["/bin/bash"]}`,
+	} {
+		if err := call(t, h, m, p, nil); code(err) != CodeBadParams {
+			t.Errorf("%s %s: %v, want bad params", m, p, err)
+		}
+	}
+	if len(h.auth.asked) != 0 {
+		t.Errorf("polkit asked: %v", h.auth.asked)
+	}
+	if reqs := f.requests(); len(reqs) != 0 {
+		t.Fatalf("reached Docker: %v", reqs)
+	}
+}
+
 func TestDockerAuthorizedChanges(t *testing.T) {
 	h, f, _ := dockerHarness(t, true, map[string]answer{
 		"POST /containers/web/start":  {status: http.StatusNoContent},

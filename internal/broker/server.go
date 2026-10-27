@@ -37,6 +37,11 @@ type Method struct {
 	// ActionManage) for the calling process before Handle runs.
 	Privileged bool
 	Action     string
+	// Check, for a privileged method, validates params before polkit is
+	// asked, so a request that would be refused raises no password
+	// dialog. It must have no side effects; a CodeBadParams error refuses
+	// the call, any other result goes on to polkit and the method.
+	Check func(ctx context.Context, params json.RawMessage) error
 	// Timeout bounds the call (polkit dialog included); default
 	// Config.CallTimeout.
 	Timeout time.Duration
@@ -87,6 +92,9 @@ type Config struct {
 	Idle time.Duration
 	// MaxConns bounds concurrent connections; default 16.
 	MaxConns int
+	// RequestTimeout bounds reading one request line, so a caller cannot
+	// hold a connection slot by writing nothing; default 5 s.
+	RequestTimeout time.Duration
 	// CallTimeout bounds one call, polkit dialog included; default 3 min.
 	CallTimeout time.Duration
 	// ProcRoot is where caller start times are read; default /proc.
@@ -119,6 +127,9 @@ func NewServer(cfg Config) (*Server, error) {
 	}
 	if cfg.MaxConns == 0 {
 		cfg.MaxConns = 16
+	}
+	if cfg.RequestTimeout == 0 {
+		cfg.RequestTimeout = 5 * time.Second
 	}
 	if cfg.CallTimeout == 0 {
 		cfg.CallTimeout = 3 * time.Minute
@@ -254,7 +265,7 @@ func (s *Server) serveConn(ctx context.Context, conn net.Conn) {
 	c.Start = startTime(s.cfg.ProcRoot, c.PID)
 	r := bufio.NewReaderSize(conn, MaxLine)
 	for {
-		_ = conn.SetReadDeadline(time.Now().Add(s.cfg.Idle))
+		_ = conn.SetReadDeadline(time.Now().Add(s.cfg.RequestTimeout))
 		line, err := r.ReadSlice('\n')
 		if errors.Is(err, bufio.ErrBufferFull) {
 			s.audit(c, "(oversized)", nil, "refused: request over 64 KiB")
@@ -303,6 +314,15 @@ func (s *Server) call(ctx context.Context, c Caller, line []byte, conn net.Conn,
 	timeout := s.cfg.CallTimeout
 	if m.Timeout > 0 {
 		timeout = m.Timeout
+	}
+	if m.Privileged && m.Check != nil {
+		cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		err := m.Check(cctx, req.Params)
+		cancel()
+		var be *Error
+		if errors.As(err, &be) && be.Code == CodeBadParams {
+			return fail(be) // before polkit: no dialog for a request that is refused anyway
+		}
 	}
 	if m.Privileged {
 		actx, cancel := context.WithTimeout(ctx, timeout)

@@ -201,8 +201,39 @@ func filtersQ(f map[string][]string) string {
 	return string(b)
 }
 
-// DockerMethods are the broker's Docker methods.
+// DockerMethods are the broker's Docker methods. Each privileged one is
+// checked before polkit by running it on a dry copy of d whose transport
+// refuses every request: the handler's own validation runs, nothing can
+// reach the Engine, and the copy keeps its own exec count.
 func DockerMethods(d *Docker) []Method {
+	ms := dockerMethods(d)
+	dry := dockerMethods(&Docker{hc: &http.Client{Transport: refuseAll{}}, now: func() time.Time { return d.now() }})
+	for i := range ms {
+		if !ms[i].Privileged {
+			continue
+		}
+		if h := dry[i].Handle; h != nil {
+			ms[i].Check = func(ctx context.Context, p json.RawMessage) error { _, err := h(ctx, Caller{}, p); return err }
+		} else if sess := dry[i].Session; sess != nil {
+			ms[i].Check = func(ctx context.Context, p json.RawMessage) error {
+				in := make(chan json.RawMessage)
+				close(in)
+				return sess(ctx, Caller{}, p, in, func(any) error { return errDryRun })
+			}
+		}
+	}
+	return ms
+}
+
+// errDryRun is refuseAll's answer to every request.
+var errDryRun = errors.New("broker: dry run")
+
+// refuseAll is the transport of DockerMethods' dry copy.
+type refuseAll struct{}
+
+func (refuseAll) RoundTrip(*http.Request) (*http.Response, error) { return nil, errDryRun }
+
+func dockerMethods(d *Docker) []Method {
 	read := func(name string, h func(context.Context, json.RawMessage) (any, error)) Method {
 		return Method{Name: name, Handle: func(ctx context.Context, _ Caller, p json.RawMessage) (any, error) { return h(ctx, p) }}
 	}

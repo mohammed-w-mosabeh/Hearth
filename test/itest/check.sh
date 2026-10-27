@@ -186,7 +186,7 @@ echo "  engine log: $(tr '\n' ';' </run/fakedocker.log)"
 
 echo "== broker: pentest probes (test/pentest/brokerprobe, as a member)"
 : >/run/fakedocker.log
-probe_out=$(asuser /usr/local/bin/hearth-brokerprobe -privileged 2>&1) && probe_ok=1 || probe_ok=0
+probe_out=$(asuser /usr/local/bin/hearth-brokerprobe 2>&1) && probe_ok=1 || probe_ok=0
 grep -E '^(FAIL|INFO)' <<<"$probe_out" | sed 's/^/  /' || true
 echo "  $(grep -c '^PASS' <<<"$probe_out") probes refused as expected"
 check "no broker probe got through" test "$probe_ok" = 1
