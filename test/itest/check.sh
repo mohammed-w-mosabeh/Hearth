@@ -235,6 +235,25 @@ check "socket starts it again" call_says "broker.ping" broker.ping
 # Leave the group empty so purge can remove it.
 gpasswd -d "$user" hearth >/dev/null
 
+echo "== packages"
+key=$(api_key)
+pkgs_api() { curl -s -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/$1"; }
+preview_remove() {
+	curl -s -X POST -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$port" -H 'Content-Type: application/json' \
+		-d "{\"target\":\"$1\",\"preview\":true}" "http://127.0.0.1:$port/api/v1/actions/package/remove"
+}
+list=$(pkgs_api pkgs)
+check "package list read from dpkg inside the sandbox" grep -q '"name":"hearth"' <<<"$list"
+check "bash listed as essential" grep -q '"essential":true' <<<"$(grep -o '"name":"bash",[^}]*' <<<"$list")"
+echo "  remove hearth: $(preview_remove hearth)"
+check "removing Hearth itself is blocked" grep -q '"reason":"self"' <<<"$(preview_remove hearth)"
+check "removing bash (Essential) is blocked" grep -q '"reason":"essential"' <<<"$(preview_remove bash)"
+check "no token for a blocked removal" not grep -q '"token"' <<<"$(preview_remove bash)"
+# No PackageKit in the container: an unprotected package cannot be
+# previewed, and says why instead of failing open.
+echo "  remove curl without PackageKit: $(preview_remove curl)"
+check "without PackageKit a removal is refused" grep -q 'PackageKit' <<<"$(preview_remove curl)"
+
 echo "== purge"
 apt-get purge -y -qq hearth >/dev/null
 check "package gone" not dpkg -s hearth

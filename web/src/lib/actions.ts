@@ -63,6 +63,9 @@ const reasons: Record<string, MessageKey> = {
   'no-install': 'reason.noInstall',
   'job-failed': 'reason.jobFailed',
   'in-use': 'reason.inUse',
+  essential: 'reason.essential',
+  protected: 'reason.protected',
+  required: 'reason.required',
 };
 
 /** The i18n key explaining why an item was blocked or failed. */

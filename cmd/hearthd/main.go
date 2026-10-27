@@ -39,6 +39,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/docker"
 	"github.com/mohammed-w-mosabeh/hearth/internal/homepage"
 	"github.com/mohammed-w-mosabeh/hearth/internal/launch"
+	"github.com/mohammed-w-mosabeh/hearth/internal/pkgs"
 	"github.com/mohammed-w-mosabeh/hearth/internal/power"
 	"github.com/mohammed-w-mosabeh/hearth/internal/procctl"
 	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
@@ -223,6 +224,18 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	unitctl.Register(reg, unitctl.Config{
 		System: func(ctx context.Context) (unitctl.Bus, error) { return dbusx.SystemBus(ctx) },
 		User:   func(ctx context.Context) (unitctl.Bus, error) { return dbusx.SessionBus(ctx) },
+	})
+	// Debian packages: dpkg's database read on demand (watched while the
+	// Packages page follows "pkgs"), changes through PackageKit.
+	dpkgDB := discovery.NewDpkg(discovery.DpkgConfig{Pub: srv.Hub, Log: log})
+	pkgsCtx, stopPkgs := context.WithCancel(ctx)
+	pkgsDone := make(chan struct{})
+	go func() { dpkgDB.Run(pkgsCtx); close(pkgsDone) }()
+	defer func() { stopPkgs(); <-pkgsDone }()
+	srv.API.HandleFunc("GET /api/v1/pkgs", dpkgDB.HandleList)
+	pkgs.Register(reg, pkgs.Config{
+		PK:   &pkgs.Client{Dial: func(ctx context.Context) (pkgs.Bus, error) { return dbusx.SystemBus(ctx) }},
+		Dpkg: dpkgDB,
 	})
 	brokerClient := &broker.Client{}
 	docker.Register(reg, brokerClient)

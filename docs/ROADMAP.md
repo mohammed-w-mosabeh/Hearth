@@ -57,7 +57,7 @@ Gate 1 result (2026-10-26): **passed**. Idle 21.7 MB / 0.07% CPU. UI open: Home 
 Gate 2 result (2026-10-27): **automated checks passed; owner pentest pending** (owner deferred it and approved starting Phase 3; `phase-2` stays off `main` until it passes). Broker: unknown methods, non-members, unauthorized changes and removes, container create (with Privileged and `/` binds) and path/query injection all refused, and none reached the Engine (unit tests; `make itest`, 89 checks). `test/pentest/brokerprobe`: 198 hostile probes, none through. Two findings from it fixed (2d482f3): params are validated before polkit, so no dialog appears for a request that will be refused, and request lines time out after 5 s, so a member cannot hold all 16 slots. Exec into a privileged container with `/` mounted is refused even when polkit allows it. Broker exposure 1.5, no capabilities, NoNewPrivs, seccomp, no network; audit holds params hashes only. Budget: idle 26.0 MB / 0.11% CPU; Home open (WS client following its topics, no browser available) 28.6 MB / 0.78%; bundle 113 KB gz; hearthd 21.3 MB. Owner's manual checklist: `test/pentest/README.md`.
 
 ## Phase 3 — Packages, network, terminal, scheduler (~3 weeks)
-- [ ] 3.1 `pkgs`: dpkg status parser + fsnotify; PackageKit D-Bus for install/remove/update with simulate; essential/required protection
+- [x] 3.1 `pkgs`: dpkg status parser + fsnotify; PackageKit D-Bus for install/remove/update with simulate; essential/required protection
 - [ ] 3.2 Flatpak, Snap adapters; pip --user, npm -g, cargo, go bin listing (+ remove where safe)
 - [ ] 3.3 Packages page (unified + per manager, updates with security flag, hold, files/deps)
 - [ ] 3.4 `discovery/path`: Tools page (owner package, version, whatis), open in terminal / man
