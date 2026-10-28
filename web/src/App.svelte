@@ -11,6 +11,7 @@
   import Packages from './routes/Packages.svelte';
   import Tools from './routes/Tools.svelte';
   import Network from './routes/Network.svelte';
+  import Terminal from './routes/Terminal.svelte';
   import Resources from './routes/Resources.svelte';
   import Services from './routes/Services.svelte';
   import Placeholder from './routes/Placeholder.svelte';
@@ -43,6 +44,13 @@
   });
 
   const route = $derived(routes.find((r) => r.id === router.id));
+
+  // The Terminal page stays mounted once visited, so its shells survive
+  // a visit to another page.
+  let terminalOpened = $state(false);
+  $effect(() => {
+    if (route?.id === 'terminal') terminalOpened = true;
+  });
 
   // Ctrl+K (Cmd+K on a Mac keyboard) opens the command palette anywhere.
   let palette = $state(false);
@@ -84,12 +92,19 @@
         <Tools />
       {:else if route?.id === 'network'}
         <Network />
+      {:else if route?.id === 'terminal'}
+        <!-- below, kept mounted -->
       {:else if route}
         <Placeholder {route} />
       {:else}
         <EmptyState title={t('notfound.title')} body="">
           <a href={href('home')}>{t('notfound.back')}</a>
         </EmptyState>
+      {/if}
+      {#if terminalOpened}
+        <div class="terminal" hidden={route?.id !== 'terminal'}>
+          <Terminal active={route?.id === 'terminal'} />
+        </div>
       {/if}
     </main>
   </div>
@@ -110,5 +125,11 @@
   }
   .centered {
     height: 100%;
+  }
+  .terminal {
+    height: 100%;
+  }
+  .terminal[hidden] {
+    display: none;
   }
 </style>

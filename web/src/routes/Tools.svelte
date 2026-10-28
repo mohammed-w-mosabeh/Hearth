@@ -6,6 +6,7 @@
   import { t, type MessageKey } from '../lib/i18n';
   import { pkgReasonKey, removeKind } from '../lib/packages';
   import { href, router } from '../lib/router.svelte';
+  import { openTool } from '../lib/shell';
   import { toast } from '../lib/toast.svelte';
   import { sourceCounts, view, type SortKey, type SourceFilter, type Tool, type ToolList } from '../lib/tools';
 
@@ -214,6 +215,7 @@
 <div bind:this={menu} popover="auto" class="menu" aria-label={subject ? t('tools.actionsFor', { name: subject.name }) : undefined}>
   {#if subject}
     {@const x = subject}
+    <a href={href('terminal', openTool(x.name))} onclick={() => menu.hidePopover()}>{t('tools.op.terminal')}</a>
     <button type="button" onclick={() => man(x)}>{t('tools.op.man')}</button>
     {#if x.package}
       <a href={href('packages', x.package)} onclick={() => menu.hidePopover()}>{t('tools.op.package')}</a>

@@ -911,5 +911,20 @@
   "net.failed": "{name}: {reason}",
   "net.done.stopUnit": "Stopped {name}.",
   "net.done.stopContainer": "Stopped {name}.",
-  "net.done.endProcess": "Ended {name}."
+  "net.done.endProcess": "Ended {name}.",
+  "term.tabs": "Terminals",
+  "term.new": "New",
+  "term.newHint": "A new shell in your home folder (Ctrl+Shift+T)",
+  "term.close": "Close {name}",
+  "term.closeTab": "Close tab",
+  "term.container": "Shell in container {name}",
+  "term.kind.container": "container",
+  "term.ended": "ended",
+  "term.exited": "The shell exited.",
+  "term.failed": "No shell: {error}.",
+  "term.reopen": "Start again",
+  "term.none": "No terminals open.",
+  "term.here": "Open terminal here",
+  "tools.op.terminal": "Open in terminal",
+  "shell.inTerminal": "Open in the Terminal page"
 }

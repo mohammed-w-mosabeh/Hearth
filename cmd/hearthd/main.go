@@ -46,6 +46,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
 	"github.com/mohammed-w-mosabeh/hearth/internal/services"
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
+	"github.com/mohammed-w-mosabeh/hearth/internal/terminal"
 	"github.com/mohammed-w-mosabeh/hearth/internal/unitctl"
 	"github.com/mohammed-w-mosabeh/hearth/web"
 )
@@ -313,6 +314,20 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		},
 		Audit: db.Audit, UID: os.Getuid(), Log: log,
 	}))
+
+	// Terminal: the user's shell in a transient unit of their systemd
+	// manager, on a pty hearthd opens (SECURITY S14).
+	term := terminal.New(terminal.Config{
+		Bus: func(ctx context.Context) (terminal.Bus, error) {
+			c, err := dbusx.SessionBus(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return c, nil
+		},
+		Audit: db.Audit, UID: os.Getuid(), Log: log,
+	})
+	srv.API.HandleFunc("GET /api/v1/terminal", term.HandleShell)
 
 	// Process scanning runs only while a client follows the procs topic.
 	procs := collect.NewProcSampler(collect.ProcConfig{Pub: srv.Hub, Log: log, AppName: apps.Name})

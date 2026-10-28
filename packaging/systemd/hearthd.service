@@ -48,6 +48,8 @@ CPUQuota=10%
 # Relaxation: anything hearthd launches for the user (browser, apps,
 # terminals) would inherit this sandbox, so it is started through
 # `systemd-run --user` in its own unit instead (needs AF_UNIX to the user bus).
+# Terminal shells: hearthd opens the pty (/dev/ptmx exists in the private
+# /dev) and hands only the terminal's fd to a transient user unit over D-Bus.
 
 [Install]
 WantedBy=default.target

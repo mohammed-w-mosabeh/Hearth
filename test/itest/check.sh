@@ -344,6 +344,22 @@ check "network state lists lo" grep -q '"name":"lo","kind":"loopback"' <<<"$stat
 check "network state reports the firewalls" grep -q '"firewalls":\[{"name":"ufw"' <<<"$state"
 check "NetworkManager absent is reported" grep -q '"nm":{"running":false' <<<"$state"
 
+echo "== terminal"
+# A shell through hearthd: it must run as the user, in the folder asked,
+# outside hearthd's sandbox (home writable), on a terminal of its own.
+term() { asuser hearth-termprobe -url "ws://127.0.0.1:$port/api/v1/terminal?$1" -origin "http://127.0.0.1:$port" -key "$key" -send "$2"; }
+out=$(term 'cols=100&rows=30&dir=/usr/share' 'echo "R=$((6*7)) U=$(id -un) D=$PWD C=$COLUMNS"; touch ~/term-wrote && echo W=ok; tty -s && echo T=tty; exit
+')
+echo "$out" | tail -n 8 | sed 's/^/  | /'
+check "terminal: shell ready" grep -q '"state":"ready"' <<<"$out"
+check "terminal: runs as the user, in the folder, at the size asked" grep -q "R=42 U=$user D=/usr/share C=100" <<<"$out"
+check "terminal: outside hearthd's sandbox (home writable)" grep -q 'W=ok' <<<"$out"
+check "terminal: has its own terminal" grep -q 'T=tty' <<<"$out"
+check "terminal: exit is reported" grep -q '"state":"exit"' <<<"$out"
+check "terminal: its unit is gone" test -z "$(asuser systemctl --user list-units --plain --no-legend 'hearth-term-*' | grep active)"
+check "terminal: a relative folder is refused" test "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/terminal?dir=tmp")" = 400
+check "terminal: a foreign Origin is refused" grep -q 'refused: 403' <<<"$(asuser hearth-termprobe -url "ws://127.0.0.1:$port/api/v1/terminal" -origin http://evil.test -key "$key" || true)"
+
 echo "== purge"
 apt-get purge -y -qq hearth >/dev/null
 check "package gone" not dpkg -s hearth

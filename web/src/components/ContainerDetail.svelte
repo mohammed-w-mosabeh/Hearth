@@ -342,7 +342,7 @@
         {#if !info}
           <p class="note">{t('detail.loading')}</p>
         {:else}
-          <ContainerShell id={c.id} refused={info.risks.map(riskText)} />
+          <ContainerShell id={c.id} name={c.name} refused={info.risks.map(riskText)} />
         {/if}
       {:else if tab === 'inspect'}
         {#if !ins}
