@@ -18,6 +18,16 @@ type UserWriter struct {
 	UnitDir string
 	JobsDir string
 	Bus     func(context.Context) (Bus, error)
+	// Modes of the script, its directory and the units; default 0700,
+	// 0700, 0600 (the broker writes root jobs 0755, 0755, 0644).
+	ScriptMode, DirMode, UnitMode os.FileMode
+}
+
+func orMode(m, def os.FileMode) os.FileMode {
+	if m == 0 {
+		return def
+	}
+	return m
 }
 
 // unitChange is EnableUnitFiles' and DisableUnitFiles' a(sss).
@@ -33,7 +43,11 @@ func (w *UserWriter) Save(ctx context.Context, j Job, paused bool) error {
 	if !ValidID(j.ID) {
 		return errors.New("bad job id")
 	}
-	if err := os.MkdirAll(filepath.Join(w.JobsDir, j.ID), 0o700); err != nil { // #nosec G703 -- id: 8 hex digits (ValidID)
+	dir := filepath.Join(w.JobsDir, j.ID)
+	if err := os.MkdirAll(dir, 0o700); err != nil { // #nosec G703 -- id: 8 hex digits (ValidID)
+		return fmt.Errorf("scheduler: %w", err)
+	}
+	if err := os.Chmod(dir, orMode(w.DirMode, 0o700)); err != nil { // #nosec G302 G703 -- 0755 only for root jobs, whose script root runs
 		return fmt.Errorf("scheduler: %w", err)
 	}
 	if err := os.MkdirAll(w.UnitDir, 0o700); err != nil { // #nosec G703 -- the configured unit directory
@@ -44,9 +58,9 @@ func (w *UserWriter) Save(ctx context.Context, j Job, paused bool) error {
 		path, data string
 		mode       os.FileMode
 	}{
-		{w.ScriptPath(j.ID), j.Script, 0o700},
-		{base + ".service", ServiceFile(j, w.ScriptPath(j.ID)), 0o600},
-		{base + ".timer", TimerFile(j), 0o600},
+		{w.ScriptPath(j.ID), j.Script, orMode(w.ScriptMode, 0o700)},
+		{base + ".service", ServiceFile(j, w.ScriptPath(j.ID)), orMode(w.UnitMode, 0o600)},
+		{base + ".timer", TimerFile(j), orMode(w.UnitMode, 0o600)},
 	}
 	for _, f := range files {
 		if err := writeAtomic(f.path, f.data, f.mode); err != nil {

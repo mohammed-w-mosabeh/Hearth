@@ -372,6 +372,42 @@ check "units and script removed" test ! -e "/home/$user/.config/systemd/user/hea
 check "a schedule with a newline is refused" test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$port" -d '{"name":"x","script":"#!/bin/sh\n","timeout":5,"schedule":{"kind":"calendar","value":"daily\nExecStartPre=/bin/false"}}' "http://127.0.0.1:$port/api/v1/jobs/user")" = 400
 check "no unit was written for it" test -z "$(ls /home/$user/.config/systemd/user | grep hearth-job-)"
 
+echo "== scheduler (root jobs, through hearth-broker)"
+# The broker checks the group database; hearthd kept the group it started
+# with, so its socket connection works.
+usermod -aG hearth "$user"
+rootjob='{"name":"itest root job","script":"#!/bin/sh\nid -un\n","timeout":30,"notify":false,"schedule":{"kind":"interval","value":"6h"}}'
+check "root job refused without polkit authorization" grep -q 'not authorized\|unauthorized' <<<"$(post jobs/system "$rootjob")"
+check "nothing written when refused" test -z "$(ls /etc/systemd/system | grep hearth-job-)"
+cat >/etc/polkit-1/rules.d/51-hearth-itest-jobs.rules <<'RULES'
+polkit.addRule(function(action, subject) {
+	if (action.id == "org.hearth.jobs.manage" && subject.user == "tester") {
+		return polkit.Result.YES;
+	}
+});
+RULES
+sleep 1 # polkitd reloads rules on change
+saved=$(post jobs/system "$rootjob")
+rid=$(sed -nE 's/.*"id":"([a-f0-9]{8})".*/\1/p' <<<"$saved")
+echo "  root job: ${rid:-none} $saved"
+check "root job saved" test -n "$rid"
+check "its script is root's, 0755, in /var/lib/hearth/jobs" test "$(stat -c '%U %a' /var/lib/hearth/jobs/$rid/run)" = "root 755"
+check "its units are root's in /etc/systemd/system" test "$(stat -c '%U %a' /etc/systemd/system/hearth-job-$rid.timer)" = "root 644"
+check "systemd accepts the units" systemd-analyze verify "/etc/systemd/system/hearth-job-$rid.service"
+check "its timer is active" systemctl is-active "hearth-job-$rid.timer"
+check "listed as a system job" grep -q "\"id\":\"$rid\",\"name\":\"itest root job\".*\"scope\":\"system\"" <<<"$(pkgs_api jobs)"
+check "its script is shown through the broker" grep -q '"script":"#!/bin/sh\\nid -un\\n"' <<<"$(pkgs_api "jobs/system/$rid")"
+check "run now" grep -q '"done":1' <<<"$(post actions/job/run "{\"target\":\"system/$rid\"}")"
+rootran() { systemctl show -p Result --value "hearth-job-$rid.service" | grep -q success && test "$(systemctl show -p ExecMainExitTimestampMonotonic --value "hearth-job-$rid.service")" != 0; }
+check "it ran as root" wait_until 10 rootran
+check "and said root" grep -q '^root$' <<<"$(journalctl -q -o cat -u "hearth-job-$rid.service")"
+token=$(post actions/job/delete "{\"target\":\"system/$rid\",\"preview\":true}" | sed -nE 's/.*"token":"([^"]+)".*/\1/p')
+check "deleted" grep -q '"done":1' <<<"$(post actions/job/delete "{\"target\":\"system/$rid\",\"token\":\"$token\"}")"
+check "root units and script removed" test ! -e "/etc/systemd/system/hearth-job-$rid.timer" -a ! -e "/var/lib/hearth/jobs/$rid"
+check "broker audited the job calls" grep -q 'sched.save.*ok' /var/lib/hearth/audit.jsonl
+rm -f /etc/polkit-1/rules.d/51-hearth-itest-jobs.rules
+gpasswd -d "$user" hearth >/dev/null
+
 echo "== terminal"
 # A shell through hearthd: it must run as the user, in the folder asked,
 # outside hearthd's sandbox (home writable), on a terminal of its own.

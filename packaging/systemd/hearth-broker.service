@@ -27,6 +27,10 @@ ProtectSystem=strict
 # pkg.hold: apt-mark hold runs dpkg --set-selections, which rewrites
 # dpkg's database (root-owned: no capability needed).
 ReadWritePaths=/var/lib/dpkg
+# sched.*: root jobs' units, hearth-job-<id>.service/.timer only (the
+# broker writes no other name there); their scripts are in the
+# StateDirectory, /var/lib/hearth/jobs/<id>/run (SECURITY S13).
+ReadWritePaths=/etc/systemd/system
 ProtectHome=yes
 PrivateTmp=yes
 PrivateDevices=yes

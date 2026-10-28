@@ -48,6 +48,17 @@
       <allow_active>auth_admin_keep</allow_active>
     </defaults>
   </action>
+  <!-- Root scheduled jobs (SECURITY S13): a job's script runs as root. -->
+  <action id="org.hearth.jobs.manage">
+    <description>Create, change, run or remove scheduled jobs that run as root through Hearth</description>
+    <message>Authentication is required to manage a scheduled job that runs as root</message>
+    <icon_name>preferences-system</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
   <!-- A shell inside a container (SECURITY S12a): the password every
        time, never kept. -->
   <action id="org.hearth.docker.exec">

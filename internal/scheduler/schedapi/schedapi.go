@@ -1,4 +1,7 @@
-package scheduler
+// Package schedapi serves the Scheduler over HTTP and as job/* actions
+// (kept apart from package scheduler so hearth-broker, which uses that,
+// does not link the HTTP and database code).
+package schedapi
 
 import (
 	"bytes"
@@ -12,24 +15,22 @@ import (
 	"strings"
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/actions"
+	"github.com/mohammed-w-mosabeh/hearth/internal/scheduler"
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
 )
 
 // API serves the Scheduler.
 type API struct {
-	Stores map[string]*Store // by scope; ScopeSystem may be missing
-	// SystemProblem says why root jobs cannot be managed (no broker, not
-	// a member of the hearth group), or "".
-	SystemProblem func(ctx context.Context) string
-	Run           Runner
-	Audit         func(ctx context.Context, e store.AuditEntry) error
-	UID           int
-	Log           *slog.Logger
+	Stores map[string]*scheduler.Store // by scope
+	Run    scheduler.Runner
+	Audit  func(ctx context.Context, e store.AuditEntry) error
+	UID    int
+	Log    *slog.Logger
 	// CanReadSystemJournal reports whether root jobs' history is readable.
 	CanReadSystemJournal func() bool
 }
 
-func (a *API) store(scope string) (*Store, bool) {
+func (a *API) store(scope string) (*scheduler.Store, bool) {
 	s, ok := a.Stores[scope]
 	return s, ok
 }
@@ -37,10 +38,9 @@ func (a *API) store(scope string) (*Store, bool) {
 // HandleList serves GET /api/v1/jobs.
 func (a *API) HandleList(w http.ResponseWriter, r *http.Request) {
 	out := struct {
-		Jobs   []Listed `json:"jobs"`
-		System string   `json:"system_problem,omitempty"`
-	}{Jobs: []Listed{}}
-	for _, scope := range []string{ScopeUser, ScopeSystem} {
+		Jobs []scheduler.Listed `json:"jobs"`
+	}{Jobs: []scheduler.Listed{}}
+	for _, scope := range []string{scheduler.ScopeUser, scheduler.ScopeSystem} {
 		s, ok := a.store(scope)
 		if !ok {
 			continue
@@ -51,9 +51,6 @@ func (a *API) HandleList(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		out.Jobs = append(out.Jobs, l...)
-	}
-	if a.SystemProblem != nil {
-		out.System = a.SystemProblem(r.Context())
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -85,7 +82,7 @@ func (a *API) HandleSave(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
 		return
 	}
-	var j Job
+	var j scheduler.Job
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&j); err != nil {
@@ -96,7 +93,7 @@ func (a *API) HandleSave(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if c := CheckSchedule(r.Context(), a.Run, j.Schedule); !c.Valid {
+	if c := scheduler.CheckSchedule(r.Context(), a.Run, j.Schedule); !c.Valid {
 		http.Error(w, "schedule: "+c.Error, http.StatusBadRequest)
 		return
 	}
@@ -117,7 +114,7 @@ func (a *API) HandleSave(w http.ResponseWriter, r *http.Request) {
 // HandleCheck serves GET /api/v1/jobs/check?kind=&value=.
 func (a *API) HandleCheck(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	writeJSON(w, http.StatusOK, CheckSchedule(r.Context(), a.Run, Schedule{Kind: q.Get("kind"), Value: q.Get("value")}))
+	writeJSON(w, http.StatusOK, scheduler.CheckSchedule(r.Context(), a.Run, scheduler.Schedule{Kind: q.Get("kind"), Value: q.Get("value")}))
 }
 
 // HandleHistory serves GET /api/v1/jobs/{scope}/{id}/history.
@@ -126,19 +123,19 @@ func (a *API) HandleHistory(w http.ResponseWriter, r *http.Request) {
 	if _, _, ok := a.target(w, r); !ok {
 		return
 	}
-	runs, err := History(r.Context(), a.Run, scope, r.PathValue("id"))
+	runs, err := scheduler.History(r.Context(), a.Run, scope, r.PathValue("id"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	limited := scope == ScopeSystem && a.CanReadSystemJournal != nil && !a.CanReadSystemJournal()
+	limited := scope == scheduler.ScopeSystem && a.CanReadSystemJournal != nil && !a.CanReadSystemJournal()
 	writeJSON(w, http.StatusOK, map[string]any{"runs": runs, "limited": limited})
 }
 
-func (a *API) target(w http.ResponseWriter, r *http.Request) (*Store, string, bool) {
+func (a *API) target(w http.ResponseWriter, r *http.Request) (*scheduler.Store, string, bool) {
 	s, ok := a.store(r.PathValue("scope"))
 	id := r.PathValue("id")
-	if !ok || !ValidID(id) {
+	if !ok || !scheduler.ValidID(id) {
 		http.Error(w, "bad job", http.StatusBadRequest)
 		return nil, "", false
 	}
@@ -146,9 +143,9 @@ func (a *API) target(w http.ResponseWriter, r *http.Request) (*Store, string, bo
 }
 
 func (a *API) fail(w http.ResponseWriter, err error) {
-	var p Problem
+	var p scheduler.Problem
 	switch {
-	case errors.Is(err, ErrNotFound) || errors.Is(err, os.ErrNotExist):
+	case errors.Is(err, scheduler.ErrNotFound) || errors.Is(err, os.ErrNotExist):
 		http.Error(w, "no such job", http.StatusNotFound)
 	case errors.As(err, &p):
 		http.Error(w, p.Msg, http.StatusUnprocessableEntity)
@@ -175,7 +172,7 @@ func (a *API) audit(ctx context.Context, action, target string, params map[strin
 // Target parses an action target "user/<id>" or "system/<id>".
 func Target(t string) (scope, id string, err error) {
 	scope, id, ok := strings.Cut(t, "/")
-	if !ok || (scope != ScopeUser && scope != ScopeSystem) || !ValidID(id) {
+	if !ok || (scope != scheduler.ScopeUser && scope != scheduler.ScopeSystem) || !scheduler.ValidID(id) {
 		return "", "", errors.New(`target must be "user/<id>" or "system/<id>"`)
 	}
 	return scope, id, nil
@@ -186,12 +183,12 @@ func (a *API) Register(reg *actions.Registry) {
 	ops := []struct {
 		name string
 		risk actions.Risk
-		do   func(ctx context.Context, s *Store, id string) error
+		do   func(ctx context.Context, s *scheduler.Store, id string) error
 	}{
-		{"run", actions.Safe, func(ctx context.Context, s *Store, id string) error { return s.W.Run(ctx, id) }},
-		{"pause", actions.Reversible, func(ctx context.Context, s *Store, id string) error { return s.W.SetPaused(ctx, id, true) }},
-		{"resume", actions.Safe, func(ctx context.Context, s *Store, id string) error { return s.W.SetPaused(ctx, id, false) }},
-		{"delete", actions.Destructive, func(ctx context.Context, s *Store, id string) error { return s.W.Delete(ctx, id) }},
+		{"run", actions.Safe, func(ctx context.Context, s *scheduler.Store, id string) error { return s.W.Run(ctx, id) }},
+		{"pause", actions.Reversible, func(ctx context.Context, s *scheduler.Store, id string) error { return s.W.SetPaused(ctx, id, true) }},
+		{"resume", actions.Safe, func(ctx context.Context, s *scheduler.Store, id string) error { return s.W.SetPaused(ctx, id, false) }},
+		{"delete", actions.Destructive, func(ctx context.Context, s *scheduler.Store, id string) error { return s.W.Delete(ctx, id) }},
 	}
 	for _, o := range ops {
 		reg.Register(actions.Action{Kind: "job", Name: o.name, Risk: o.risk,
@@ -208,7 +205,7 @@ func (a *API) Register(reg *actions.Registry) {
 				if !ok {
 					return actions.Plan{}, actions.Errorf(http.StatusServiceUnavailable, "root jobs are not available")
 				}
-				j, found := s.read(id)
+				j, found := s.Read(id)
 				if !found {
 					return actions.Plan{}, actions.Errorf(http.StatusNotFound, "no such job")
 				}
@@ -235,14 +232,11 @@ func (a *API) Register(reg *actions.Registry) {
 
 // reasonOf is the UI reason code of a failure.
 func reasonOf(err error) string {
-	if errors.Is(err, ErrUnauthorized) {
+	if errors.Is(err, scheduler.ErrUnauthorized) {
 		return "unauthorized"
 	}
 	return "error"
 }
-
-// ErrUnauthorized is returned when polkit refused a root job change.
-var ErrUnauthorized = errors.New("not authorized")
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")

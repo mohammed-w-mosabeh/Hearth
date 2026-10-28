@@ -45,6 +45,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/procctl"
 	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
 	"github.com/mohammed-w-mosabeh/hearth/internal/scheduler"
+	"github.com/mohammed-w-mosabeh/hearth/internal/scheduler/schedapi"
 	"github.com/mohammed-w-mosabeh/hearth/internal/services"
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
 	"github.com/mohammed-w-mosabeh/hearth/internal/terminal"
@@ -326,10 +327,25 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		return c, nil
 	}
 	userUnits := filepath.Join(filepath.Dir(paths.ConfigDir), "systemd/user")
-	jobs := &scheduler.API{
+	// Root jobs: hearthd lists them from /etc/systemd/system; hearth-broker
+	// writes them (SECURITY S13).
+	systemBus := func(ctx context.Context) (scheduler.Bus, error) {
+		c, err := dbusx.SystemBus(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return c, nil
+	}
+	systemJobs := &scheduler.Store{Scope: scheduler.ScopeSystem, UnitDir: scheduler.SystemUnitDir, Bus: systemBus}
+	systemJobs.W = &scheduler.SystemWriter{B: brokerClient, Exists: func(id string) bool {
+		_, ok := systemJobs.Read(id)
+		return ok
+	}}
+	jobs := &schedapi.API{
 		Stores: map[string]*scheduler.Store{
 			scheduler.ScopeUser: {Scope: scheduler.ScopeUser, UnitDir: userUnits, Bus: sessionBus,
 				W: &scheduler.UserWriter{UnitDir: userUnits, JobsDir: filepath.Join(paths.DataDir, "jobs"), Bus: sessionBus}},
+			scheduler.ScopeSystem: systemJobs,
 		},
 		Run: safeexec.Run, Audit: db.Audit, UID: os.Getuid(), Log: log,
 		CanReadSystemJournal: services.CanReadSystemJournal,

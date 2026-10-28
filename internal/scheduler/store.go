@@ -65,14 +65,17 @@ type Store struct {
 	W       Writer
 }
 
+// ErrUnauthorized is returned when polkit refused a root job change.
+var ErrUnauthorized = errors.New("not authorized")
+
 // ErrNotFound is returned for an unknown job.
 var ErrNotFound = errors.New("no such job")
 
 // maxJobs bounds one listing.
 const maxJobs = 500
 
-// read returns a job's definition from its unit files.
-func (s *Store) read(id string) (Job, bool) {
+// Read returns a job's definition from its unit files.
+func (s *Store) Read(id string) (Job, bool) {
 	base := filepath.Join(s.UnitDir, UnitBase(id))
 	svc, err1 := readSmall(base + ".service")
 	tm, err2 := readSmall(base + ".timer")
@@ -126,7 +129,7 @@ func (s *Store) List(ctx context.Context) ([]Listed, error) {
 		defer func() { _ = bus.Close() }()
 	}
 	for _, id := range ids {
-		j, ok := s.read(id)
+		j, ok := s.Read(id)
 		if !ok {
 			continue
 		}
@@ -142,7 +145,7 @@ func (s *Store) List(ctx context.Context) ([]Listed, error) {
 
 // Get returns one job with its script.
 func (s *Store) Get(ctx context.Context, id string) (Job, error) {
-	j, ok := s.read(id)
+	j, ok := s.Read(id)
 	if !ok {
 		return Job{}, ErrNotFound
 	}

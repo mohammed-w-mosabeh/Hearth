@@ -2,11 +2,7 @@ package scheduler
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"log/slog"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,9 +11,7 @@ import (
 
 	"github.com/godbus/dbus/v5"
 
-	"github.com/mohammed-w-mosabeh/hearth/internal/actions"
 	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
-	"github.com/mohammed-w-mosabeh/hearth/internal/store"
 )
 
 // fakeSystemd is a user manager: units are active or not, calls are logged.
@@ -258,91 +252,3 @@ func TestCheckSchedule(t *testing.T) {
 		t.Errorf("bad schedules reached systemd-analyze: %v", got[n:])
 	}
 }
-
-func TestAPI(t *testing.T) {
-	s, fake, _ := userStore(t)
-	var audits []store.AuditEntry
-	run := func(_ context.Context, name string, args ...string) (safeexec.Result, error) {
-		if name == "timespan-check" || name == "calendar-check" {
-			return safeexec.Result{Stdout: []byte("Normalized form: *-*-* 00:00:00\n")}, nil
-		}
-		return safeexec.Result{}, errors.New("unexpected " + name)
-	}
-	a := &API{Stores: map[string]*Store{ScopeUser: s}, Run: run, Log: slog.Default(),
-		Audit: func(_ context.Context, e store.AuditEntry) error { audits = append(audits, e); return nil }}
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/v1/jobs", a.HandleList)
-	mux.HandleFunc("GET /api/v1/jobs/{scope}/{id}", a.HandleGet)
-	mux.HandleFunc("POST /api/v1/jobs/{scope}", a.HandleSave)
-	do := func(method, path, body string) *httptest.ResponseRecorder {
-		w := httptest.NewRecorder()
-		mux.ServeHTTP(w, httptest.NewRequest(method, path, strings.NewReader(body)))
-		return w
-	}
-	body, _ := json.Marshal(sample)
-	w := do("POST", "/api/v1/jobs/user", string(body))
-	var saved Job
-	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &saved) != nil || !ValidID(saved.ID) {
-		t.Fatalf("save %d %s", w.Code, w.Body)
-	}
-	if len(audits) != 1 || audits[0].Action != "job/save" || audits[0].Target != "user/"+saved.ID || audits[0].Result != "ok" {
-		t.Errorf("audit %+v", audits)
-	}
-	if w := do("GET", "/api/v1/jobs", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"name":"Backup"`) {
-		t.Errorf("list %d %s", w.Code, w.Body)
-	}
-	if w := do("GET", "/api/v1/jobs/user/"+saved.ID, ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"script":"#!/bin/sh\necho hi\n"`) {
-		t.Errorf("get %d %s", w.Code, w.Body)
-	}
-	for _, c := range []struct{ path, body string }{
-		{"/api/v1/jobs/system", string(body)}, // no root store here
-		{"/api/v1/jobs/user", `{"name":"x"}`},
-		{"/api/v1/jobs/user", `{"name":"x","script":"#!/bin/sh","timeout":5,"schedule":{"kind":"calendar","value":"daily"},"extra":1}`},
-		{"/api/v1/jobs/user", `{"name":"x","script":"#!/bin/sh","timeout":5,"schedule":{"kind":"calendar","value":"daily\nExecStart=/x"}}`},
-	} {
-		if w := do("POST", c.path, c.body); w.Code != 400 {
-			t.Errorf("%s %s: %d", c.path, c.body, w.Code)
-		}
-	}
-	if w := do("GET", "/api/v1/jobs/user/deadbeef", ""); w.Code != 404 {
-		t.Errorf("unknown job: %d", w.Code)
-	}
-
-	// Actions: delete is previewed and confirmed.
-	reg := actions.NewRegistry(auditFunc(func(e store.AuditEntry) { audits = append(audits, e) }))
-	a.Register(reg)
-	act := func(action, body string) *httptest.ResponseRecorder {
-		w := httptest.NewRecorder()
-		r := httptest.NewRequest("POST", "/api/v1/actions/job/"+action, strings.NewReader(body))
-		r.SetPathValue("kind", "job")
-		r.SetPathValue("action", action)
-		reg.Handle(w, r)
-		return w
-	}
-	if w := act("run", `{"target":"user/`+saved.ID+`"}`); w.Code != 200 || !strings.Contains(w.Body.String(), `"done":1`) {
-		t.Errorf("run %d %s", w.Code, w.Body)
-	}
-	if w := act("delete", `{"target":"user/`+saved.ID+`"}`); w.Code == 200 && strings.Contains(w.Body.String(), `"done":1`) {
-		t.Error("delete ran without a preview")
-	}
-	w = act("delete", `{"target":"user/`+saved.ID+`","preview":true}`)
-	var plan struct{ Token string }
-	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &plan) != nil || plan.Token == "" {
-		t.Fatalf("preview %d %s", w.Code, w.Body)
-	}
-	if w := act("delete", `{"target":"user/`+saved.ID+`","token":"`+plan.Token+`"}`); w.Code != 200 || !strings.Contains(w.Body.String(), `"done":1`) {
-		t.Errorf("delete %d %s", w.Code, w.Body)
-	}
-	if !strings.Contains(fake.log(), "StopUnit hearth-job-"+saved.ID+".service") {
-		t.Error("delete did not stop the service")
-	}
-	for _, bad := range []string{"user/../x", "root/0a1b2c3d", "user/0A1B2C3D"} {
-		if w := act("run", `{"target":"`+bad+`"}`); w.Code != 400 {
-			t.Errorf("%s: %d", bad, w.Code)
-		}
-	}
-}
-
-type auditFunc func(store.AuditEntry)
-
-func (f auditFunc) Audit(_ context.Context, e store.AuditEntry) error { f(e); return nil }
