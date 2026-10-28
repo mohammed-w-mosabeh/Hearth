@@ -372,3 +372,22 @@ func TestDebPackageArchAndOneOf(t *testing.T) {
 		t.Error("apt-mark-hold spec")
 	}
 }
+
+func TestToolCommands(t *testing.T) {
+	if Check("apropos-all", "-s", "1:8:6", "-l", ".") != nil || Check("apropos-all", "-s", "1:8:6", "-l", "-e") == nil {
+		t.Error("apropos-all")
+	}
+	for _, ok := range []string{"ls", "g++", "python3.13", "x86_64-linux-gnu-gcc"} {
+		if err := Check("man-page", "-P", "cat", "--", ok); err != nil {
+			t.Errorf("man %q: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"-H", "--html=x", "a b", "../x", "/etc/passwd", "x;y", "", "ls\n"} {
+		if Check("man-page", "-P", "cat", "--", bad) == nil {
+			t.Errorf("man %q accepted", bad)
+		}
+	}
+	if Check("man-page", "-P", "sh", "--", "ls") == nil || Check("man-page", "-P", "cat", "ls") == nil {
+		t.Error("man pager or -- not fixed")
+	}
+}

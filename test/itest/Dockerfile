@@ -6,7 +6,7 @@ ENV container=docker DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       systemd systemd-sysv dbus dbus-user-session libpam-systemd \
-      xdg-utils curl ca-certificates iproute2 procps polkitd passwd \
+      xdg-utils curl ca-certificates iproute2 procps polkitd passwd man-db \
  && rm -rf /var/lib/apt/lists/*
 
 # Units that cannot work in a container.

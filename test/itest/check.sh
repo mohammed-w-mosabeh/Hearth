@@ -292,6 +292,28 @@ hold_preview() {
 check "hold preview names the package" grep -q '"name":"curl"' <<<"$(hold_preview curl)"
 check "hold of a package that is not installed is refused" grep -q 'not installed' <<<"$(hold_preview no-such-pkg-xyz)"
 
+echo "== tools"
+# A canary in the user's PATH: if Hearth ever ran a listed program, it
+# would leave a marker where hearthd's sandbox can write.
+asuser mkdir -p /home/$user/.local/bin
+cat >/home/$user/.local/bin/hearth-canary <<'CANARY'
+#!/bin/sh
+touch "$HOME/.config/hearth/canary-ran"
+CANARY
+chmod 0755 /home/$user/.local/bin/hearth-canary
+chown "$user:$user" /home/$user/.local/bin/hearth-canary
+tools=$(pkgs_api tools)
+tool_of() { grep -o "{\"name\":\"$1\",[^}]*}" <<<"$tools"; }
+echo "  bash: $(tool_of bash)"
+check "tools list bash owned by package bash" grep -q '"manager":"apt","package":"bash"' <<<"$(tool_of bash)"
+check "bash has its man page summary" grep -q '"summary":"GNU Bourne-Again SHell"' <<<"$(tool_of bash)"
+check "canary listed, not from a package" test -n "$(tool_of hearth-canary)"
+check "no listed program was run" test ! -e /home/$user/.config/hearth/canary-ran
+check "man page of curl shown" grep -q 'transfer a URL' <<<"$(pkgs_api 'tools/man?name=curl')"
+check "man of an option is refused" test "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/tools/man?name=-H")" = 400
+check "man of something not listed is refused" test "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/tools/man?name=nonexistent-tool")" = 404
+check "no listed program was run (after man)" test ! -e /home/$user/.config/hearth/canary-ran
+
 echo "== purge"
 apt-get purge -y -qq hearth >/dev/null
 check "package gone" not dpkg -s hearth

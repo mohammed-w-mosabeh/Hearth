@@ -249,6 +249,11 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	// transient user unit (outside this sandbox), or through snapd.
 	extraFind := discovery.ExtraConfig{Home: appsCfg.Home, Getenv: os.Getenv}
 	srv.API.HandleFunc("GET /api/v1/pkgs/{manager}", discovery.HandleExtra(extraFind))
+	// Tools: every program in PATH with its owner, read from files only.
+	tools := discovery.NewTools(discovery.ToolsConfig{Extra: extraFind, Dpkg: dpkgDB,
+		Path: filepath.SplitList(os.Getenv("PATH")), Run: safeexec.Run, Log: log})
+	srv.API.HandleFunc("GET /api/v1/tools", tools.HandleList)
+	srv.API.HandleFunc("GET /api/v1/tools/man", tools.HandleMan)
 	pkgs.RegisterExtra(reg, pkgs.ExtraConfig{Find: extraFind, Run: &pkgs.UserRunner{
 		Bus:    func(ctx context.Context) (pkgs.Bus, error) { return dbusx.SessionBus(ctx) },
 		LogDir: filepath.Join(paths.DataDir, "runs"),

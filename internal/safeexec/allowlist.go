@@ -64,6 +64,19 @@ var allowlist = map[string]Spec{
 		Validate: exactly(OneOf("hold", "unhold"), DebPackageArch),
 		Timeout:  30 * time.Second,
 	},
+	// apropos listing every man page of sections 1, 8 and 6 with its
+	// one-line summary (Tools page descriptions; tools are never run).
+	"apropos-all": {
+		Paths:    []string{"/usr/bin/apropos"},
+		Validate: exactly(Literal("-s"), Literal("1:8:6"), Literal("-l"), Literal(".")),
+		Timeout:  15 * time.Second,
+	},
+	// man showing one listed tool's page as plain text (Tools page).
+	"man-page": {
+		Paths:    []string{"/usr/bin/man"},
+		Validate: exactly(Literal("-P"), Literal("cat"), Literal("--"), ProgramName),
+		Timeout:  10 * time.Second,
+	},
 	// journalctl reading one unit's recent entries as JSON (services
 	// journal viewer). Only the shape journalArgs accepts.
 	"journalctl-unit": {

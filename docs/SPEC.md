@@ -25,7 +25,8 @@ Priority: **P1** = v0.x MVP, **P2** = v1.0, **P3** = after v1.0.
 - Actions: launch (as a transient user service `app-hearth-<id>@<n>.service`, started by the systemd user manager over D-Bus, so usage is measurable and stoppable as a group and the app does not inherit hearthd's sandbox), close, uninstall (via owning package manager), open containing folder.
 
 ### 3. Tools (P2)
-- Every executable in `$PATH` with: owning package (`dpkg -S`, cached), version (`--version`, 2 s timeout, cached), short description (`whatis`).
+- Every executable in `$PATH` (plus the usual user and manager bin directories) with: owning package (dpkg's file lists, or the Flatpak/Snap/pip/npm/cargo/Go listing; cached), version (the owner's version, or a Go binary's build info), short description (`whatis`/`apropos`).
+- Listed programs are never run to learn about them (SECURITY S7): no `--version`.
 - Actions: open in terminal, open man page, remove owning package.
 
 ### 4. Packages (P1)

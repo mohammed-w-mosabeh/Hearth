@@ -34,6 +34,7 @@ type ExtraPackage struct {
 	Location  string   `json:"location,omitempty"` // installation, prefix or file
 	SizeBytes int64    `json:"size_bytes,omitempty"`
 	UsedBy    []string `json:"used_by,omitempty"`
+	Bins      []string `json:"bins,omitempty"` // cargo: the programs it installed
 	Removable bool     `json:"removable"`
 	// Why, when not removable (web/src/lib/actions.ts reasons).
 	Why string `json:"why,omitempty"`
@@ -92,10 +93,7 @@ func Flatpak(c ExtraConfig) ExtraList {
 	out := ExtraList{Manager: "flatpak", Packages: []ExtraPackage{}}
 	_, err := os.Stat("/usr/bin/flatpak")
 	out.Available = err == nil
-	roots := c.Roots
-	if roots == nil {
-		roots = []string{"/var/lib/flatpak"}
-	}
+	roots := flatpakRoots(c)
 	type inst struct{ name, dir string }
 	insts := []inst{{"user", filepath.Join(c.dataHome(), "flatpak")}}
 	for _, r := range roots {
@@ -177,6 +175,15 @@ func Flatpak(c ExtraConfig) ExtraList {
 	}
 	sortExtra(out.Packages)
 	return out
+}
+
+// flatpakRoots are the system installations: c.Roots, default
+// /var/lib/flatpak.
+func flatpakRoots(c ExtraConfig) []string {
+	if c.Roots == nil {
+		return []string{"/var/lib/flatpak"}
+	}
+	return c.Roots
 }
 
 // metainfo reads an AppStream file's first <name> (untranslated) and its
@@ -362,11 +369,29 @@ func Pip(c ExtraConfig) ExtraList {
 				continue
 			}
 			p := ExtraPackage{ID: strings.ToLower(meta["Name"]), Name: meta["Name"], Version: clipText(meta["Version"], 100),
-				Summary: clipText(meta["Summary"], 300), Location: site, Why: WhyPip}
+				Summary: clipText(meta["Summary"], 300), Location: site, Why: WhyPip,
+				Bins: pipScripts(filepath.Join(info, "RECORD"), site, filepath.Join(c.Home, ".local/bin"))}
 			out.Packages = append(out.Packages, p)
 		}
 	}
 	sortExtra(out.Packages)
+	return out
+}
+
+// pipScripts are the programs a package's RECORD put in bin
+// ("../../../bin/flask,sha256=...,208", relative to site-packages).
+func pipScripts(record, site, bin string) []string {
+	b, err := readLimited(record, 1<<20)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, line := range strings.Split(string(b), "\n") {
+		rel, _, _ := strings.Cut(line, ",")
+		if p := filepath.Clean(filepath.Join(site, rel)); filepath.Dir(p) == bin && GoBinNameRe.MatchString(filepath.Base(p)) {
+			out = append(out, filepath.Base(p))
+		}
+	}
 	return out
 }
 
@@ -528,7 +553,7 @@ func Cargo(c ExtraConfig) ExtraList {
 			continue
 		}
 		p := ExtraPackage{ID: f[0], Name: f[0], Version: clipText(f[1], 100), Location: home, Removable: out.Available,
-			Summary: clipText(strings.Join(inst.Bins, ", "), 300)}
+			Summary: clipText(strings.Join(inst.Bins, ", "), 300), Bins: inst.Bins}
 		if !out.Available {
 			p.Why = WhyManager
 		}

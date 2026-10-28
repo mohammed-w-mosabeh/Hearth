@@ -60,10 +60,10 @@ Gate 2 result (2026-10-27): **automated checks passed; owner pentest pending** (
 - [x] 3.1 `pkgs`: dpkg status parser + fsnotify; PackageKit D-Bus for install/remove/update with simulate; essential/required protection
 - [x] 3.2 Flatpak, Snap adapters; pip --user, npm -g, cargo, go bin listing (+ remove where safe)
 - [x] 3.3 Packages page (unified + per manager, updates with security flag, hold, files/deps)
-- [ ] 3.4 `discovery/path`: Tools page (owner package, version, whatis), open in terminal / man
+- [x] 3.4 `discovery/path`: Tools page (owner package, version, whatis), open in terminal / man ("open in terminal" lands with the Terminal page, 3.7)
 - [ ] 3.5 `netinfo`: listeners via netlink sock_diag + inode→pid mapping (broker for other users' processes), connections, interfaces, NM state, firewall status
 - [ ] 3.6 Network page + lineage view (port → process → unit → package → container)
-- [ ] 3.7 Terminal page: multi-tab PTY sessions, "open terminal here"
+- [ ] 3.7 Terminal page: multi-tab PTY sessions, "open terminal here" (folders, containers, and the Tools page's "open in terminal")
 - [ ] 3.8 `scheduler`: OnCalendar visual builder + validator (fuzzed), user timers in `~/.config/systemd/user`, root timers via broker (S13), run now/pause/delete, history from journal, failure alerts
 - [ ] 3.9 Alert: new listener on 0.0.0.0
 

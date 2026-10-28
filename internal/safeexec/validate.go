@@ -98,6 +98,19 @@ func DebPackageArch(s string) error {
 	return nil
 }
 
+var programNameRe = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.+-]{0,127}$`)
+
+// ProgramName validates the file name of a program in PATH.
+func ProgramName(s string) error {
+	if err := baseCheck(s); err != nil {
+		return err
+	}
+	if !programNameRe.MatchString(s) {
+		return invalid("%q is not a program name", s)
+	}
+	return nil
+}
+
 var unitSuffixes = []string{
 	".service", ".socket", ".device", ".mount", ".automount", ".swap",
 	".target", ".path", ".timer", ".slice", ".scope",
