@@ -65,7 +65,7 @@ Gate 2 result (2026-10-27): **automated checks passed; owner pentest pending** (
 - [x] 3.6 Network page + lineage view (port → process → unit → package → container)
 - [x] 3.7 Terminal page: multi-tab PTY sessions, "open terminal here" (folders, containers, and the Tools page's "open in terminal")
 - [x] 3.8 `scheduler`: OnCalendar visual builder + validator (fuzzed), user timers in `~/.config/systemd/user`, root timers via broker (S13), run now/pause/delete, history from journal, failure alerts
-- [ ] 3.9 Alert: new listener on 0.0.0.0
+- [x] 3.9 Alert: new listener on 0.0.0.0
 
 **Gate 3:** fuzzing of all validators ≥ 60 s each without findings; e2e XSS and DNS-rebinding tests pass; no `os/exec` outside safeexec.
 

@@ -277,6 +277,32 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	srv.API.HandleFunc("GET /api/v1/net/sockets", netAPI.HandleSockets)
 	srv.API.HandleFunc("GET /api/v1/net/state", netAPI.HandleState)
 	srv.API.HandleFunc("GET /api/v1/net/lineage", netAPI.HandleLineage)
+	// A new listener on every address raises "net.new_listener" once.
+	const knownListeners = "net.known_listeners"
+	exposed := &netinfo.ExposedWatcher{Resolver: &netinfo.Resolver{AppName: apps.Name}, Dump: netinfo.Dump, Users: collect.Users, Log: log,
+		Load: func(ctx context.Context) ([]string, bool, error) {
+			raw, ok, err := db.Setting(ctx, knownListeners)
+			if err != nil || !ok {
+				return nil, ok, err
+			}
+			var list []string
+			return list, true, json.Unmarshal(raw, &list)
+		},
+		Save: func(ctx context.Context, known []string) error {
+			b, err := json.Marshal(known)
+			if err != nil {
+				return err
+			}
+			return db.SetSetting(ctx, knownListeners, b)
+		},
+		Observe: func(ctx context.Context, now time.Time, v map[string]float64) {
+			engine.Observe(ctx, now, "net.new_listener", v)
+		},
+	}
+	exposedCtx, stopExposed := context.WithCancel(ctx)
+	exposedDone := make(chan struct{})
+	go func() { exposed.Run(exposedCtx); close(exposedDone) }()
+	defer func() { stopExposed(); <-exposedDone }()
 	pkgs.RegisterExtra(reg, pkgs.ExtraConfig{Find: extraFind, Run: &pkgs.UserRunner{
 		Bus:    func(ctx context.Context) (pkgs.Bus, error) { return dbusx.SessionBus(ctx) },
 		LogDir: filepath.Join(paths.DataDir, "runs"),

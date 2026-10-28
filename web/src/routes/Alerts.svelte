@@ -125,6 +125,7 @@
     const m = metricOf(e.metric);
     if (e.metric === 'unit.failed') return t('alerts.event.unit', { unit: e.instance });
     if (e.metric === 'container.exited') return t('alerts.event.container', { name: e.instance });
+    if (e.metric === 'net.new_listener') return t('alerts.event.listener', { name: e.instance });
     if (e.metric === 'job.failed') return t('alerts.event.job', { name: e.instance });
     const where = e.instance ? ` (${e.instance})` : '';
     return `${metricLabel(m, e.metric)}${where}: ${valueText(e.value, m)}, ${t('alerts.event.peak', { v: valueText(e.peak, m) })}`;

@@ -330,6 +330,9 @@ check "but not as an exact process" not grep -q '"exact":true' <<<"$(listener_on
 echo "  hearthd: $(listener_on "$port")"
 check "hearthd's own listener is loopback only" grep -q '"address":"127.0.0.1","port":'"$port"',"scope":"loopback"' <<<"$socks"
 check "hearthd's own listener has its exact process" grep -q '"exact":true,"group":"user-unit:hearthd.service"' <<<"$(listener_on "$port")"
+listener_alert() { pkgs_api alerts/events | grep -q '"net.new_listener"[^}]*TCP 7777\|TCP 7777[^}]*"net.new_listener"'; }
+check "the new listener on 0.0.0.0 raised an alert (polled every 60 s)" wait_until 75 listener_alert
+check "hearthd's own (loopback) listener did not" not grep -q "TCP $port " <<<"$(pkgs_api alerts/events)"
 lineage=$(pkgs_api 'net/lineage?scope=user&unit=hearthd.service')
 echo "  hearthd lineage: $lineage"
 check "lineage: hearthd's unit file is from package hearth" grep -q '"unit_package":{"name":"hearth"' <<<"$lineage"

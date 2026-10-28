@@ -43,6 +43,7 @@ var Metrics = []Metric{
 	{ID: "unit.failed", Label: "Unit failed", Instance: "unit", Max: 1},
 	{ID: "container.exited", Label: "Container exited unexpectedly", Instance: "container", Max: 1},
 	{ID: "job.failed", Label: "Scheduled job failed", Instance: "job", Max: 1},
+	{ID: "net.new_listener", Label: "New listener on every address", Instance: "listener", Max: 1},
 }
 
 func metric(id string) (Metric, bool) {
@@ -138,6 +139,9 @@ func Describe(e store.AlertEvent) (summary, body string) {
 	}
 	if e.Metric == "container.exited" {
 		return e.RuleName, "Container " + e.Instance + " stopped unexpectedly."
+	}
+	if e.Metric == "net.new_listener" {
+		return e.RuleName, e.Instance + " now listens on every address (0.0.0.0 or ::): other machines on your networks can reach it."
 	}
 	if e.Metric == "job.failed" {
 		return e.RuleName, "The scheduled job " + e.Instance + " failed."
