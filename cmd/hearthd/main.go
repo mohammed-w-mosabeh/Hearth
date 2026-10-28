@@ -44,6 +44,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/power"
 	"github.com/mohammed-w-mosabeh/hearth/internal/procctl"
 	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
+	"github.com/mohammed-w-mosabeh/hearth/internal/scheduler"
 	"github.com/mohammed-w-mosabeh/hearth/internal/services"
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
 	"github.com/mohammed-w-mosabeh/hearth/internal/terminal"
@@ -314,6 +315,31 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		},
 		Audit: db.Audit, UID: os.Getuid(), Log: log,
 	}))
+
+	// Scheduler: hearth-job-<id> timers. User jobs are files in
+	// ~/.config/systemd/user plus the user manager over D-Bus.
+	sessionBus := func(ctx context.Context) (scheduler.Bus, error) {
+		c, err := dbusx.SessionBus(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return c, nil
+	}
+	userUnits := filepath.Join(filepath.Dir(paths.ConfigDir), "systemd/user")
+	jobs := &scheduler.API{
+		Stores: map[string]*scheduler.Store{
+			scheduler.ScopeUser: {Scope: scheduler.ScopeUser, UnitDir: userUnits, Bus: sessionBus,
+				W: &scheduler.UserWriter{UnitDir: userUnits, JobsDir: filepath.Join(paths.DataDir, "jobs"), Bus: sessionBus}},
+		},
+		Run: safeexec.Run, Audit: db.Audit, UID: os.Getuid(), Log: log,
+		CanReadSystemJournal: services.CanReadSystemJournal,
+	}
+	jobs.Register(reg)
+	srv.API.HandleFunc("GET /api/v1/jobs", jobs.HandleList)
+	srv.API.HandleFunc("GET /api/v1/jobs/check", jobs.HandleCheck)
+	srv.API.HandleFunc("GET /api/v1/jobs/{scope}/{id}", jobs.HandleGet)
+	srv.API.HandleFunc("GET /api/v1/jobs/{scope}/{id}/history", jobs.HandleHistory)
+	srv.API.HandleFunc("POST /api/v1/jobs/{scope}", jobs.HandleSave)
 
 	// Terminal: the user's shell in a transient unit of their systemd
 	// manager, on a pty hearthd opens (SECURITY S14).

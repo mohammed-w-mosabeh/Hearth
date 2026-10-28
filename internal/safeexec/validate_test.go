@@ -391,3 +391,53 @@ func TestToolCommands(t *testing.T) {
 		t.Error("man pager or -- not fixed")
 	}
 }
+
+func TestSchedulerCommands(t *testing.T) {
+	if Check("calendar-check", "calendar", "--iterations=5", "--", "Mon..Fri 09:30") != nil ||
+		Check("calendar-check", "calendar", "--iterations=5", "--", "--help") == nil ||
+		Check("calendar-check", "calendar", "--iterations=5", "--", "daily\nx") == nil {
+		t.Error("calendar-check")
+	}
+	if Check("timespan-check", "timespan", "--", "1h 30min") != nil || Check("timespan-check", "timespan", "--", "1h;x") == nil {
+		t.Error("timespan-check")
+	}
+	fixed := []string{"--quiet", "--no-pager", "--output=json", "--output-fields=MESSAGE,INVOCATION_ID,USER_INVOCATION_ID,_SYSTEMD_INVOCATION_ID,EXIT_STATUS,JOB_RESULT", "--lines=1000"}
+	for _, ok := range []string{"--unit=hearth-job-0a1b2c3d.service", "--user-unit=hearth-job-0a1b2c3d.service"} {
+		if err := Check("journalctl-job", append(append([]string{}, fixed...), ok)...); err != nil {
+			t.Errorf("%s: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"--unit=ssh.service", "--unit=hearth-job-0a1b2c3d.timer", "--unit=hearth-job-0A1B2C3D.service", "--directory=/"} {
+		if Check("journalctl-job", append(append([]string{}, fixed...), bad)...) == nil {
+			t.Errorf("%s accepted", bad)
+		}
+	}
+}
+
+func FuzzCalendarExpr(f *testing.F) {
+	for _, s := range []string{"daily", "Mon..Fri 09:30", "-x", "a\nb", "*:0/15"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		if CalendarExpr(s) != nil {
+			return
+		}
+		if strings.ContainsAny(s, "\n\r\x00%$\"'\\;=[]") || strings.HasPrefix(s, "-") || len(s) > 200 {
+			t.Fatalf("accepted %q", s)
+		}
+	})
+}
+
+func FuzzTimeSpan(f *testing.F) {
+	for _, s := range []string{"5min", "1h 30min", "x", "-5min"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		if TimeSpan(s) != nil {
+			return
+		}
+		if strings.ContainsAny(s, "\n\r\x00%$\"'\\;=[]-") || len(s) > 80 {
+			t.Fatalf("accepted %q", s)
+		}
+	})
+}

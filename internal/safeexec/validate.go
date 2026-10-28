@@ -111,6 +111,34 @@ func ProgramName(s string) error {
 	return nil
 }
 
+var (
+	calendarRe = regexp.MustCompile(`^[A-Za-z0-9*][A-Za-z0-9 ,:.*/~+_-]{0,199}$`)
+	spanRe     = regexp.MustCompile(`^(?:[0-9]{1,9} ?(?:usec|us|msec|ms|seconds|second|sec|s|minutes|minute|min|m|hours|hour|hr|h|days|day|d|weeks|week|w|months|month|M|years|year|y) ?){1,6}$`)
+)
+
+// CalendarExpr checks the characters of a systemd OnCalendar expression
+// (systemd.time(7)); systemd-analyze calendar decides what it means.
+func CalendarExpr(s string) error {
+	if err := baseCheck(s); err != nil {
+		return err
+	}
+	if !calendarRe.MatchString(s) || strings.Contains(s, "  ") || strings.TrimSpace(s) != s {
+		return invalid("%q is not a calendar expression", s)
+	}
+	return nil
+}
+
+// TimeSpan checks a systemd time span ("5min", "1h 30min").
+func TimeSpan(s string) error {
+	if err := baseCheck(s); err != nil {
+		return err
+	}
+	if !spanRe.MatchString(s) || strings.TrimSpace(s) != s {
+		return invalid("%q is not a time span", s)
+	}
+	return nil
+}
+
 var unitSuffixes = []string{
 	".service", ".socket", ".device", ".mount", ".automount", ".swap",
 	".target", ".path", ".timer", ".slice", ".scope",

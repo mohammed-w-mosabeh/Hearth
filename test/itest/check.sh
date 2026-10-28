@@ -344,6 +344,34 @@ check "network state lists lo" grep -q '"name":"lo","kind":"loopback"' <<<"$stat
 check "network state reports the firewalls" grep -q '"firewalls":\[{"name":"ufw"' <<<"$state"
 check "NetworkManager absent is reported" grep -q '"nm":{"running":false' <<<"$state"
 
+echo "== scheduler (user jobs)"
+post() { curl -s -X POST -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$port" -H 'Content-Type: application/json' -d "$2" "http://127.0.0.1:$port/api/v1/$1"; }
+check "schedule check: calendar" grep -q '"valid":true,"normalized":"Mon..Fri \*-\*-\* 09:30:00"' <<<"$(pkgs_api 'jobs/check?kind=calendar&value=Mon..Fri%2009:30')"
+check "schedule check: nonsense refused" grep -q '"valid":false' <<<"$(pkgs_api 'jobs/check?kind=calendar&value=bogus')"
+saved=$(post jobs/user '{"name":"itest 50% job","script":"#!/bin/sh\necho job-said-$((6*7))\nexit 3\n","timeout":30,"notify":true,"schedule":{"kind":"calendar","value":"*-*-* 03:00"}}')
+jid=$(sed -nE 's/.*"id":"([a-f0-9]{8})".*/\1/p' <<<"$saved")
+echo "  job: ${jid:-none} $saved"
+check "job saved" test -n "$jid"
+check "its units are in ~/.config/systemd/user" test -f "/home/$user/.config/systemd/user/hearth-job-$jid.timer"
+check "its script is the user's, mode 0700" test "$(stat -c '%U %a' /home/$user/.local/share/hearth/jobs/$jid/run)" = "$user 700"
+check "systemd accepts the units" asuser systemd-analyze --user verify "/home/$user/.config/systemd/user/hearth-job-$jid.service"
+check "its timer is active" asuser systemctl --user is-active "hearth-job-$jid.timer"
+check "listed with its next run" grep -q "\"id\":\"$jid\",\"name\":\"itest 50% job\".*\"paused\":false.*\"next\":[0-9]" <<<"$(pkgs_api jobs)"
+check "run now" grep -q '"done":1' <<<"$(post actions/job/run "{\"target\":\"user/$jid\"}")"
+ran() { asuser systemctl --user is-failed "hearth-job-$jid.service"; }
+wait_until 10 ran || true
+hist=$(pkgs_api "jobs/user/$jid/history")
+echo "  history: $hist"
+check "history has the failed run with its exit code and output" grep -q '"result":"failed","exit":3,"output":\["job-said-42"\]' <<<"$hist"
+check "listed as failed" grep -q "\"id\":\"$jid\".*\"failed\":true" <<<"$(pkgs_api jobs)"
+check "pause" grep -q '"done":1' <<<"$(post actions/job/pause "{\"target\":\"user/$jid\"}")"
+check "paused timer is stopped" not asuser systemctl --user is-active "hearth-job-$jid.timer"
+token=$(post actions/job/delete "{\"target\":\"user/$jid\",\"preview\":true}" | sed -nE 's/.*"token":"([^"]+)".*/\1/p')
+check "delete needs its preview" grep -q '"done":1' <<<"$(post actions/job/delete "{\"target\":\"user/$jid\",\"token\":\"$token\"}")"
+check "units and script removed" test ! -e "/home/$user/.config/systemd/user/hearth-job-$jid.timer" -a ! -e "/home/$user/.local/share/hearth/jobs/$jid"
+check "a schedule with a newline is refused" test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$port" -d '{"name":"x","script":"#!/bin/sh\n","timeout":5,"schedule":{"kind":"calendar","value":"daily\nExecStartPre=/bin/false"}}' "http://127.0.0.1:$port/api/v1/jobs/user")" = 400
+check "no unit was written for it" test -z "$(ls /home/$user/.config/systemd/user | grep hearth-job-)"
+
 echo "== terminal"
 # A shell through hearthd: it must run as the user, in the folder asked,
 # outside hearthd's sandbox (home writable), on a terminal of its own.

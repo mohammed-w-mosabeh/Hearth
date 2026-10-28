@@ -77,6 +77,27 @@ var allowlist = map[string]Spec{
 		Validate: exactly(Literal("-P"), Literal("cat"), Literal("--"), ProgramName),
 		Timeout:  10 * time.Second,
 	},
+	// systemd-analyze checking a schedule and listing its next runs
+	// (Scheduler form). Pure computation, nothing is changed.
+	"calendar-check": {
+		Paths:    []string{"/usr/bin/systemd-analyze"},
+		Validate: exactly(Literal("calendar"), Literal("--iterations=5"), Literal("--"), CalendarExpr),
+		Timeout:  5 * time.Second,
+	},
+	"timespan-check": {
+		Paths:    []string{"/usr/bin/systemd-analyze"},
+		Validate: exactly(Literal("timespan"), Literal("--"), TimeSpan),
+		Timeout:  5 * time.Second,
+	},
+	// journalctl reading a scheduled job's recent runs (Scheduler
+	// history): fixed fields and line count, one hearth-job unit.
+	"journalctl-job": {
+		Paths: []string{"/usr/bin/journalctl", "/bin/journalctl"},
+		Validate: exactly(Literal("--quiet"), Literal("--no-pager"), Literal("--output=json"),
+			Literal("--output-fields=MESSAGE,INVOCATION_ID,USER_INVOCATION_ID,_SYSTEMD_INVOCATION_ID,EXIT_STATUS,JOB_RESULT"),
+			Literal("--lines=1000"), jobUnitArg),
+		Timeout: 5 * time.Second,
+	},
 	// journalctl reading one unit's recent entries as JSON (services
 	// journal viewer). Only the shape journalArgs accepts.
 	"journalctl-unit": {
@@ -109,6 +130,16 @@ func TrivyCacheDir(s string) error {
 	dir, ok := strings.CutPrefix(s, "--cache-dir=")
 	if !ok || !filepath.IsAbs(dir) || filepath.Clean(dir) != dir || !strings.HasSuffix(dir, "/hearth/trivy") || strings.ContainsAny(dir, "\x00\n") {
 		return invalid("%q is not Hearth's trivy cache", s)
+	}
+	return nil
+}
+
+var jobUnitRe = regexp.MustCompile(`^--(?:user-)?unit=hearth-job-[a-f0-9]{8}\.service$`)
+
+// jobUnitArg is --unit= or --user-unit= of a hearth-job service.
+func jobUnitArg(s string) error {
+	if !jobUnitRe.MatchString(s) {
+		return invalid("%q is not a scheduled job's unit", s)
 	}
 	return nil
 }

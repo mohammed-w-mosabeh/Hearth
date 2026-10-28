@@ -11,14 +11,17 @@ RestartSec=2s
 # The sandbox below makes $HOME read-only, so create Hearth's directories
 # first. "+" runs this one command outside the sandbox (still as the user).
 ExecStartPre=+/usr/bin/mkdir -p -m 0700 %h/.config/hearth %h/.local/share/hearth
+ExecStartPre=+/usr/bin/mkdir -p %h/.config/systemd/user
 
 # --- Hardening (SECURITY.md "systemd hardening") ---
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=read-only
-# Relaxation: hearthd writes its config/token and database. Uses the XDG
-# defaults; a custom XDG_CONFIG_HOME/XDG_DATA_HOME needs a drop-in.
-ReadWritePaths=%h/.config/hearth %h/.local/share/hearth
+# Relaxation: hearthd writes its config/token and database, and the
+# Scheduler's user jobs (hearth-job-* units in ~/.config/systemd/user; their
+# scripts under ~/.local/share/hearth/jobs). Uses the XDG defaults; a custom
+# XDG_CONFIG_HOME/XDG_DATA_HOME needs a drop-in.
+ReadWritePaths=%h/.config/hearth %h/.local/share/hearth %h/.config/systemd/user
 PrivateTmp=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
