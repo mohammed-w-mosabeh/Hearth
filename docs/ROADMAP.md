@@ -62,7 +62,7 @@ Gate 2 result (2026-10-27): **automated checks passed; owner pentest pending** (
 - [x] 3.3 Packages page (unified + per manager, updates with security flag, hold, files/deps)
 - [x] 3.4 `discovery/path`: Tools page (owner package, version, whatis), open in terminal / man ("open in terminal" lands with the Terminal page, 3.7)
 - [x] 3.5 `netinfo`: listeners via netlink sock_diag + inode→pid mapping, connections, interfaces, NM state, firewall status (owner decision, 2026-10-28: no broker; other users' sockets are attributed to their unit or container through the socket's cgroup id, exact pids only for the user's own processes, so the broker keeps no capabilities)
-- [ ] 3.6 Network page + lineage view (port → process → unit → package → container)
+- [x] 3.6 Network page + lineage view (port → process → unit → package → container)
 - [ ] 3.7 Terminal page: multi-tab PTY sessions, "open terminal here" (folders, containers, and the Tools page's "open in terminal")
 - [ ] 3.8 `scheduler`: OnCalendar visual builder + validator (fuzzed), user timers in `~/.config/systemd/user`, root timers via broker (S13), run now/pause/delete, history from journal, failure alerts
 - [ ] 3.9 Alert: new listener on 0.0.0.0

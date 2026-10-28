@@ -17,6 +17,8 @@ type Config struct {
 	Dump     Dumper                                   // Dump in production
 	Users    func() map[int]string                    // collect.Users in production
 	Bus      func(context.Context) (dbusx.Bus, error) // the system bus
+	Session  func(context.Context) (dbusx.Bus, error) // the user's bus (user units)
+	Packages Packages                                 // dpkg owners (lineage)
 	Paths    Paths
 	Firewall FirewallConfig
 	Log      *slog.Logger

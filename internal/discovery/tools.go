@@ -1,7 +1,6 @@
 package discovery
 
 import (
-	"bufio"
 	"context"
 	"debug/buildinfo"
 	"log/slog"
@@ -199,62 +198,19 @@ func scanDirs(dirs []string) []Tool {
 	return tools
 }
 
-// canonical is p with its directory's symlinks resolved (/bin/ls is
-// /usr/bin/ls on a merged-/usr system), the file itself left alone.
-func canonical(p string, cache map[string]string) string {
-	dir, base := path.Split(p)
-	c, ok := cache[dir]
-	if !ok {
-		c = dir
-		if r, err := filepath.EvalSymlinks(dir); err == nil {
-			c = r + "/"
-		}
-		cache[dir] = c
-	}
-	return c + base
-}
-
 // owners fills the dpkg owner of each tool (of the link itself, else of
-// what it resolves to) from dpkg's file lists, info/<package>.list.
+// what it resolves to).
 func (t *Tools) owners(tools []Tool) error {
-	cache := map[string]string{}
-	want := map[string]bool{}
-	bases := map[string]bool{}
+	var paths []string
 	for _, tl := range tools {
-		for _, p := range []string{tl.Path, tl.Target} {
-			if p != "" {
-				want[canonical(p, cache)] = true
-				bases[path.Base(p)] = true
-			}
+		paths = append(paths, tl.Path)
+		if tl.Target != "" {
+			paths = append(paths, tl.Target)
 		}
 	}
-	info := filepath.Join(filepath.Dir(t.cfg.Dpkg.cfg.Status), "info")
-	lists, err := os.ReadDir(info)
+	owner, err := t.cfg.Dpkg.Owners(paths)
 	if err != nil {
 		return err
-	}
-	owner := map[string]string{}
-	for _, l := range lists {
-		pkg, ok := strings.CutSuffix(l.Name(), ".list")
-		if !ok {
-			continue
-		}
-		f, err := os.Open(filepath.Join(info, l.Name())) // #nosec G304 -- dpkg's own info directory
-		if err != nil {
-			continue
-		}
-		sc := bufio.NewScanner(f)
-		sc.Buffer(make([]byte, 64<<10), 64<<10)
-		for sc.Scan() {
-			line := sc.Text()
-			if !bases[path.Base(line)] {
-				continue
-			}
-			if c := canonical(line, cache); want[c] && owner[c] == "" {
-				owner[c] = pkg
-			}
-		}
-		_ = f.Close()
 	}
 	pkgs, err := t.cfg.Dpkg.Packages()
 	if err != nil {
@@ -268,9 +224,9 @@ func (t *Tools) owners(tools []Tool) error {
 		}
 	}
 	for i, tl := range tools {
-		pkg := owner[canonical(tl.Path, cache)]
+		pkg := owner[tl.Path]
 		if pkg == "" && tl.Target != "" {
-			pkg = owner[canonical(tl.Target, cache)]
+			pkg = owner[tl.Target]
 		}
 		if pkg == "" {
 			continue

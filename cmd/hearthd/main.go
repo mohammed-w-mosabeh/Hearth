@@ -258,9 +258,12 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	// Network: sockets from sock_diag, owners from cgroups and the user's
 	// own /proc/<pid>/fd; NetworkManager and firewall units over D-Bus.
 	netAPI := netinfo.Config{Resolver: &netinfo.Resolver{AppName: apps.Name}, Dump: netinfo.Dump, Users: collect.Users,
-		Bus: func(ctx context.Context) (dbusx.Bus, error) { return dbusx.SystemBus(ctx) }, Log: log}
+		Bus:      func(ctx context.Context) (dbusx.Bus, error) { return dbusx.SystemBus(ctx) },
+		Session:  func(ctx context.Context) (dbusx.Bus, error) { return dbusx.SessionBus(ctx) },
+		Packages: dpkgDB, Log: log}
 	srv.API.HandleFunc("GET /api/v1/net/sockets", netAPI.HandleSockets)
 	srv.API.HandleFunc("GET /api/v1/net/state", netAPI.HandleState)
+	srv.API.HandleFunc("GET /api/v1/net/lineage", netAPI.HandleLineage)
 	pkgs.RegisterExtra(reg, pkgs.ExtraConfig{Find: extraFind, Run: &pkgs.UserRunner{
 		Bus:    func(ctx context.Context) (pkgs.Bus, error) { return dbusx.SessionBus(ctx) },
 		LogDir: filepath.Join(paths.DataDir, "runs"),

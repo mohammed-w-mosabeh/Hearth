@@ -330,6 +330,14 @@ check "but not as an exact process" not grep -q '"exact":true' <<<"$(listener_on
 echo "  hearthd: $(listener_on "$port")"
 check "hearthd's own listener is loopback only" grep -q '"address":"127.0.0.1","port":'"$port"',"scope":"loopback"' <<<"$socks"
 check "hearthd's own listener has its exact process" grep -q '"exact":true,"group":"user-unit:hearthd.service"' <<<"$(listener_on "$port")"
+lineage=$(pkgs_api 'net/lineage?scope=user&unit=hearthd.service')
+echo "  hearthd lineage: $lineage"
+check "lineage: hearthd's unit file is from package hearth" grep -q '"unit_package":{"name":"hearth"' <<<"$lineage"
+check "lineage: its program is /usr/bin/hearthd from hearth" grep -q '"exe":"/usr/bin/hearthd","exe_package":{"name":"hearth"' <<<"$lineage"
+lineage=$(pkgs_api 'net/lineage?scope=system&unit=itest-listen.service')
+check "lineage: a transient unit's file has no package" not grep -q '"unit_package"' <<<"$lineage"
+check "lineage: but its program comes from systemd" grep -q '"exe":"/usr/bin/systemd-socket-activate","exe_package":{"name":"systemd"' <<<"$lineage"
+check "lineage: an option as unit is refused" test "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/net/lineage?scope=system&unit=-H")" = 400
 systemctl stop itest-listen.service
 state=$(pkgs_api net/state)
 check "network state lists lo" grep -q '"name":"lo","kind":"loopback"' <<<"$state"
