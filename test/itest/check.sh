@@ -364,6 +364,9 @@ hist=$(pkgs_api "jobs/user/$jid/history")
 echo "  history: $hist"
 check "history has the failed run with its exit code and output" grep -q '"result":"failed","exit":3,"output":\["job-said-42"\]' <<<"$hist"
 check "listed as failed" grep -q "\"id\":\"$jid\".*\"failed\":true" <<<"$(pkgs_api jobs)"
+job_alert() { pkgs_api alerts/events | grep -q '"job.failed".*itest 50% job\|itest 50% job.*"job.failed"'; }
+check "its failure raised a job.failed alert (failed units are polled every 30 s)" wait_until 45 job_alert
+check "and not a unit.failed one" not grep -q "unit.failed[^}]*hearth-job-$jid" <<<"$(pkgs_api alerts/events)"
 check "pause" grep -q '"done":1' <<<"$(post actions/job/pause "{\"target\":\"user/$jid\"}")"
 check "paused timer is stopped" not asuser systemctl --user is-active "hearth-job-$jid.timer"
 token=$(post actions/job/delete "{\"target\":\"user/$jid\",\"preview\":true}" | sed -nE 's/.*"token":"([^"]+)".*/\1/p')

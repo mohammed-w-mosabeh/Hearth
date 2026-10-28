@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -145,11 +146,20 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	}
 	defer engine.Wait()
 	(&alerts.API{Store: db, Engine: engine, Notify: notifier}).Register(srv.API)
+	// Failed hearth-job units are the Scheduler's ("job.failed", for jobs
+	// that notify), not "unit.failed"; the job stores are set further down.
+	var jobStores atomic.Pointer[map[string]*scheduler.Store]
 	failed := &services.FailedPoller{
 		System: func(ctx context.Context) (services.Bus, error) { return dbusx.SystemBus(ctx) },
 		User:   func(ctx context.Context) (services.Bus, error) { return dbusx.SessionBus(ctx) },
 		Log:    log,
 		Observe: func(ctx context.Context, now time.Time, f map[string]float64) {
+			if st := jobStores.Load(); st != nil {
+				units, failedJobs := scheduler.SplitFailures(f, *st)
+				engine.Observe(ctx, now, "unit.failed", units)
+				engine.Observe(ctx, now, "job.failed", failedJobs)
+				return
+			}
 			engine.Observe(ctx, now, "unit.failed", f)
 		},
 	}
@@ -351,6 +361,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		CanReadSystemJournal: services.CanReadSystemJournal,
 	}
 	jobs.Register(reg)
+	jobStores.Store(&jobs.Stores)
 	srv.API.HandleFunc("GET /api/v1/jobs", jobs.HandleList)
 	srv.API.HandleFunc("GET /api/v1/jobs/check", jobs.HandleCheck)
 	srv.API.HandleFunc("GET /api/v1/jobs/{scope}/{id}", jobs.HandleGet)

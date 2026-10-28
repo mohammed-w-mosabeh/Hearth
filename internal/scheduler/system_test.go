@@ -150,3 +150,32 @@ func TestSystemWriter(t *testing.T) {
 		t.Errorf("not member: %v", err)
 	}
 }
+
+func TestSplitFailures(t *testing.T) {
+	s, _, _ := userStore(t)
+	ctx := context.Background()
+	loud, err := s.Save(ctx, sample) // notify: true
+	if err != nil {
+		t.Fatal(err)
+	}
+	quiet := sample
+	quiet.Name, quiet.Notify = "Quiet", false
+	q, err := s.Save(ctx, quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	units, jobs := SplitFailures(map[string]float64{
+		"system/cups.service":                       1,
+		"user/hearth-job-" + loud.ID + ".service":   1,
+		"user/hearth-job-" + q.ID + ".service":      1,
+		"system/hearth-job-0a1b2c3d.service":        1, // no system store here
+		"user/hearth-job-deadbeef.service":          1, // gone
+		"user/hearth-job-" + loud.ID + "-x.service": 1, // not a job unit name
+	}, map[string]*Store{ScopeUser: s})
+	if len(units) != 2 || units["system/cups.service"] != 1 || units["user/hearth-job-"+loud.ID+"-x.service"] != 1 {
+		t.Errorf("units %v", units)
+	}
+	if len(jobs) != 1 || jobs["Backup"] != 1 {
+		t.Errorf("jobs %v", jobs)
+	}
+}

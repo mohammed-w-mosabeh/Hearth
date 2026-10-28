@@ -10,7 +10,7 @@ func TestAlertRules(t *testing.T) {
 	db, _ := openTemp(t)
 	ctx := context.Background()
 	rules, err := db.AlertRules(ctx)
-	if err != nil || len(rules) != 8 || rules[7].Metric != "container.exited" || rules[0].Metric != "disk.used_pct" || !rules[0].Enabled || rules[1].ForSec != 300 {
+	if err != nil || len(rules) != 9 || rules[7].Metric != "container.exited" || rules[8].Metric != "job.failed" || rules[0].Metric != "disk.used_pct" || !rules[0].Enabled || rules[1].ForSec != 300 {
 		t.Fatalf("defaults %+v %v", rules, err)
 	}
 	id, err := db.CreateAlertRule(ctx, AlertRule{Name: "Home full", Metric: "disk.used_pct", Target: "/home", Op: ">", Threshold: 80,

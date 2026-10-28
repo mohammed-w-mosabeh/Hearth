@@ -12,6 +12,7 @@
   import Tools from './routes/Tools.svelte';
   import Network from './routes/Network.svelte';
   import Terminal from './routes/Terminal.svelte';
+  import Scheduler from './routes/Scheduler.svelte';
   import Resources from './routes/Resources.svelte';
   import Services from './routes/Services.svelte';
   import Placeholder from './routes/Placeholder.svelte';
@@ -92,6 +93,8 @@
         <Tools />
       {:else if route?.id === 'network'}
         <Network />
+      {:else if route?.id === 'scheduler'}
+        <Scheduler />
       {:else if route?.id === 'terminal'}
         <!-- below, kept mounted -->
       {:else if route}

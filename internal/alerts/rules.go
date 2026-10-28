@@ -42,6 +42,7 @@ var Metrics = []Metric{
 	{ID: "battery.discharging", Label: "Battery charge while unplugged", Unit: "%", Instance: "battery", Hysteresis: 3, Max: 100},
 	{ID: "unit.failed", Label: "Unit failed", Instance: "unit", Max: 1},
 	{ID: "container.exited", Label: "Container exited unexpectedly", Instance: "container", Max: 1},
+	{ID: "job.failed", Label: "Scheduled job failed", Instance: "job", Max: 1},
 }
 
 func metric(id string) (Metric, bool) {
@@ -137,6 +138,9 @@ func Describe(e store.AlertEvent) (summary, body string) {
 	}
 	if e.Metric == "container.exited" {
 		return e.RuleName, "Container " + e.Instance + " stopped unexpectedly."
+	}
+	if e.Metric == "job.failed" {
+		return e.RuleName, "The scheduled job " + e.Instance + " failed."
 	}
 	val := func(v float64) string {
 		if m.Unit == "%" {

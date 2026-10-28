@@ -252,3 +252,27 @@ func state(ctx context.Context, bus Bus, id string, l *Listed) {
 type Problem struct{ Msg string }
 
 func (p Problem) Error() string { return p.Msg }
+
+// SplitFailures takes failed units ("<scope>/<unit>" -> 1, as the failed
+// unit poller reports them) and returns the others, and the failed jobs
+// that notify on failure, by name. Jobs are left out of the units either
+// way: a job's failure is the Scheduler's to report.
+func SplitFailures(failed map[string]float64, stores map[string]*Store) (units, jobs map[string]float64) {
+	units, jobs = map[string]float64{}, map[string]float64{}
+	for k, v := range failed {
+		scope, unit, _ := strings.Cut(k, "/")
+		id, ok := strings.CutSuffix(strings.TrimPrefix(unit, Prefix), ".service")
+		if !strings.HasPrefix(unit, Prefix) || !ok || !ValidID(id) {
+			units[k] = v
+			continue
+		}
+		s, ok := stores[scope]
+		if !ok {
+			continue
+		}
+		if j, ok := s.Read(id); ok && j.Notify {
+			jobs[j.Name] = v
+		}
+	}
+	return units, jobs
+}
