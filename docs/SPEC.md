@@ -69,6 +69,7 @@ Priority: **P1** = v0.x MVP, **P2** = v1.0, **P3** = after v1.0.
 
 ### 11. Network & ports (P1)
 - Listening sockets: proto, address (highlight `0.0.0.0`/`::` as exposed), port, process, user, service, container.
+  Other users' sockets name their service or container (from the socket's cgroup) and that unit's main process; the exact process only for the user's own sockets.
 - Active connections, per-interface and per-app throughput, IPs, DNS, gateway, Wi-Fi SSID/signal, VPN state, firewall status (nftables/ufw).
 - Actions: stop owning process/service/container, open in browser if HTTP.
 - **Lineage view ("What is this?")**: port → process → systemd unit → package → container.

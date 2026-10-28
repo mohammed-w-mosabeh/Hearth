@@ -39,6 +39,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/docker"
 	"github.com/mohammed-w-mosabeh/hearth/internal/homepage"
 	"github.com/mohammed-w-mosabeh/hearth/internal/launch"
+	"github.com/mohammed-w-mosabeh/hearth/internal/netinfo"
 	"github.com/mohammed-w-mosabeh/hearth/internal/pkgs"
 	"github.com/mohammed-w-mosabeh/hearth/internal/power"
 	"github.com/mohammed-w-mosabeh/hearth/internal/procctl"
@@ -254,6 +255,12 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		Path: filepath.SplitList(os.Getenv("PATH")), Run: safeexec.Run, Log: log})
 	srv.API.HandleFunc("GET /api/v1/tools", tools.HandleList)
 	srv.API.HandleFunc("GET /api/v1/tools/man", tools.HandleMan)
+	// Network: sockets from sock_diag, owners from cgroups and the user's
+	// own /proc/<pid>/fd; NetworkManager and firewall units over D-Bus.
+	netAPI := netinfo.Config{Resolver: &netinfo.Resolver{AppName: apps.Name}, Dump: netinfo.Dump, Users: collect.Users,
+		Bus: func(ctx context.Context) (dbusx.Bus, error) { return dbusx.SystemBus(ctx) }, Log: log}
+	srv.API.HandleFunc("GET /api/v1/net/sockets", netAPI.HandleSockets)
+	srv.API.HandleFunc("GET /api/v1/net/state", netAPI.HandleState)
 	pkgs.RegisterExtra(reg, pkgs.ExtraConfig{Find: extraFind, Run: &pkgs.UserRunner{
 		Bus:    func(ctx context.Context) (pkgs.Bus, error) { return dbusx.SessionBus(ctx) },
 		LogDir: filepath.Join(paths.DataDir, "runs"),

@@ -314,6 +314,28 @@ check "man of an option is refused" test "$(curl -s -o /dev/null -w '%{http_code
 check "man of something not listed is refused" test "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/tools/man?name=nonexistent-tool")" = 404
 check "no listed program was run (after man)" test ! -e /home/$user/.config/hearth/canary-ran
 
+echo "== network"
+# A listener of another user (nobody), on every address, in its own unit:
+# hearthd cannot read its fds, so it is attributed through its cgroup.
+systemd-run --quiet --unit=itest-listen -p User=nobody /usr/bin/systemd-socket-activate -l 0.0.0.0:7777 /bin/cat
+listening() { ss -ltn | grep -q ":$1 "; }
+wait_until 5 listening 7777 || true
+socks=$(pkgs_api net/sockets)
+listener_on() { grep -oE "\{\"proto\":\"tcp\",\"address\":\"[^\"]*\",\"port\":$1,[^{}]*(\{[^{}]*\}[^{}]*)?\}" <<<"$socks" | head -1; }
+echo "  7777: $(listener_on 7777)"
+check "other user's listener on 0.0.0.0 is exposed" grep -q '"scope":"all"' <<<"$(listener_on 7777)"
+check "its user is nobody" grep -q '"user":"nobody"' <<<"$(listener_on 7777)"
+check "attributed to its unit through the cgroup" grep -q '"unit":"itest-listen.service"' <<<"$(listener_on 7777)"
+check "but not as an exact process" not grep -q '"exact":true' <<<"$(listener_on 7777)"
+echo "  hearthd: $(listener_on "$port")"
+check "hearthd's own listener is loopback only" grep -q '"address":"127.0.0.1","port":'"$port"',"scope":"loopback"' <<<"$socks"
+check "hearthd's own listener has its exact process" grep -q '"exact":true,"group":"user-unit:hearthd.service"' <<<"$(listener_on "$port")"
+systemctl stop itest-listen.service
+state=$(pkgs_api net/state)
+check "network state lists lo" grep -q '"name":"lo","kind":"loopback"' <<<"$state"
+check "network state reports the firewalls" grep -q '"firewalls":\[{"name":"ufw"' <<<"$state"
+check "NetworkManager absent is reported" grep -q '"nm":{"running":false' <<<"$state"
+
 echo "== purge"
 apt-get purge -y -qq hearth >/dev/null
 check "package gone" not dpkg -s hearth

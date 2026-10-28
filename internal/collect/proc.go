@@ -659,6 +659,16 @@ func groupFor(cgroup, exe string) groupID {
 	}
 }
 
+// GroupOf is the group of a process in cgroup, as the Processes page
+// groups it (exe names a session's group).
+func GroupOf(cgroup, exe string) (id, kind, name, unit string) {
+	g := groupFor(cgroup, exe)
+	return g.id, g.kind, g.name, g.unit
+}
+
+// Users maps uids to names from /etc/passwd.
+func Users() map[int]string { return readPasswd() }
+
 // appName is a readable name from an app ID until .desktop names are known
 // (ROADMAP 1.10): "com.microsoft.VSCode" -> "VSCode".
 func appName(id string) string {
