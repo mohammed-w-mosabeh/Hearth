@@ -183,19 +183,7 @@ type FirewallConfig struct {
 // themselves need root to read).
 func ReadFirewalls(ctx context.Context, bus dbusx.Bus, c FirewallConfig) []Firewall {
 	exists := func(p string) bool { _, err := os.Stat(c.Root + p); return err == nil }
-	active := func(unit string) bool {
-		var path dbus.ObjectPath
-		if bus == nil || bus.Call(ctx, "org.freedesktop.systemd1", "/org/freedesktop/systemd1",
-			"org.freedesktop.systemd1.Manager.GetUnit", []any{&path}, unit) != nil {
-			return false // not loaded
-		}
-		props, err := bus.GetAll(ctx, "org.freedesktop.systemd1", path, "org.freedesktop.systemd1.Unit")
-		if err != nil {
-			return false
-		}
-		s, _ := props["ActiveState"].Value().(string)
-		return s == "active"
-	}
+	active := func(unit string) bool { return UnitActive(ctx, bus, unit) }
 	ufw := Firewall{Name: "ufw", Installed: exists("/usr/sbin/ufw")}
 	ufw.Active = ufw.Installed && ufwEnabled(c.Root+"/etc/ufw/ufw.conf") && active("ufw.service")
 	fwd := Firewall{Name: "firewalld", Installed: exists("/usr/sbin/firewalld")}
@@ -203,6 +191,21 @@ func ReadFirewalls(ctx context.Context, bus dbusx.Bus, c FirewallConfig) []Firew
 	nft := Firewall{Name: "nftables", Installed: exists("/usr/sbin/nft")}
 	nft.Active = nft.Installed && active("nftables.service")
 	return []Firewall{ufw, fwd, nft}
+}
+
+// UnitActive reports whether systemd unit is loaded and active on bus.
+func UnitActive(ctx context.Context, bus dbusx.Bus, unit string) bool {
+	var path dbus.ObjectPath
+	if bus == nil || bus.Call(ctx, "org.freedesktop.systemd1", "/org/freedesktop/systemd1",
+		"org.freedesktop.systemd1.Manager.GetUnit", []any{&path}, unit) != nil {
+		return false // not loaded
+	}
+	props, err := bus.GetAll(ctx, "org.freedesktop.systemd1", path, "org.freedesktop.systemd1.Unit")
+	if err != nil {
+		return false
+	}
+	s, _ := props["ActiveState"].Value().(string)
+	return s == "active"
 }
 
 // ufwEnabled reads ENABLED=yes from ufw.conf.

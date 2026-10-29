@@ -303,6 +303,13 @@ func FuzzJournalArgs(f *testing.F) {
 	})
 }
 
+func TestDebianSuite(t *testing.T) {
+	runCases(t, DebianSuite, []vcase{
+		{"trixie", true}, {"sid", true},
+		{"", false}, {"-x", false}, {"Trixie", false}, {"trixie-security", false}, {"../x", false}, {"a", false},
+	})
+}
+
 func TestImageRef(t *testing.T) {
 	runCases(t, ImageRef, []vcase{
 		{"nginx", true}, {"nginx:1.27-alpine", true}, {"ghcr.io/photos-app/photos-server:v3", true},
@@ -522,6 +529,25 @@ func FuzzVolume(f *testing.F) {
 			if err != nil || v < 0 || v > 1.5 || len(s) != 4 {
 				t.Fatalf("accepted %q", s)
 			}
+		}
+	})
+}
+
+func FuzzDebianSuite(f *testing.F) {
+	for _, s := range []string{"trixie", "sid", "-x", "a/b", "", "Trixie"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		if DebianSuite(s) != nil {
+			return
+		}
+		for _, r := range s {
+			if r < 'a' || r > 'z' {
+				t.Fatalf("accepted %q", s)
+			}
+		}
+		if len(s) < 2 || len(s) > 16 {
+			t.Fatalf("accepted %q", s)
 		}
 	})
 }

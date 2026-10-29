@@ -54,6 +54,16 @@ var allowlist = map[string]Spec{
 		Env:     []string{"HOME", "XDG_RUNTIME_DIR"},
 		Timeout: 10 * time.Minute,
 	},
+	// debsecan listing the CVEs that affect the installed packages
+	// (optional, if installed; Security page, only when the user asks:
+	// it fetches the Debian security tracker's data, SECURITY S21c). One
+	// shape: this release's suite, the one-line-per-CVE summary.
+	"debsecan": {
+		Paths:    []string{"/usr/bin/debsecan"},
+		Validate: exactly(Literal("--suite"), DebianSuite, Literal("--format"), Literal("summary")),
+		Env:      []string{"HOME"},
+		Timeout:  2 * time.Minute,
+	},
 	"trivy-version": {
 		Paths:    []string{"/usr/bin/trivy", "/usr/local/bin/trivy"},
 		Validate: exactly(Literal("--version")),
@@ -167,6 +177,20 @@ func Volume(s string) error {
 const TrivyTemplate = `{{range .}}{{range .Vulnerabilities}}{{.VulnerabilityID}}{{"\t"}}{{.PkgName}}{{"\t"}}{{.InstalledVersion}}{{"\t"}}{{.FixedVersion}}{{"\t"}}{{.Severity}}{{"\n"}}{{end}}{{end}}`
 
 var imageRefRe = regexp.MustCompile(`^(?:sha256:[a-f0-9]{64}|[a-z0-9][a-z0-9._-]*(?::[0-9]{1,5})?(?:/[a-z0-9][a-z0-9._-]*)*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?)$`)
+
+// debianSuiteRe matches a Debian release codename ("trixie", "sid").
+var debianSuiteRe = regexp.MustCompile(`^[a-z]{2,16}$`)
+
+// DebianSuite validates a Debian release codename.
+func DebianSuite(s string) error {
+	if err := baseCheck(s); err != nil {
+		return err
+	}
+	if !debianSuiteRe.MatchString(s) {
+		return invalid("%q is not a Debian release codename", s)
+	}
+	return nil
+}
 
 // ImageRef validates an image ID or "name[:tag]" reference.
 func ImageRef(s string) error {

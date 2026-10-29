@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/mohammed-w-mosabeh/hearth/internal/posture"
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
 )
 
@@ -137,6 +138,19 @@ func MachineMarkdown(m Machine) []byte {
 			rows = append(rows, []string{name, fmtNum(b.HealthPct, 0) + " %", cycles, fmtNum(b.Pct, 0) + " %"})
 		}
 		w.table([]string{"battery", ">health", ">cycles", ">charge"}, rows)
+	}
+
+	if m.Posture != nil {
+		w.h2("posture")
+		rows := [][]string{}
+		for _, c := range m.Posture.Checks {
+			var cells []string
+			for _, t := range findingTexts(c) {
+				cells = append(cells, md(t))
+			}
+			rows = append(rows, []string{md(posture.CheckName(c.ID)), md(statusLabel(c.Status)), strings.Join(cells, "; ")})
+		}
+		w.table([]string{"check", "status", "findings"}, rows)
 	}
 
 	w.h2("alerts")

@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mohammed-w-mosabeh/hearth/internal/posture"
 	"github.com/mohammed-w-mosabeh/hearth/internal/power"
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
 )
@@ -87,7 +88,11 @@ func seed(t *testing.T, db *store.DB) {
 }
 
 func builder(db *store.DB) *Builder {
-	return New(Config{Store: db, Clock: func() time.Time { return now }, Now: func(context.Context) Now {
+	pos := func(context.Context) posture.Report {
+		return posture.Report{Checks: []posture.Check{{ID: posture.CheckListeners, Status: posture.SevWarn,
+			Findings: []posture.Finding{{Code: "listener.exposed", Severity: posture.SevWarn, Subject: "TCP 8080 (" + evil + ")"}}}}}
+	}
+	return New(Config{Store: db, Clock: func() time.Time { return now }, Posture: pos, Now: func(context.Context) Now {
 		return Now{Host: "box", Disks: []Disk{{Mount: "/", Total: 200 << 30, Used: 101 << 30, Pct: 50.5}},
 			Batteries: []power.Battery{{ID: "BAT0", Model: evil, Pct: 80, HealthPct: 91, Cycles: 120}}}
 	}})
@@ -124,6 +129,9 @@ func TestMachineReport(t *testing.T) {
 		t.Errorf("top %+v alerts %d changes %d", m.Top, len(m.Alerts), len(m.Changes))
 	}
 
+	if m.Posture == nil || len(m.Posture.Checks) != 1 {
+		t.Errorf("posture %+v", m.Posture)
+	}
 	if _, err := builder(db).Machine(context.Background(), "year"); !errors.Is(err, ErrPeriod) {
 		t.Errorf("bad period: %v", err)
 	}
@@ -183,6 +191,9 @@ func TestHTMLIsSelfContainedAndEscaped(t *testing.T) {
 		s := string(page)
 		if scriptish.MatchString(s) {
 			t.Errorf("%s: unescaped markup", name)
+		}
+		if name == "machine" && !strings.Contains(s, "listens on every address") {
+			t.Errorf("machine: no posture section")
 		}
 		if !strings.Contains(s, "&lt;img src=x onerror=alert(1)&gt;") {
 			t.Errorf("%s: the hostile name is not shown as text", name)

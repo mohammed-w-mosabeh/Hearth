@@ -42,6 +42,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/launch"
 	"github.com/mohammed-w-mosabeh/hearth/internal/netinfo"
 	"github.com/mohammed-w-mosabeh/hearth/internal/pkgs"
+	"github.com/mohammed-w-mosabeh/hearth/internal/posture"
 	"github.com/mohammed-w-mosabeh/hearth/internal/power"
 	"github.com/mohammed-w-mosabeh/hearth/internal/procctl"
 	"github.com/mohammed-w-mosabeh/hearth/internal/reports"
@@ -467,6 +468,43 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	go func() { checker.Run(checkCtx); close(checkDone) }()
 	defer func() { stopCheck(); <-checkDone }()
 
+	// Security posture: read-only checks run when the page asks; debsecan
+	// only on the user's request (SECURITY S21c).
+	withSystemBus := func(ctx context.Context, f func(dbusx.Bus)) {
+		bus, err := dbusx.SystemBus(ctx)
+		if err != nil {
+			f(nil)
+			return
+		}
+		defer func() { _ = bus.Close() }()
+		f(bus)
+	}
+	security := posture.New(posture.Config{
+		UID: os.Getuid(), Path: append(filepath.SplitList(os.Getenv("PATH")), filepath.Join(appsCfg.Home, ".local/bin")),
+		Sockets: func() (netinfo.Sockets, error) { return netAPI.Resolver.Read(netinfo.Dump, collect.Users()) },
+		Firewalls: func(ctx context.Context) (fws []netinfo.Firewall) {
+			withSystemBus(ctx, func(bus dbusx.Bus) { fws = netinfo.ReadFirewalls(ctx, bus, netinfo.FirewallConfig{}) })
+			return fws
+		},
+		UnitActive: func(ctx context.Context, unit string) (on bool) {
+			withSystemBus(ctx, func(bus dbusx.Bus) { on = netinfo.UnitActive(ctx, bus, unit) })
+			return on
+		},
+		Updates: func(ctx context.Context) ([]string, int, error) {
+			list, err := updates.List(ctx)
+			var sec []string
+			for _, u := range list {
+				if u.Security {
+					sec = append(sec, u.Name)
+				}
+			}
+			return sec, len(list), err
+		},
+		Containers: func(ctx context.Context) ([]posture.Risky, error) { return docker.Risks(ctx, brokerClient) },
+		Run:        posture.Runner(safeexec.Run), Settings: db, Log: log,
+	})
+	security.Register(srv.API, db)
+
 	// Reports: hourly usage per app, service and container from the
 	// cgroups, and a weekly machine report saved when enabled.
 	usage := collect.NewUsageRecorder(collect.UsageConfig{UID: os.Getuid(), Store: db, Log: log,
@@ -486,7 +524,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	defer func() { stopUsage(); <-usageDone }()
 	reportBuilder := reports.New(reports.Config{Store: db, Now: func(context.Context) reports.Now {
 		return reportNow(sampler, pw)
-	}})
+	}, Posture: security.Scan})
 	weekly := &reports.Weekly{B: reportBuilder, Settings: db, Dir: filepath.Join(paths.DataDir, "reports"), Log: log}
 	weeklyCtx, stopWeekly := context.WithCancel(ctx)
 	weeklyDone := make(chan struct{})

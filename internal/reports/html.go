@@ -8,6 +8,8 @@ import (
 	"html/template"
 	"strconv"
 	"strings"
+
+	"github.com/mohammed-w-mosabeh/hearth/internal/posture"
 )
 
 // The exported page is one file: its stylesheet is inline and allowed by
@@ -57,6 +59,9 @@ var funcs = template.FuncMap{
 	"css":      func() template.CSS { return template.CSS(reportCSS) }, // #nosec G203 -- a constant stylesheet, no input
 	"csp":      func() string { return CSP },
 	"lowcover": func(c float64) bool { return c < 0.9 },
+	"status":   statusLabel,
+	"check":    posture.CheckName,
+	"findings": findingTexts,
 }
 
 func toFloat(v any) float64 {
@@ -152,6 +157,11 @@ const machineTmpl = `{{template "head" (printf "%s — %s" (t "title.machine") (
 {{if .Batteries}}<h2>{{t "batteries"}}</h2>
 <table><thead><tr><th>{{t "battery"}}</th><th class="n">{{t "health"}}</th><th class="n">{{t "cycles"}}</th><th class="n">{{t "charge"}}</th></tr></thead><tbody>
 {{range .Batteries}}<tr><td>{{line .ID}}{{if .Model}} · {{line .Model}}{{end}}</td><td class="n">{{num .HealthPct 0}} %</td><td class="n">{{if .Cycles}}{{.Cycles}}{{end}}</td><td class="n">{{num .Pct 0}} %</td></tr>
+{{end}}</tbody></table>{{end}}
+
+{{with .Posture}}<h2>{{t "posture"}}</h2>
+<table><thead><tr><th>{{t "check"}}</th><th>{{t "status"}}</th><th>{{t "findings"}}</th></tr></thead><tbody>
+{{range .Checks}}<tr><td>{{check .ID}}</td><td class="k {{.Status}}">{{status .Status}}</td><td>{{range $i, $f := findings .}}{{if $i}}<br>{{end}}{{line $f}}{{end}}</td></tr>
 {{end}}</tbody></table>{{end}}
 
 <h2>{{t "alerts"}}</h2>

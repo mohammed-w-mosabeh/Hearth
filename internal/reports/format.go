@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/alerts"
+	"github.com/mohammed-w-mosabeh/hearth/internal/posture"
 )
 
 // en holds the exported reports' strings (the UI's live in en.json); a
@@ -152,6 +153,20 @@ func fmtCPUTime(machineHours float64) string {
 		return fmt.Sprintf("%dm %02ds", int(d.Minutes()), int(d.Seconds())%60)
 	}
 	return fmt.Sprintf("%ds", int(d.Seconds()))
+}
+
+func statusLabel(s string) string { return msg("status." + s) }
+
+// findingTexts lists a check's findings in English.
+func findingTexts(c posture.Check) []string {
+	out := make([]string, 0, len(c.Findings)+1)
+	for _, f := range c.Findings {
+		out = append(out, posture.Text(f))
+	}
+	if c.Error != "" {
+		out = append(out, c.Error)
+	}
+	return out
 }
 
 func periodLabel(p string) string { return msg("period." + p) }

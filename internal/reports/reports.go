@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mohammed-w-mosabeh/hearth/internal/posture"
 	"github.com/mohammed-w-mosabeh/hearth/internal/power"
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
 )
@@ -64,6 +65,8 @@ type Config struct {
 	Store Store
 	// Now returns the current state (hostname, totals, disks, batteries).
 	Now func(ctx context.Context) Now
+	// Posture, if set, checks the security posture now (it has no history).
+	Posture func(ctx context.Context) posture.Report
 	// Clock is replaced in tests.
 	Clock func() time.Time
 }
@@ -123,6 +126,8 @@ type Machine struct {
 	// Covered is the share of the period with recorded metrics (hearthd
 	// was not running, or the machine was off, for the rest).
 	Covered float64 `json:"covered"`
+	// Posture is the security posture when the report was made.
+	Posture *posture.Report `json:"posture,omitempty"`
 }
 
 // Item is the report on one app, service or container.
@@ -242,6 +247,10 @@ func (b *Builder) Machine(ctx context.Context, period string) (Machine, error) {
 	}
 	if m.Changes, err = b.cfg.Store.AuditBetween(ctx, from, to, maxChanges); err != nil {
 		return Machine{}, fmt.Errorf("reports: %w", err)
+	}
+	if b.cfg.Posture != nil {
+		p := b.cfg.Posture(ctx)
+		m.Posture = &p
 	}
 	return m, nil
 }
