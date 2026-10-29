@@ -113,3 +113,14 @@ func TestProjectActions(t *testing.T) {
 		t.Fatalf("no broker %d", code)
 	}
 }
+
+func FuzzValidProject(f *testing.F) {
+	for _, s := range []string{"web", "my_app-2", "-x", "A", "a/b", ""} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		if ValidProject(s) && (s == "" || len(s) > 128 || strings.HasPrefix(s, "-") || strings.ContainsAny(s, "/ .\x00\n=")) {
+			t.Fatalf("accepted %q", s)
+		}
+	})
+}

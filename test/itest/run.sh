@@ -12,7 +12,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 image=hearth-itest:debian13
 name=hearth-itest-$$
 
-docker build --quiet --tag "$image" "$here" >/dev/null
+docker build --quiet --tag "$image" --file "$here/Dockerfile" "$here/.." >/dev/null
 
 # systemd needs its own cgroup namespace, tmpfs /run, and to mount
 # namespaces for the unit sandbox. No host paths are mounted.

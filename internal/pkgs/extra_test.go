@@ -206,3 +206,28 @@ func TestRemoveSnap(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 }
+
+func FuzzRemoveTargets(f *testing.F) {
+	for _, s := range []string{"system/app/org.gnome.Maps/x86_64/stable", "user/runtime/-x/a/b", "system/app/../x86_64/stable",
+		"/home/me/.npm-global::@scope/pkg", "rel::x", "/a/../b::x", "/p::-x", "/p::a b"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		unsafe := func(p string) bool {
+			return p == "" || strings.HasPrefix(p, "-") || strings.HasPrefix(p, ".") || strings.ContainsAny(p, " \t\n\r\x00;$`'\"\\")
+		}
+		if validFlatpak(s) == nil {
+			f := strings.Split(s, "/")
+			if len(f) != 5 || unsafe(f[2]) || unsafe(f[3]) || unsafe(f[4]) {
+				t.Fatalf("flatpak accepted %q", s)
+			}
+		}
+		if validNpm(s) == nil {
+			prefix, name, _ := strings.Cut(s, "::")
+			if !filepath.IsAbs(prefix) || strings.Contains(prefix+"/", "/../") || unsafe(name) || strings.Count(name, "/") > 1 ||
+				(strings.Contains(name, "/") && !strings.HasPrefix(name, "@")) {
+				t.Fatalf("npm accepted %q", s)
+			}
+		}
+	})
+}

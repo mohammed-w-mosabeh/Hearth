@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -226,3 +227,19 @@ func TestAPIAndChecker(t *testing.T) {
 }
 
 func itoa(n int64) string { b, _ := json.Marshal(n); return string(b) }
+
+func FuzzValidURL(f *testing.F) {
+	for _, s := range []string{"http://127.0.0.1:8080/", "https://nas.lan", "javascript:alert(1)", "http://u:p@h/", "http://h:99999/", "file:///etc/passwd", "//h/x"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		if ValidURL(s) != nil {
+			return
+		}
+		u, err := url.Parse(s)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil || len(s) > 2048 ||
+			strings.ContainsAny(s, " \t\n\r\x00") {
+			t.Fatalf("accepted %q", s)
+		}
+	})
+}

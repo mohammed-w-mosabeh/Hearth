@@ -136,3 +136,27 @@ func FuzzValidImage(f *testing.F) {
 		}
 	})
 }
+
+func FuzzValidNames(f *testing.F) {
+	for _, s := range []string{"web", "my-net", "0123456789ab", "-x", "a/b", "nginx", "library/nginx", "v1.2", "-tag", "a b"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		bad := func(what string) {
+			t.Fatalf("%s accepted %q", what, s)
+		}
+		unsafe := strings.ContainsAny(s, " \t\n\r\x00?#&;\\\"'") || strings.HasPrefix(s, "-")
+		if ValidNetwork(s) && (unsafe || strings.Contains(s, "/")) {
+			bad("network")
+		}
+		if ValidVolume(s) && (unsafe || strings.Contains(s, "/")) {
+			bad("volume")
+		}
+		if ValidImageName(s) && (unsafe || len(s) > 255 || strings.Contains(s, "@")) {
+			bad("image name")
+		}
+		if ValidImageTag(s) && (unsafe || len(s) > 128 || strings.ContainsAny(s, "/:@")) {
+			bad("image tag")
+		}
+	})
+}

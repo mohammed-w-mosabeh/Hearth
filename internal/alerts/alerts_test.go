@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode"
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/collect"
 	"github.com/mohammed-w-mosabeh/hearth/internal/power"
@@ -389,4 +391,24 @@ func TestAPI(t *testing.T) {
 	if code, _ := do("POST", "/api/v1/alerts/test", ""); code != 204 || len(n.list()) != 1 {
 		t.Errorf("test %d", code)
 	}
+}
+
+func FuzzValidate(f *testing.F) {
+	f.Add("Disk", "disk.used_pct", "/home", ">", 90.0, 60, "warning", "22:00", "07:00")
+	f.Add("x\ny", "unit.failed", "", "<", 0.0, -1, "info", "", "")
+	f.Add("a", "net.new_listener", "TCP 22 (ssh)", ">", 0.0, 0, "critical", "25:00", "00:00")
+	f.Fuzz(func(t *testing.T, name, id, target, op string, threshold float64, forSec int, severity, from, to string) {
+		r := store.AlertRule{Name: name, Metric: id, Target: target, Op: op, Threshold: threshold, ForSec: forSec,
+			Severity: severity, QuietFrom: from, QuietTo: to}
+		if Validate(r) != nil {
+			return
+		}
+		if strings.ContainsFunc(name+target, unicode.IsControl) || strings.TrimSpace(name) == "" || len(name) > 80 || len(target) > 255 ||
+			(op != ">" && op != "<") || math.IsNaN(threshold) || forSec < 0 || forSec > 86400 || (from == "") != (to == "") {
+			t.Fatalf("accepted %+v", r)
+		}
+		if _, ok := metric(id); !ok {
+			t.Fatalf("unknown metric accepted %q", id)
+		}
+	})
 }

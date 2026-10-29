@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 
@@ -199,4 +200,25 @@ func TestCloseAppPlan(t *testing.T) {
 			t.Errorf("%+v accepted", bad)
 		}
 	}
+}
+
+func FuzzTarget(f *testing.F) {
+	for _, s := range []string{"group:app:com.microsoft.VSCode", "group:kernel", "pid:1234:5678", "pid:0:1", "group:", "group:exe:a\nb", "pid:99999999999:1"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		group, pid, start, err := target(s)
+		if err != nil {
+			return
+		}
+		if group == "" {
+			if pid < 1 || s != fmt.Sprintf("pid:%d:%d", pid, start) {
+				t.Fatalf("pid target %q -> %d %d", s, pid, start)
+			}
+			return
+		}
+		if s != "group:"+group || len(s) > 320 || strings.ContainsAny(s, "\x00\n\r\t\"'$;`") {
+			t.Fatalf("accepted %q", s)
+		}
+	})
 }

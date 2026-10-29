@@ -240,3 +240,18 @@ func TestShellRefused(t *testing.T) {
 		t.Errorf("%s %v", msg, err)
 	}
 }
+
+func FuzzDir(f *testing.F) {
+	for _, s := range []string{"", "/", "/home/me", "rel", "/a/../b", "/a\nb", "/a/"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		d, ok := Dir(s)
+		if !ok {
+			return
+		}
+		if d != s || (s != "" && (!filepath.IsAbs(s) || filepath.Clean(s) != s || strings.Contains(s, "/../") || strings.HasSuffix(s, "/..") || strings.ContainsAny(s, "\x00\n\r\x1b\x7f") || len(s) > 4096)) {
+			t.Fatalf("accepted %q", s)
+		}
+	})
+}

@@ -36,7 +36,23 @@ var answers = map[string]struct {
 		"HostConfig":{"Privileged":true,"Binds":["/:/host"]}}`},
 	"POST /v1.44/containers/web/start": {204, ""},
 	"DELETE /v1.44/containers/web":     {204, ""},
+	// The rest of a Docker page snapshot.
+	"GET /v1.44/images/json": {200, `[]`},
+	"GET /v1.44/networks":    {200, `[]`},
+	"GET /v1.44/volumes":     {200, `{"Volumes":[]}`},
 }
+
+// hostileFlag, when it exists, adds a container whose name, image, status
+// and compose project are HTML (the e2e XSS test): a hostile daemon or
+// labels can say anything, so the UI must show it as text.
+const hostileFlag = "/run/fakedocker.hostile"
+
+// Payload is what the e2e test looks for.
+const payload = `<img src=x onerror=\"window.__xss=1\">`
+
+var hostile = `{"Id":"fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210","Names":["/` + payload + `"],` +
+	`"Image":"` + payload + `","State":"running","Status":"` + payload + `",` +
+	`"Labels":{"com.docker.compose.project":"` + payload + `","com.docker.compose.service":"` + payload + `"}}`
 
 const id = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
@@ -57,6 +73,12 @@ func main() {
 	srv := &http.Server{ReadHeaderTimeout: 5 * time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := r.Method + " " + r.URL.Path
 		_, _ = fmt.Fprintf(f, "%s %s\n", r.Method, r.URL.RequestURI())
+		if key == "GET /v1.44/containers/json" {
+			if _, err := os.Stat(hostileFlag); err == nil {
+				_, _ = w.Write([]byte(`[{"Id":"` + id + `","Names":["/web"],"State":"exited"},` + hostile + `]`))
+				return
+			}
+		}
 		a, ok := answers[key]
 		if !ok {
 			w.WriteHeader(http.StatusNotFound)

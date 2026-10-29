@@ -256,3 +256,14 @@ func TestValidID(t *testing.T) {
 		}
 	}
 }
+
+func FuzzValidID(f *testing.F) {
+	for _, s := range []string{"org.gnome.TextEditor", "firefox", "-x", "../x", "a/b", "a b", ""} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		if ValidID(s) && (s == "" || len(s) > 200 || strings.HasPrefix(s, "-") || strings.HasPrefix(s, ".") || strings.ContainsAny(s, "/\\ \x00\n\r;$`'\"")) {
+			t.Fatalf("accepted %q", s)
+		}
+	})
+}

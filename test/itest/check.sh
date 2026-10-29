@@ -430,6 +430,50 @@ check "terminal: its unit is gone" test -z "$(asuser systemctl --user list-units
 check "terminal: a relative folder is refused" test "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/terminal?dir=tmp")" = 400
 check "terminal: a foreign Origin is refused" grep -q 'refused: 403' <<<"$(asuser hearth-termprobe -url "ws://127.0.0.1:$port/api/v1/terminal" -origin http://evil.test -key "$key" || true)"
 
+echo "== e2e: XSS (Playwright, Debian's chromium)"
+# Hostile strings wherever the UI shows system-derived text: a container
+# (name, image, status, compose project), a package description, a
+# listening process's name, and a tile, a job and an alert rule.
+usermod -aG hearth "$user"
+touch /run/fakedocker.hostile
+systemd-run --quiet --unit=fakedocker /root/fakedocker
+wait_until 10 test -S /run/docker.sock || fail "fake docker started again"
+xss='<img src=x onerror="window.__xss=1">'
+mkdir -p /tmp/xssdeb/DEBIAN
+printf 'Package: hearth-xss-probe\nVersion: 1.0\nArchitecture: all\nMaintainer: itest <itest@example.invalid>\nDescription: %s\n %s\n' "$xss" "$xss" >/tmp/xssdeb/DEBIAN/control
+dpkg-deb --build /tmp/xssdeb /tmp/hearth-xss-probe.deb >/dev/null && dpkg -i /tmp/hearth-xss-probe.deb >/dev/null
+check "hostile package installed" dpkg -s hearth-xss-probe
+# In a scope of its own: hearthd's user namespace cannot read the fds of
+# processes outside it, so the owner comes from the socket's cgroup, and a
+# scope is named after its process.
+cp /usr/bin/systemd-socket-activate '/tmp/<svg onload>'
+systemd-run --quiet --scope --unit=itest-xss-listen --uid="$user" '/tmp/<svg onload>' -l 0.0.0.0:7778 /bin/cat >/dev/null 2>&1 &
+check "hostile-named listener up" wait_until 5 listening 7778
+socks=$(pkgs_api net/sockets)
+echo "  7778: $(listener_on 7778)"
+check "named after its process" grep -q '"group_name":"\\u003csvg onload\\u003e"\|"group_name":"<svg onload>"' <<<"$(listener_on 7778)"
+e2e=$(cd /opt/e2e && HEARTH_URL="http://127.0.0.1:$port/auth?t=$(cat /home/$user/.config/hearth/token)" timeout 300 npx playwright test 2>&1) || true
+if grep -qE '[0-9]+ passed' <<<"$e2e" && ! grep -qE '[0-9]+ (failed|flaky)' <<<"$e2e"; then
+	echo "$e2e" | grep -E '✓|passed' | head -20 | sed 's/^/  | /'
+else
+	echo "$e2e" | tail -120 | sed 's/^/  | /'
+fi
+check "e2e XSS: every page shows the strings as text, nothing ran" grep -qE '^ *[0-9]+ passed' <<<"$e2e"
+check "e2e XSS: no test failed" not grep -qE '[0-9]+ failed' <<<"$e2e"
+pkill -f '/tmp/<svg onload>' || true
+dpkg -r hearth-xss-probe >/dev/null
+systemctl stop fakedocker
+rm -f /run/fakedocker.hostile '/tmp/<svg onload>'
+gpasswd -d "$user" hearth >/dev/null
+
+echo "== e2e: DNS rebinding"
+for h in evil.test 127.0.0.1.evil.test "localhost:$((port + 1))" "[::1]:$port"; do
+	check "Host $h refused (page)" test "$(curl -s -o /dev/null -w '%{http_code}' -H "Host: $h" "http://127.0.0.1:$port/")" = 403
+	check "Host $h refused (API with a valid key)" test "$(curl -s -o /dev/null -w '%{http_code}' -H "Host: $h" -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/jobs")" = 403
+done
+check "Host evil.test refused (WebSocket upgrade)" test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: evil.test' -H "Origin: http://127.0.0.1:$port" -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' -H "Sec-WebSocket-Protocol: hearth.v1, hearth.key.$key" "http://127.0.0.1:$port/api/v1/terminal")" = 403
+check "a rebound page's Origin cannot open a terminal" grep -q 'refused: 403' <<<"$(asuser hearth-termprobe -url "ws://127.0.0.1:$port/api/v1/terminal" -origin "http://evil.test:$port" -key "$key" || true)"
+
 echo "== purge"
 apt-get purge -y -qq hearth >/dev/null
 check "package gone" not dpkg -s hearth

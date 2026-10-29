@@ -139,3 +139,40 @@ func FuzzSanitizeSVG(f *testing.F) {
 		}
 	})
 }
+
+func FuzzCheckIcon(f *testing.F) {
+	var p bytes.Buffer
+	_ = png.Encode(&p, image.NewGray(image.Rect(0, 0, 2, 2)))
+	f.Add(p.Bytes())
+	f.Add([]byte("RIFF\x00\x00\x00\x00WEBPVP8 "))
+	f.Add([]byte(`<svg xmlns="http://www.w3.org/2000/svg"><script>x</script></svg>`))
+	f.Add([]byte("\x89PNG\r\n\x1a\n<svg onload=x>"))
+	f.Fuzz(func(t *testing.T, b []byte) {
+		mime, out, err := CheckIcon(b)
+		if err != nil {
+			return
+		}
+		switch mime {
+		case "image/png":
+			cfg, err := png.DecodeConfig(bytes.NewReader(out))
+			if err != nil || cfg.Width > 2048 || cfg.Height > 2048 {
+				t.Fatalf("png accepted %q", b)
+			}
+		case "image/webp":
+			if string(out[:4]) != "RIFF" || string(out[8:12]) != "WEBP" {
+				t.Fatalf("webp accepted %q", b)
+			}
+		case "image/svg+xml":
+			// Only what the sanitizer gives back is ever stored.
+			want, err := SanitizeSVG(b)
+			if err != nil || !bytes.Equal(out, want) {
+				t.Fatalf("svg %q -> %q", b, out)
+			}
+		default:
+			t.Fatalf("mime %q", mime)
+		}
+		if len(b) > MaxIcon {
+			t.Fatalf("%d bytes accepted", len(b))
+		}
+	})
+}
