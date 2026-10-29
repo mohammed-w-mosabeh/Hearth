@@ -210,6 +210,16 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	running := func() []string { return collect.RunningApps("", os.Getuid()) }
 	srv.API.HandleFunc("GET /api/v1/apps/running", apps.HandleRunning(running))
 
+	// Games: Steam, Lutris and Heroic libraries read on demand, and the
+	// time desktop games run sampled once a minute.
+	games := discovery.NewGames(discovery.GamesConfig{Home: appsCfg.Home, Apps: apps, Running: running, Store: db, Log: log})
+	gamesCtx, stopGames := context.WithCancel(ctx)
+	gamesDone := make(chan struct{})
+	go func() { games.Track(gamesCtx, time.Minute); close(gamesDone) }()
+	defer func() { stopGames(); <-gamesDone }()
+	srv.API.HandleFunc("GET /api/v1/games", games.HandleList)
+	srv.API.HandleFunc("GET /api/v1/games/covers", games.HandleCovers)
+
 	// Folder size explorer: the home and disks the user owns.
 	sizes := diskusage.New(diskusage.Config{
 		Roots: diskusage.UserRoots(appsCfg.Home, func() ([]string, error) { return collect.MountPoints("") }),
@@ -232,7 +242,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		return groups, a.Name, true
 	}})
 	launch.Register(reg, launch.Config{
-		Apps: apps, Home: appsCfg.Home, Path: appsCfg.Path,
+		Apps: apps, Games: games, Home: appsCfg.Home, Path: appsCfg.Path,
 		Bus: func(ctx context.Context) (launch.Bus, error) { return dbusx.SessionBus(ctx) },
 	})
 	unitctl.Register(reg, unitctl.Config{

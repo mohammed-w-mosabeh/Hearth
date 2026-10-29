@@ -452,6 +452,11 @@ check "hostile-named listener up" wait_until 5 listening 7778
 socks=$(pkgs_api net/sockets)
 echo "  7778: $(listener_on 7778)"
 check "named after its process" grep -q '"group_name":"\\u003csvg onload\\u003e"\|"group_name":"<svg onload>"' <<<"$(listener_on 7778)"
+# A Steam game whose name is the payload (VDF escapes its quotes).
+steamapps=/home/$user/.local/share/Steam/steamapps
+asuser mkdir -p "$steamapps"
+printf '"AppState"\n{\n\t"appid"\t"9"\n\t"name"\t"%s"\n\t"StateFlags"\t"4"\n}\n' "${xss//\"/\\\"}" | asuser tee "$steamapps/appmanifest_9.acf" >/dev/null
+check "hostile game listed" grep -q '"id":"steam.9"' <<<"$(pkgs_api games)"
 e2e=$(cd /opt/e2e && HEARTH_URL="http://127.0.0.1:$port/auth?t=$(cat /home/$user/.config/hearth/token)" timeout 300 npx playwright test 2>&1) || true
 if grep -qE '[0-9]+ passed' <<<"$e2e" && ! grep -qE '[0-9]+ (failed|flaky)' <<<"$e2e"; then
 	echo "$e2e" | grep -E '✓|passed' | head -20 | sed 's/^/  | /'
@@ -462,6 +467,7 @@ check "e2e XSS: every page shows the strings as text, nothing ran" grep -qE '^ *
 check "e2e XSS: no test failed" not grep -qE '[0-9]+ failed' <<<"$e2e"
 pkill -f '/tmp/<svg onload>' || true
 dpkg -r hearth-xss-probe >/dev/null
+rm -r "/home/$user/.local/share/Steam"
 systemctl stop fakedocker
 rm -f /run/fakedocker.hostile '/tmp/<svg onload>'
 gpasswd -d "$user" hearth >/dev/null
