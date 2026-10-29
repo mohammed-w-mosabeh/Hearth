@@ -316,3 +316,95 @@ func TestHandleCovers(t *testing.T) {
 		t.Errorf("too many: %d", code)
 	}
 }
+
+func TestAutostart(t *testing.T) {
+	tr, cfg := newTree(t)
+	etc := filepath.Join(tr.root, "etc/xdg")
+	tr.file("etc/xdg/autostart/nm-applet.desktop", desktop("Network", "Comment=Applet", "Exec=nm-applet"), 0o600)
+	tr.file("etc/xdg/autostart/gsd-power.desktop", desktop("Power", "NoDisplay=true"), 0o600)
+	tr.file("etc/xdg/autostart/kde.desktop", desktop("KDE thing", "OnlyShowIn=KDE;"), 0o600)
+	tr.file("etc/xdg/autostart/off.desktop", desktop("Off by default", "X-GNOME-Autostart-enabled=false"), 0o600)
+	tr.file("etc/xdg/autostart/print.desktop", desktop("Print"), 0o600)
+	tr.file("home/.config/autostart/print.desktop", "[Desktop Entry]\nHidden=true\n", 0o600) // bare override
+	tr.file("home/.config/autostart/mine.desktop", desktop("Mine", "# keep me", "Hidden=false", "[Desktop Action x]", "Hidden=keep"), 0o600)
+	x := NewIndex(cfg)
+	x.Scan()
+	a := NewAutostart(AutostartConfig{ConfigDirs: []string{etc}, Desktops: []string{"GNOME"}, Apps: x}, cfg.Home)
+
+	list := func() map[string]AutostartEntry {
+		m := map[string]AutostartEntry{}
+		for _, e := range a.List() {
+			m[e.ID] = e
+		}
+		return m
+	}
+	got := list()
+	if len(got) != 4 || !got["nm-applet"].Enabled || got["nm-applet"].Origin != "system" || got["off"].Enabled ||
+		got["print"].Enabled || got["print"].Name != "Print" || !got["mine"].Enabled || got["mine"].Origin != "user" {
+		t.Fatalf("%+v", got)
+	}
+
+	// Off: a user copy of the system file with Hidden=true.
+	if err := a.Set("nm-applet", false); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(cfg.Home, ".config/autostart/nm-applet.desktop"))
+	if !strings.Contains(string(b), "[Desktop Entry]\nHidden=true\n") || !strings.Contains(string(b), "Exec=nm-applet") || list()["nm-applet"].Enabled {
+		t.Errorf("override %q", b)
+	}
+	// On again, from a bare override: rebuilt from the system file.
+	if err := a.Set("print", true); err != nil {
+		t.Fatal(err)
+	}
+	b, _ = os.ReadFile(filepath.Join(cfg.Home, ".config/autostart/print.desktop"))
+	if !strings.Contains(string(b), "Exec=print") || !strings.Contains(string(b), "Hidden=false") || !list()["print"].Enabled {
+		t.Errorf("rebuilt %q", b)
+	}
+	if err := a.Set("off", true); err != nil || !list()["off"].Enabled {
+		t.Errorf("X-GNOME-Autostart-enabled: %v", err)
+	}
+	// A user file keeps its other lines; other groups are not touched.
+	if err := a.Set("mine", false); err != nil {
+		t.Fatal(err)
+	}
+	b, _ = os.ReadFile(filepath.Join(cfg.Home, ".config/autostart/mine.desktop"))
+	if !strings.Contains(string(b), "# keep me") || !strings.Contains(string(b), "Hidden=true\n") || !strings.Contains(string(b), "Hidden=keep") ||
+		strings.Count(string(b), "Hidden=") != 2 {
+		t.Errorf("edited %q", b)
+	}
+	for _, bad := range []string{"gsd-power", "kde", "nope", "../x"} {
+		if err := a.Set(bad, false); err == nil {
+			t.Errorf("set %s accepted", bad)
+		}
+	}
+
+	if err := a.Add("org.gnome.TextEditor"); err != nil {
+		t.Fatal(err)
+	}
+	if e := list()["org.gnome.TextEditor"]; !e.Enabled || e.Origin != "user" {
+		t.Errorf("added %+v", e)
+	}
+	if err := a.Add("nope"); err == nil {
+		t.Error("unknown app added")
+	}
+	entries, _ := os.ReadDir(filepath.Join(cfg.Home, ".config/autostart"))
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".hearth-") {
+			t.Errorf("temporary file left: %s", e.Name())
+		}
+	}
+}
+
+func FuzzSetDesktopKeys(f *testing.F) {
+	f.Add("[Desktop Entry]\nName=x\nHidden=false\n[Other]\nHidden=y\n")
+	f.Add("Name=x")
+	f.Fuzz(func(t *testing.T, s string) {
+		out := setDesktopKeys([]byte(s), map[string]string{"Hidden": "true"}, nil)
+		if len(out) > maxDesktopFile+64 && len(s) <= maxDesktopFile {
+			t.Fatalf("grew to %d", len(out))
+		}
+		if e, ok := parseDesktop(out); ok && !e.Hidden && len(s) < 4096 && !strings.ContainsAny(s, "\r") {
+			t.Fatalf("Hidden not set in %q -> %q", s, out)
+		}
+	})
+}

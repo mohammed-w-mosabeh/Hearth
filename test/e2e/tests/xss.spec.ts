@@ -76,6 +76,7 @@ const pages: { name: string; hash: string; text: string }[] = [
   { name: 'Packages description', hash: '#/packages?q=hearth-xss-probe', text: PAYLOAD },
   { name: 'Network process name', hash: '#/network?q=7778', text: COMM },
   { name: 'Games name', hash: '#/games', text: PAYLOAD },
+  { name: 'Settings autostart entry', hash: '#/settings', text: PAYLOAD },
 ];
 
 for (const p of pages) {

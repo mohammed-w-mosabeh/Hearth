@@ -73,7 +73,7 @@ Gate 3 result (2026-10-29): **passed.** Fuzzing: 30 targets, every validator of 
 
 ## Phase 4 — Games, settings, reports, unique features (~3 weeks)
 - [x] 4.1 Games: Steam, Lutris, Heroic, `Categories=Game`; playtime tracking; Games page (launchers keep their own playtime for their games; Hearth samples desktop games once a minute)
-- [ ] 4.2 Settings page via D-Bus (Wi-Fi/connections, brightness, power profile, audio, time zone, hostname, autostart, power actions)
+- [x] 4.2 Settings page via D-Bus (Wi-Fi/connections, brightness, power profile, audio, time zone, hostname, autostart, power actions) (Wi-Fi passwords never pass through Hearth: NetworkManager asks the desktop's secret agent; audio through pw-dump/wpctl in safeexec; autostart writes only ~/.config/autostart, never deletes)
 - [ ] 4.3 Reports: machine + item reports, HTML/MD export, print-to-PDF stylesheet, weekly scheduled report
 - [ ] 4.4 Security posture page
 - [ ] 4.5 Change timeline + snapshot diff

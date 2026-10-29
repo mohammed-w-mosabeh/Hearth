@@ -48,6 +48,7 @@ hearth/
     services/     # systemd D-Bus wrapper
     launch/       # app launch: Exec= parsing, transient app-hearth-<id>@<n>.service via the user manager (D-Bus)
     netinfo/      # sock_diag, interfaces, NM
+    settings/     # Settings page: hostnamed, timedated, logind, NetworkManager, PipeWire (wpctl), autostart
     alerts/       # rules, evaluator, hysteresis, channels
     scheduler/    # systemd timer generator, history from journal
     terminal/     # pty sessions

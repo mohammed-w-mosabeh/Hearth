@@ -57,7 +57,7 @@ Hearth is effectively a root-capable control panel. Assume any web page the user
 ```
 NoNewPrivileges=yes
 ProtectSystem=strict
-ProtectHome=read-only        # hearthd: ReadWritePaths=%h/.local/share/hearth %h/.config/hearth %h/.config/systemd/user
+ProtectHome=read-only        # hearthd: ReadWritePaths=%h/.local/share/hearth %h/.config/hearth %h/.config/systemd/user %h/.config/autostart
 PrivateTmp=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes

@@ -15,6 +15,7 @@ type entry struct {
 	Type, Name, GenericName, Comment, Icon, Exec, TryExec, Path, WMClass string
 	Categories, Keywords, OnlyShowIn, NotShowIn                          []string
 	NoDisplay, Hidden, Terminal                                          bool
+	AutostartOff                                                         bool // X-GNOME-Autostart-enabled=false
 	FlatpakID, SnapName                                                  string
 }
 
@@ -86,6 +87,8 @@ func parseDesktop(b []byte) (entry, bool) {
 			e.Hidden = v == "true"
 		case "Terminal":
 			e.Terminal = v == "true"
+		case "X-GNOME-Autostart-enabled":
+			e.AutostartOff = v == "false"
 		case "X-Flatpak":
 			e.FlatpakID = v
 		case "X-SnapInstanceName":

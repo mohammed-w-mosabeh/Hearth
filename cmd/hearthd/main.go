@@ -48,6 +48,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/scheduler"
 	"github.com/mohammed-w-mosabeh/hearth/internal/scheduler/schedapi"
 	"github.com/mohammed-w-mosabeh/hearth/internal/services"
+	"github.com/mohammed-w-mosabeh/hearth/internal/settings"
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
 	"github.com/mohammed-w-mosabeh/hearth/internal/terminal"
 	"github.com/mohammed-w-mosabeh/hearth/internal/unitctl"
@@ -245,6 +246,22 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		Apps: apps, Games: games, Home: appsCfg.Home, Path: appsCfg.Path,
 		Bus: func(ctx context.Context) (launch.Bus, error) { return dbusx.SessionBus(ctx) },
 	})
+	// Settings page: D-Bus services, PipeWire's tools, autostart entries.
+	autostart := discovery.NewAutostart(discovery.AutostartConfig{
+		ConfigHome: os.Getenv("XDG_CONFIG_HOME"), ConfigDirs: splitList(os.Getenv("XDG_CONFIG_DIRS")),
+		Desktops: appsCfg.Desktops, Apps: apps,
+	}, appsCfg.Home)
+	sysSettings := settings.New(settings.Config{
+		System:    func(ctx context.Context) (settings.Bus, error) { return dbusx.SystemBus(ctx) },
+		Audio:     safeexec.Run,
+		Autostart: autostart,
+	})
+	sysSettings.Register(reg)
+	srv.API.HandleFunc("GET /api/v1/system/info", sysSettings.HandleInfo)
+	srv.API.HandleFunc("GET /api/v1/system/timezones", sysSettings.HandleTimezones)
+	srv.API.HandleFunc("GET /api/v1/system/network", sysSettings.HandleNetwork)
+	srv.API.HandleFunc("GET /api/v1/system/audio", sysSettings.HandleAudio)
+	srv.API.HandleFunc("GET /api/v1/system/autostart", sysSettings.HandleAutostart)
 	unitctl.Register(reg, unitctl.Config{
 		System: func(ctx context.Context) (unitctl.Bus, error) { return dbusx.SystemBus(ctx) },
 		User:   func(ctx context.Context) (unitctl.Bus, error) { return dbusx.SessionBus(ctx) },
@@ -570,4 +587,15 @@ func version() string {
 		return v
 	}
 	return "unknown"
+}
+
+// splitList splits a colon-separated list, dropping empty entries.
+func splitList(v string) []string {
+	var out []string
+	for _, p := range strings.Split(v, ":") {
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

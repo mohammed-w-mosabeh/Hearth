@@ -105,6 +105,60 @@ var allowlist = map[string]Spec{
 		Validate: journalArgs,
 		Timeout:  5 * time.Second,
 	},
+	// PipeWire (Settings page, audio): pw-dump lists the graph as JSON;
+	// wpctl reads and sets one node's volume and mute, and picks the
+	// default device. Node IDs are numbers from pw-dump.
+	"pw-dump": {
+		Paths:    []string{"/usr/bin/pw-dump"},
+		Validate: exactly(Literal("--no-colors")),
+		Env:      []string{"XDG_RUNTIME_DIR"},
+		Timeout:  5 * time.Second,
+	},
+	"wpctl-get-volume": {
+		Paths:    []string{"/usr/bin/wpctl"},
+		Validate: exactly(Literal("get-volume"), PWNodeID),
+		Env:      []string{"XDG_RUNTIME_DIR"},
+		Timeout:  5 * time.Second,
+	},
+	"wpctl-set-volume": {
+		Paths:    []string{"/usr/bin/wpctl"},
+		Validate: exactly(Literal("set-volume"), PWNodeID, Volume),
+		Env:      []string{"XDG_RUNTIME_DIR"},
+		Timeout:  5 * time.Second,
+	},
+	"wpctl-set-mute": {
+		Paths:    []string{"/usr/bin/wpctl"},
+		Validate: exactly(Literal("set-mute"), PWNodeID, OneOf("0", "1")),
+		Env:      []string{"XDG_RUNTIME_DIR"},
+		Timeout:  5 * time.Second,
+	},
+	"wpctl-set-default": {
+		Paths:    []string{"/usr/bin/wpctl"},
+		Validate: exactly(Literal("set-default"), PWNodeID),
+		Env:      []string{"XDG_RUNTIME_DIR"},
+		Timeout:  5 * time.Second,
+	},
+}
+
+var pwNodeIDRe = regexp.MustCompile(`^[0-9]{1,9}$`)
+
+// PWNodeID accepts a PipeWire object ID.
+func PWNodeID(s string) error {
+	if !pwNodeIDRe.MatchString(s) {
+		return invalid("not a PipeWire object ID: %q", s)
+	}
+	return nil
+}
+
+var volumeRe = regexp.MustCompile(`^[01]\.[0-9]{2}$`)
+
+// Volume accepts a linear volume from "0.00" to "1.50" (wpctl allows
+// boosting above 1.0; Hearth stops at 150%).
+func Volume(s string) error {
+	if !volumeRe.MatchString(s) || s > "1.50" {
+		return invalid("not a volume from 0.00 to 1.50: %q", s)
+	}
+	return nil
 }
 
 // TrivyTemplate prints one vulnerability per line: ID, package,

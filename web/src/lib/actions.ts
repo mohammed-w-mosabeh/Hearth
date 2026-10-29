@@ -69,6 +69,8 @@ const reasons: Record<string, MessageKey> = {
   manager: 'reason.manager',
   root: 'reason.root',
   pip: 'reason.pip',
+  unavailable: 'reason.unavailable',
+  enterprise: 'reason.enterprise',
 };
 
 /** The i18n key explaining why an item was blocked or failed. */

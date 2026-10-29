@@ -414,6 +414,26 @@ check "broker audited the job calls" grep -q 'sched.save.*ok' /var/lib/hearth/au
 rm -f /etc/polkit-1/rules.d/51-hearth-itest-jobs.rules
 gpasswd -d "$user" hearth >/dev/null
 
+echo "== settings"
+info=$(pkgs_api system/info)
+echo "  info: ${info:0:200}"
+check "system info: hostname from hostnamed" grep -q '"static":"' <<<"$info"
+check "system info: time zones from timedated" grep -q '"timezones":\["' <<<"$(pkgs_api system/timezones)"
+check "network: answers without NetworkManager" grep -q '"available":false' <<<"$(pkgs_api system/network)"
+mkdir -p /etc/xdg/autostart
+printf '[Desktop Entry]\nType=Application\nName=itest autostart\nExec=/bin/true\n' >/etc/xdg/autostart/hearth-itest.desktop
+check "autostart: system entry listed as on" grep -q '"id":"hearth-itest","name":"itest autostart","enabled":true,"origin":"system"' <<<"$(pkgs_api system/autostart)"
+check "autostart: turned off" grep -q '"done":1' <<<"$(post actions/autostart/set '{"target":"hearth-itest","params":{"enabled":"false"}}')"
+check "autostart: through the sandbox, into ~/.config/autostart" grep -qx 'Hidden=true' "/home/$user/.config/autostart/hearth-itest.desktop"
+check "autostart: the system file is untouched" not grep -q Hidden /etc/xdg/autostart/hearth-itest.desktop
+check "autostart: listed as off" grep -q '"id":"hearth-itest","name":"itest autostart","enabled":false' <<<"$(pkgs_api system/autostart)"
+check "autostart: a path is refused" not grep -q '"done":1' <<<"$(post actions/autostart/set '{"target":"../../.bashrc","params":{"enabled":"false"}}')"
+hn=$(hostname)
+check "hostname: a malformed name is refused before D-Bus" grep -q 'hostname is letters' <<<"$(post actions/system/hostname '{"target":"static","params":{"value":"Bad Name"}}')"
+check "hostname: unchanged" test "$(hostname)" = "$hn"
+check "power off needs a preview token" not grep -q '"done":1' <<<"$(post actions/power/poweroff '{"target":"machine"}')"
+rm -f /etc/xdg/autostart/hearth-itest.desktop "/home/$user/.config/autostart/hearth-itest.desktop"
+
 echo "== terminal"
 # A shell through hearthd: it must run as the user, in the folder asked,
 # outside hearthd's sandbox (home writable), on a terminal of its own.
@@ -452,6 +472,9 @@ check "hostile-named listener up" wait_until 5 listening 7778
 socks=$(pkgs_api net/sockets)
 echo "  7778: $(listener_on 7778)"
 check "named after its process" grep -q '"group_name":"\\u003csvg onload\\u003e"\|"group_name":"<svg onload>"' <<<"$(listener_on 7778)"
+# An autostart entry named with the payload (Settings page).
+mkdir -p /etc/xdg/autostart
+printf '[Desktop Entry]\nType=Application\nName=%s\nComment=%s\nExec=/bin/true\n' "$xss" "$xss" >/etc/xdg/autostart/hearth-xss.desktop
 # A Steam game whose name is the payload (VDF escapes its quotes).
 steamapps=/home/$user/.local/share/Steam/steamapps
 asuser mkdir -p "$steamapps"
@@ -468,6 +491,7 @@ check "e2e XSS: no test failed" not grep -qE '[0-9]+ failed' <<<"$e2e"
 pkill -f '/tmp/<svg onload>' || true
 dpkg -r hearth-xss-probe >/dev/null
 rm -r "/home/$user/.local/share/Steam"
+rm -f /etc/xdg/autostart/hearth-xss.desktop
 systemctl stop fakedocker
 rm -f /run/fakedocker.hostile '/tmp/<svg onload>'
 gpasswd -d "$user" hearth >/dev/null

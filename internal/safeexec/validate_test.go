@@ -491,3 +491,37 @@ func FuzzDebPackageArch(f *testing.F) {
 		}
 	})
 }
+
+func TestPipeWire(t *testing.T) {
+	for _, ok := range []string{"0.00", "0.75", "1.00", "1.50"} {
+		if Volume(ok) != nil {
+			t.Errorf("volume %q refused", ok)
+		}
+	}
+	for _, bad := range []string{"1.51", "2.00", "-0.10", "0.5", "1", ".50", "0.500", "1e0"} {
+		if Volume(bad) == nil {
+			t.Errorf("volume %q accepted", bad)
+		}
+	}
+	for _, bad := range []string{"", "-1", "@DEFAULT_AUDIO_SINK@", "1234567890", "1 2"} {
+		if PWNodeID(bad) == nil {
+			t.Errorf("node %q accepted", bad)
+		}
+	}
+	if Check("wpctl-set-volume", "set-volume", "59", "0.40") != nil || Check("wpctl-set-volume", "set-volume", "59", "0.40", "--limit") == nil ||
+		Check("pw-dump", "--no-colors") != nil || Check("pw-dump") == nil || Check("wpctl-set-mute", "set-mute", "59", "toggle") == nil {
+		t.Error("wpctl shapes")
+	}
+}
+
+func FuzzVolume(f *testing.F) {
+	f.Add("0.40")
+	f.Fuzz(func(t *testing.T, s string) {
+		if Volume(s) == nil {
+			v, err := strconv.ParseFloat(s, 64)
+			if err != nil || v < 0 || v > 1.5 || len(s) != 4 {
+				t.Fatalf("accepted %q", s)
+			}
+		}
+	})
+}
