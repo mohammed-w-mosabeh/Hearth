@@ -2,7 +2,9 @@ package safeexec
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode"
@@ -401,16 +403,35 @@ func TestSchedulerCommands(t *testing.T) {
 	if Check("timespan-check", "timespan", "--", "1h 30min") != nil || Check("timespan-check", "timespan", "--", "1h;x") == nil {
 		t.Error("timespan-check")
 	}
-	fixed := []string{"--quiet", "--no-pager", "--output=json", "--output-fields=MESSAGE,INVOCATION_ID,USER_INVOCATION_ID,_SYSTEMD_INVOCATION_ID,EXIT_STATUS,JOB_RESULT", "--lines=1000"}
-	for _, ok := range []string{"--unit=hearth-job-0a1b2c3d.service", "--user-unit=hearth-job-0a1b2c3d.service"} {
-		if err := Check("journalctl-job", append(append([]string{}, fixed...), ok)...); err != nil {
-			t.Errorf("%s: %v", ok, err)
+	job := func(args ...string) error {
+		return Check("journalctl-job", append(append([]string{}, JobJournalFixedArgs...), args...)...)
+	}
+	for _, user := range []bool{true, false} {
+		if err := job(JobJournalMatches("hearth-job-0a1b2c3d", user)...); err != nil {
+			t.Errorf("user %v: %v", user, err)
 		}
 	}
-	for _, bad := range []string{"--unit=ssh.service", "--unit=hearth-job-0a1b2c3d.timer", "--unit=hearth-job-0A1B2C3D.service", "--directory=/"} {
-		if Check("journalctl-job", append(append([]string{}, fixed...), bad)...) == nil {
-			t.Errorf("%s accepted", bad)
+	uid := "_UID=" + strconv.Itoa(os.Getuid())
+	for _, bad := range [][]string{
+		{},
+		{"--unit=hearth-job-0a1b2c3d.service"},
+		{"--user-unit=hearth-job-0a1b2c3d.service"},
+		JobJournalMatches("ssh", false),
+		JobJournalMatches("hearth-job-0A1B2C3D", true),
+		JobJournalMatches("hearth-job-0a1b2c3d", true)[:5],
+		append(JobJournalMatches("hearth-job-0a1b2c3d", true), "+", "_UID=0"),
+		// Another user's entries, or the system's, as a user job's.
+		{"_SYSTEMD_USER_UNIT=hearth-job-0a1b2c3d.service", "_UID=0", "+", "USER_UNIT=hearth-job-0a1b2c3d.service", "_UID=0", "+", "SYSLOG_IDENTIFIER=hearth-job-0a1b2c3d", "_UID=0"},
+		// A root job's output without its _UID pin.
+		{"_SYSTEMD_UNIT=hearth-job-0a1b2c3d.service", "_UID=0", "+", "UNIT=hearth-job-0a1b2c3d.service", "_PID=1", "+", "SYSLOG_IDENTIFIER=hearth-job-0a1b2c3d"},
+		{"_SYSTEMD_USER_UNIT=hearth-job-0a1b2c3d.service", uid, "+", "--directory=/"},
+	} {
+		if job(bad...) == nil {
+			t.Errorf("%q accepted", bad)
 		}
+	}
+	if Check("journalctl-job", append([]string{"--quiet", "--no-pager", "--output=json", "--output-fields=MESSAGE", "--lines=1000"}, JobJournalMatches("hearth-job-0a1b2c3d", true)...)...) == nil {
+		t.Error("other fields accepted")
 	}
 }
 
@@ -437,6 +458,35 @@ func FuzzTimeSpan(f *testing.F) {
 			return
 		}
 		if strings.ContainsAny(s, "\n\r\x00%$\"'\\;=[]-") || len(s) > 80 {
+			t.Fatalf("accepted %q", s)
+		}
+	})
+}
+
+func FuzzProgramName(f *testing.F) {
+	for _, s := range []string{"ls", "g++", "python3.13", "-H", "../x", "a b", ""} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		if ProgramName(s) != nil {
+			return
+		}
+		if s == "" || len(s) > 128 || strings.HasPrefix(s, "-") || strings.HasPrefix(s, ".") || strings.ContainsAny(s, "/ \t\n\r\x00;$`'\"\\*?") {
+			t.Fatalf("accepted %q", s)
+		}
+	})
+}
+
+func FuzzDebPackageArch(f *testing.F) {
+	for _, s := range []string{"curl", "libc6:amd64", "a:", ":amd64", "-x", "x:y:z", "x:-y"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		if DebPackageArch(s) != nil {
+			return
+		}
+		name, arch, _ := strings.Cut(s, ":")
+		if DebPackage(name) != nil || strings.Count(s, ":") > 1 || strings.HasPrefix(arch, "-") || strings.ContainsAny(s, " /\x00\n=") {
 			t.Fatalf("accepted %q", s)
 		}
 	})

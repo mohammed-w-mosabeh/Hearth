@@ -2,8 +2,10 @@ package safeexec
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -90,13 +92,11 @@ var allowlist = map[string]Spec{
 		Timeout:  5 * time.Second,
 	},
 	// journalctl reading a scheduled job's recent runs (Scheduler
-	// history): fixed fields and line count, one hearth-job unit.
+	// history): fixed fields and line count, one hearth-job's matches.
 	"journalctl-job": {
-		Paths: []string{"/usr/bin/journalctl", "/bin/journalctl"},
-		Validate: exactly(Literal("--quiet"), Literal("--no-pager"), Literal("--output=json"),
-			Literal("--output-fields=MESSAGE,INVOCATION_ID,USER_INVOCATION_ID,_SYSTEMD_INVOCATION_ID,EXIT_STATUS,JOB_RESULT"),
-			Literal("--lines=1000"), jobUnitArg),
-		Timeout: 5 * time.Second,
+		Paths:    []string{"/usr/bin/journalctl", "/bin/journalctl"},
+		Validate: jobJournalArgs,
+		Timeout:  5 * time.Second,
 	},
 	// journalctl reading one unit's recent entries as JSON (services
 	// journal viewer). Only the shape journalArgs accepts.
@@ -134,12 +134,46 @@ func TrivyCacheDir(s string) error {
 	return nil
 }
 
-var jobUnitRe = regexp.MustCompile(`^--(?:user-)?unit=hearth-job-[a-f0-9]{8}\.service$`)
+// JobJournalFixedArgs start every journalctl-job command line.
+var JobJournalFixedArgs = []string{"--quiet", "--no-pager", "--output=json",
+	"--output-fields=MESSAGE,INVOCATION_ID,USER_INVOCATION_ID,_SYSTEMD_INVOCATION_ID,_TRANSPORT,EXIT_STATUS,JOB_RESULT", "--lines=1000"}
 
-// jobUnitArg is --unit= or --user-unit= of a hearth-job service.
-func jobUnitArg(s string) error {
-	if !jobUnitRe.MatchString(s) {
-		return invalid("%q is not a scheduled job's unit", s)
+var jobBaseRe = regexp.MustCompile(`^hearth-job-[a-f0-9]{8}$`)
+
+// JobJournalMatches selects a hearth-job's entries (base is its unit name
+// without ".service"): the service's own, by cgroup; its manager's
+// messages about it; and its output by SyslogIdentifier, which journald
+// takes from the stream itself, because a job that exits at once can
+// leave lines without unit or invocation fields. Every term pins _UID
+// (_PID=1 for the system manager), so no other user can add lines with
+// logger -t. A user job's entries are the running user's.
+func JobJournalMatches(base string, user bool) []string {
+	if user {
+		uid := "_UID=" + strconv.Itoa(os.Getuid())
+		return []string{"_SYSTEMD_USER_UNIT=" + base + ".service", uid, "+", "USER_UNIT=" + base + ".service", uid, "+", "SYSLOG_IDENTIFIER=" + base, uid}
+	}
+	return []string{"_SYSTEMD_UNIT=" + base + ".service", "_UID=0", "+", "UNIT=" + base + ".service", "_PID=1", "+", "SYSLOG_IDENTIFIER=" + base, "_UID=0"}
+}
+
+// jobJournalArgs accepts JobJournalFixedArgs, then JobJournalMatches of
+// one hearth-job.
+func jobJournalArgs(args []string) error {
+	n := len(JobJournalFixedArgs)
+	if len(args) <= n {
+		return invalid("want more than %d arguments, got %d", n, len(args))
+	}
+	for i, want := range JobJournalFixedArgs {
+		if err := Literal(want)(args[i]); err != nil {
+			return err
+		}
+	}
+	unit, user := strings.CutPrefix(args[n], "_SYSTEMD_USER_UNIT=")
+	if !user {
+		unit, _ = strings.CutPrefix(args[n], "_SYSTEMD_UNIT=")
+	}
+	base, ok := strings.CutSuffix(unit, ".service")
+	if !ok || !jobBaseRe.MatchString(base) || !slices.Equal(args[n:], JobJournalMatches(base, user)) {
+		return invalid("not a scheduled job's journal matches")
 	}
 	return nil
 }

@@ -117,7 +117,7 @@ func FuzzUnitFiles(f *testing.F) {
 		}
 		svc, tm := ServiceFile(j, run), TimerFile(j)
 		ks := keys(Parse(svc))
-		want := []string{"Service.ExecStart", "Service.TimeoutStartSec", "Service.Type", "Unit.Description", "Unit.X-Hearth-Job", "Unit.X-Hearth-Notify"}
+		want := []string{"Service.ExecStart", "Service.SyslogIdentifier", "Service.TimeoutStartSec", "Service.Type", "Unit.Description", "Unit.X-Hearth-Job", "Unit.X-Hearth-Notify"}
 		if !reflect.DeepEqual(ks, want) {
 			t.Fatalf("service keys %v:\n%s", ks, svc)
 		}

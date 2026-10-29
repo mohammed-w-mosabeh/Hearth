@@ -141,6 +141,8 @@ func ServiceFile(j Job, run string) string {
 	fmt.Fprintf(&b, "X-Hearth-Notify=%s\n", yesNo(j.Notify))
 	b.WriteString("\n[Service]\nType=oneshot\n")
 	fmt.Fprintf(&b, "ExecStart=%s\n", execPath(run))
+	// Output found by its stream's identifier (safeexec.JobJournalMatches).
+	fmt.Fprintf(&b, "SyslogIdentifier=%s\n", UnitBase(j.ID))
 	fmt.Fprintf(&b, "TimeoutStartSec=%ds\n", j.Timeout)
 	return b.String()
 }

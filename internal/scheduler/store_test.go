@@ -196,6 +196,12 @@ func TestParseRuns(t *testing.T) {
 		`{"__REALTIME_TIMESTAMP":"2000100000","INVOCATION_ID":"b2","JOB_RESULT":"done","MESSAGE":"Finished"}`,
 		`{"__REALTIME_TIMESTAMP":"3000000000","USER_INVOCATION_ID":"c3","MESSAGE":"Starting x..."}`,
 		`{"__REALTIME_TIMESTAMP":"3000000000","MESSAGE":"no invocation"}`,
+		// Output that lost its invocation: the run that started last
+		// before it, not one that started later or a manager message.
+		`{"__REALTIME_TIMESTAMP":"1000550000","_TRANSPORT":"stdout","MESSAGE":"lost a1"}`,
+		`{"__REALTIME_TIMESTAMP":"2000050000","_TRANSPORT":"stdout","MESSAGE":"lost b2"}`,
+		`{"__REALTIME_TIMESTAMP":"2000060000","_TRANSPORT":"journal","MESSAGE":"not output"}`,
+		`{"__REALTIME_TIMESTAMP":"500000000","_TRANSPORT":"stdout","MESSAGE":"before any run"}`,
 		`not json`,
 		`{"__REALTIME_TIMESTAMP":"3000100000","_SYSTEMD_INVOCATION_ID":"c3","MESSAGE":"partial`,
 	}, "\n")
@@ -207,11 +213,11 @@ func TestParseRuns(t *testing.T) {
 	if running.Result != "running" || running.End != 0 || running.Start != 3000000 {
 		t.Errorf("running %+v", running)
 	}
-	if ok.Result != "success" || ok.Exit == nil || *ok.Exit != 0 || ok.End != 2000100 {
+	if ok.Result != "success" || ok.Exit == nil || *ok.Exit != 0 || ok.End != 2000100 || len(ok.Output) != 1 || ok.Output[0] != "lost b2" {
 		t.Errorf("ok %+v", ok)
 	}
-	if failed.Result != "failed" || failed.Exit == nil || *failed.Exit != 3 || len(failed.Output) != 2 ||
-		failed.Output[0] != "hello" || failed.Output[1] != "hi�" || failed.End-failed.Start != 800 {
+	if failed.Result != "failed" || failed.Exit == nil || *failed.Exit != 3 || len(failed.Output) != 3 ||
+		failed.Output[0] != "hello" || failed.Output[1] != "hi�" || failed.Output[2] != "lost a1" || failed.End-failed.Start != 800 {
 		t.Errorf("failed %+v", failed)
 	}
 }

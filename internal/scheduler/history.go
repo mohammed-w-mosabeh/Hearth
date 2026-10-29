@@ -99,20 +99,13 @@ const (
 	maxLine      = 500
 )
 
-// JobJournalFields are the fields journalctl-job asks for.
-var JobJournalFields = "MESSAGE,INVOCATION_ID,USER_INVOCATION_ID,_SYSTEMD_INVOCATION_ID,EXIT_STATUS,JOB_RESULT"
-
 // ErrNoJournal is returned when the journal cannot be read.
 var ErrNoJournal = errors.New("the journal could not be read")
 
 // History reads a job's recent runs from the journal, newest first.
 func History(ctx context.Context, run Runner, scope, id string) ([]Run, error) {
-	unit := "--unit=" + UnitBase(id) + ".service"
-	if scope == ScopeUser {
-		unit = "--user-unit=" + UnitBase(id) + ".service"
-	}
-	res, err := run(ctx, "journalctl-job", "--quiet", "--no-pager", "--output=json",
-		"--output-fields="+JobJournalFields, "--lines="+strconv.Itoa(historyLines), unit)
+	args := append(append([]string{}, safeexec.JobJournalFixedArgs...), safeexec.JobJournalMatches(UnitBase(id), scope == ScopeUser)...)
+	res, err := run(ctx, "journalctl-job", args...)
 	if err != nil {
 		return nil, ErrNoJournal
 	}
@@ -152,6 +145,19 @@ func parseRuns(b []byte, truncated bool) []Run {
 			}
 		}
 		if inv == "" {
+			// Output of a process that exited before journald looked up
+			// its cgroup: it belongs to the run that started last.
+			if get("_TRANSPORT") == "stdout" {
+				var last *Run
+				for _, o := range order {
+					if r := runs[o]; r.Start <= ms && (last == nil || r.Start >= last.Start) {
+						last = r
+					}
+				}
+				if last != nil {
+					addOutput(last, e["MESSAGE"])
+				}
+			}
 			continue
 		}
 		r := runs[inv]
@@ -164,11 +170,7 @@ func parseRuns(b []byte, truncated bool) []Run {
 			r.End = ms
 		}
 		if output {
-			if len(r.Output) < maxOutput {
-				r.Output = append(r.Output, clip(message(e["MESSAGE"]), maxLine))
-			} else {
-				r.More = true
-			}
+			addOutput(r, e["MESSAGE"])
 			continue
 		}
 		if s := get("EXIT_STATUS"); s != "" {
@@ -198,6 +200,15 @@ func parseRuns(b []byte, truncated bool) []Run {
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Start > out[j].Start })
 	return out
+}
+
+// addOutput adds an output line to a run, up to maxOutput.
+func addOutput(r *Run, msg json.RawMessage) {
+	if len(r.Output) < maxOutput {
+		r.Output = append(r.Output, clip(message(msg), maxLine))
+	} else {
+		r.More = true
+	}
 }
 
 // message is a journal MESSAGE, which is a string or, for binary data, an
