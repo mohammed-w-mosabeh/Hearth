@@ -24,6 +24,7 @@ export const routes: Route[] = [
   { id: 'terminal', label: 'nav.terminal', icon: 'terminal', phase: 3 },
   { id: 'scheduler', label: 'nav.scheduler', icon: 'calendar', phase: 3 },
   { id: 'alerts', label: 'nav.alerts', icon: 'bell', phase: 1 },
+  { id: 'reports', label: 'nav.reports', icon: 'report', phase: 4 },
   { id: 'settings', label: 'nav.settings', icon: 'sliders', phase: 4 },
 ];
 

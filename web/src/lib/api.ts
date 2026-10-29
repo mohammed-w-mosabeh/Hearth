@@ -25,8 +25,7 @@ export function sessionKey(): string | null {
   return getKey();
 }
 
-/** fetch for /api/v1 with the bearer key (SECURITY S2). */
-export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function request(path: string, init: RequestInit): Promise<Response> {
   const headers = new Headers(init.headers);
   const key = getKey();
   if (key) headers.set('Authorization', `Bearer ${key}`);
@@ -47,6 +46,18 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     }
     throw new ApiError(res.status, msg);
   }
+  return res;
+}
+
+/** fetch for /api/v1 with the bearer key (SECURITY S2). */
+export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await request(path, init);
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
+}
+
+/** A file from /api/v1 (a report export) with its Content-Disposition. */
+export async function apiBlob(path: string): Promise<{ blob: Blob; disposition: string | null }> {
+  const res = await request(path, {});
+  return { blob: await res.blob(), disposition: res.headers.get('Content-Disposition') };
 }

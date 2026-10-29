@@ -53,3 +53,20 @@ a {
 .mono {
   font-family: var(--font-mono);
 }
+
+/* Printing (Reports: "Print or save as PDF"): the page content only. */
+@media print {
+  html,
+  body {
+    height: auto;
+    background: #fff;
+  }
+  nav,
+  .no-print {
+    display: none !important;
+  }
+  .shell > main {
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+}

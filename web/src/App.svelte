@@ -7,6 +7,7 @@
   import Alerts from './routes/Alerts.svelte';
   import Applications from './routes/Applications.svelte';
   import Games from './routes/Games.svelte';
+  import Reports from './routes/Reports.svelte';
   import Settings from './routes/Settings.svelte';
   import Disks from './routes/Disks.svelte';
   import Docker from './routes/Docker.svelte';
@@ -95,6 +96,8 @@
         <Settings />
       {:else if route?.id === 'games'}
         <Games />
+      {:else if route?.id === 'reports'}
+        <Reports />
       {:else if route?.id === 'tools'}
         <Tools />
       {:else if route?.id === 'network'}

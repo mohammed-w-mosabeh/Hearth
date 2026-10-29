@@ -44,6 +44,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/pkgs"
 	"github.com/mohammed-w-mosabeh/hearth/internal/power"
 	"github.com/mohammed-w-mosabeh/hearth/internal/procctl"
+	"github.com/mohammed-w-mosabeh/hearth/internal/reports"
 	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
 	"github.com/mohammed-w-mosabeh/hearth/internal/scheduler"
 	"github.com/mohammed-w-mosabeh/hearth/internal/scheduler/schedapi"
@@ -466,6 +467,33 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	go func() { checker.Run(checkCtx); close(checkDone) }()
 	defer func() { stopCheck(); <-checkDone }()
 
+	// Reports: hourly usage per app, service and container from the
+	// cgroups, and a weekly machine report saved when enabled.
+	usage := collect.NewUsageRecorder(collect.UsageConfig{UID: os.Getuid(), Store: db, Log: log,
+		Name: func(id string) (string, bool) {
+			kind, rest, _ := strings.Cut(id, ":")
+			switch kind {
+			case collect.KindApp:
+				return apps.Name(rest)
+			case collect.KindContainer:
+				return dockerMon.Name(rest)
+			}
+			return "", false
+		}})
+	usageCtx, stopUsage := context.WithCancel(ctx)
+	usageDone := make(chan struct{})
+	go func() { usage.Run(usageCtx); close(usageDone) }()
+	defer func() { stopUsage(); <-usageDone }()
+	reportBuilder := reports.New(reports.Config{Store: db, Now: func(context.Context) reports.Now {
+		return reportNow(sampler, pw)
+	}})
+	weekly := &reports.Weekly{B: reportBuilder, Settings: db, Dir: filepath.Join(paths.DataDir, "reports"), Log: log}
+	weeklyCtx, stopWeekly := context.WithCancel(ctx)
+	weeklyDone := make(chan struct{})
+	go func() { weekly.Run(weeklyCtx, time.Hour); close(weeklyDone) }()
+	defer func() { stopWeekly(); <-weeklyDone }()
+	(&reports.API{B: reportBuilder, Weekly: weekly, Audit: db}).Register(srv.API)
+
 	if serverHook != nil {
 		serverHook(srv) // every route is registered by now
 	}
@@ -587,6 +615,19 @@ func version() string {
 		return v
 	}
 	return "unknown"
+}
+
+// reportNow is the machine's current state for reports: disks from the
+// latest sample, batteries from UPower.
+func reportNow(sampler *collect.Sampler, pw *power.Watcher) reports.Now {
+	now := reports.Now{Batteries: pw.Snapshot().Batteries}
+	now.Host, _ = os.Hostname()
+	if s, ok := sampler.Ring().Last(); ok {
+		for _, d := range s.Disks {
+			now.Disks = append(now.Disks, reports.Disk{Mount: d.Mount, Total: d.Total, Used: d.Used, Pct: d.Pct})
+		}
+	}
+	return now
 }
 
 // splitList splits a colon-separated list, dropping empty entries.

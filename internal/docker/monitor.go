@@ -186,6 +186,22 @@ func (m *Monitor) sample(ctx context.Context, now time.Time) {
 	}
 }
 
+// Name returns the name of a running container from the start of its ID
+// (the 12 characters Hearth's process groups use).
+func (m *Monitor) Name(id string) (string, bool) {
+	if id == "" {
+		return "", false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, u := range m.last.Running {
+		if strings.HasPrefix(u.ID, id) {
+			return u.Name, true
+		}
+	}
+	return "", false
+}
+
 func (m *Monitor) publish(msg UsageMsg) {
 	m.mu.Lock()
 	m.last = msg
