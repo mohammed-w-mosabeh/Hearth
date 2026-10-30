@@ -59,3 +59,22 @@ func TestExposedWatcher(t *testing.T) {
 	}
 	_ = known
 }
+
+func TestListenerSet(t *testing.T) {
+	got := ListenerSet(Sockets{Listeners: []Endpoint{
+		{Proto: "tcp", Port: 631, Address: "::1", User: "root", Owner: &Owner{Name: "cupsd"}},
+		{Proto: "tcp", Port: 631, Address: "127.0.0.1", User: "root", Owner: &Owner{Name: "cupsd"}},
+		{Proto: "tcp", Port: 8080, Address: "0.0.0.0", User: "me", Owner: &Owner{Name: "node", GroupName: "Code"}},
+		{Proto: "udp", Port: 5353, Address: "0.0.0.0", User: "avahi"},
+		{Proto: "udp", Port: 50000, Address: "0.0.0.0", User: "me"},
+	}})
+	want := map[string]string{"TCP 631 (cupsd)": "127.0.0.1, ::1", "TCP 8080 (Code)": "0.0.0.0", "UDP 5353 (avahi)": "0.0.0.0"}
+	if len(got) != len(want) {
+		t.Fatalf("%+v", got)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("%s: %q in %+v", k, got[k], got)
+		}
+	}
+}

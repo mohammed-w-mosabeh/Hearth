@@ -7,6 +7,7 @@
   import Alerts from './routes/Alerts.svelte';
   import Applications from './routes/Applications.svelte';
   import Games from './routes/Games.svelte';
+  import Changes from './routes/Changes.svelte';
   import Reports from './routes/Reports.svelte';
   import Security from './routes/Security.svelte';
   import Settings from './routes/Settings.svelte';
@@ -99,6 +100,8 @@
         <Games />
       {:else if route?.id === 'reports'}
         <Reports />
+      {:else if route?.id === 'changes'}
+        <Changes />
       {:else if route?.id === 'security'}
         <Security />
       {:else if route?.id === 'tools'}

@@ -161,9 +161,13 @@ func MachineMarkdown(m Machine) []byte {
 	}
 	w.h2("changes")
 	if len(m.Changes) == 0 {
-		w.note("changes.none")
+		w.note("timeline.none")
 	} else {
-		w.changes(m.Changes)
+		rows := make([][]string, 0, len(m.Changes))
+		for _, e := range m.Changes {
+			rows = append(rows, []string{fmtTime(e.Time), md(eventWhat(e)), md(e.Subject), md(eventDetail(e))})
+		}
+		w.table([]string{"time", "what", "target", "detail"}, rows)
 	}
 	return []byte(w.b.String())
 }

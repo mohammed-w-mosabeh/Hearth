@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/alerts"
+	"github.com/mohammed-w-mosabeh/hearth/internal/changes"
 	"github.com/mohammed-w-mosabeh/hearth/internal/posture"
 )
 
@@ -57,6 +58,21 @@ var en = map[string]string{
 	"ongoing":           "ongoing",
 	"changes":           "Change timeline",
 	"changes.none":      "No changes were made through Hearth.",
+	"timeline.none":     "No changes were recorded.",
+	"what":              "What",
+	"detail":            "Detail",
+	"src.packages":      "Package",
+	"src.units":         "Unit",
+	"src.containers":    "Container",
+	"src.listeners":     "Listener",
+	"src.hearth":        "Hearth",
+	"ev.installed":      "installed",
+	"ev.upgraded":       "upgraded",
+	"ev.removed":        "removed",
+	"ev.purged":         "purged",
+	"ev.added":          "added",
+	"ev.deleted":        "deleted",
+	"ev.changed":        "changed",
 	"time":              "Time",
 	"action":            "Action",
 	"target":            "Target",
@@ -153,6 +169,25 @@ func fmtCPUTime(machineHours float64) string {
 		return fmt.Sprintf("%dm %02ds", int(d.Minutes()), int(d.Seconds())%60)
 	}
 	return fmt.Sprintf("%ds", int(d.Seconds()))
+}
+
+// eventWhat is "Package upgraded", "Unit added", or a Hearth action.
+func eventWhat(e changes.Event) string {
+	if e.Source == changes.SourceHearth {
+		return msg("src.hearth") + ": " + e.Action
+	}
+	return msg("src."+e.Source) + " " + msg("ev."+e.Kind)
+}
+
+// eventDetail is "1.0 → 1.1", a value, or an action's origin and result.
+func eventDetail(e changes.Event) string {
+	switch {
+	case e.Source == changes.SourceHearth:
+		return e.Result + " (" + e.Origin + ")"
+	case e.Before != "" && e.After != "":
+		return e.Before + " → " + e.After
+	}
+	return e.Before + e.After
 }
 
 func statusLabel(s string) string { return msg("status." + s) }

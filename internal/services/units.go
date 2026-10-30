@@ -79,6 +79,21 @@ func listFiles(ctx context.Context, bus dbusx.Bus) (map[string]string, error) {
 	return out, nil
 }
 
+// UnitFiles returns the unit file states of the manager on bus, without
+// runtime-only units (transient, generated), for the change timeline.
+func UnitFiles(ctx context.Context, bus dbusx.Bus) (map[string]string, error) {
+	files, err := listFiles(ctx, bus)
+	if err != nil {
+		return nil, err
+	}
+	for name, state := range files {
+		if state == "transient" || state == "generated" {
+			delete(files, name)
+		}
+	}
+	return files, nil
+}
+
 // merge combines loaded units and unit files: every loaded unit, plus
 // installed units that are not loaded (shown inactive). Left out, as
 // systemctl list-units does without --all: units that are only referenced

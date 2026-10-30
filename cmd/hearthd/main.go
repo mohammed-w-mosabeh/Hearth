@@ -33,6 +33,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/api"
 	"github.com/mohammed-w-mosabeh/hearth/internal/auth"
 	"github.com/mohammed-w-mosabeh/hearth/internal/broker"
+	"github.com/mohammed-w-mosabeh/hearth/internal/changes"
 	"github.com/mohammed-w-mosabeh/hearth/internal/collect"
 	"github.com/mohammed-w-mosabeh/hearth/internal/dbusx"
 	"github.com/mohammed-w-mosabeh/hearth/internal/discovery"
@@ -505,6 +506,56 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	})
 	security.Register(srv.API, db)
 
+	// Change timeline: dpkg's log, hourly snapshots of units, containers,
+	// listeners and packages (stored only when something changed), and
+	// the audit log.
+	tracker := changes.New(changes.Config{Store: db, Log: log, Readers: map[string]changes.Reader{
+		changes.SourcePackages: func(context.Context) (map[string]string, error) {
+			list, err := dpkgDB.Packages()
+			if err != nil {
+				return nil, err
+			}
+			out := make(map[string]string, len(list))
+			for _, p := range list {
+				out[p.Name+":"+p.Arch] = p.Version
+			}
+			return out, nil
+		},
+		changes.SourceUnits: func(ctx context.Context) (map[string]string, error) {
+			out := map[string]string{}
+			for scope, dial := range map[string]func(context.Context) (*dbusx.Conn, error){"system": dbusx.SystemBus, "user": dbusx.SessionBus} {
+				bus, err := dial(ctx)
+				if err != nil {
+					return nil, err
+				}
+				files, err := services.UnitFiles(ctx, bus)
+				_ = bus.Close()
+				if err != nil {
+					return nil, err
+				}
+				for name, state := range files {
+					out[scope+"/"+name] = state
+				}
+			}
+			return out, nil
+		},
+		changes.SourceContainers: func(ctx context.Context) (map[string]string, error) {
+			return docker.ContainerImages(ctx, brokerClient)
+		},
+		changes.SourceListeners: func(context.Context) (map[string]string, error) {
+			socks, err := netAPI.Resolver.Read(netinfo.Dump, collect.Users())
+			if err != nil {
+				return nil, err
+			}
+			return netinfo.ListenerSet(socks), nil
+		},
+	}})
+	trackerCtx, stopTracker := context.WithCancel(ctx)
+	trackerDone := make(chan struct{})
+	go func() { tracker.Run(trackerCtx, time.Hour); close(trackerDone) }()
+	defer func() { stopTracker(); <-trackerDone }()
+	tracker.Register(srv.API)
+
 	// Reports: hourly usage per app, service and container from the
 	// cgroups, and a weekly machine report saved when enabled.
 	usage := collect.NewUsageRecorder(collect.UsageConfig{UID: os.Getuid(), Store: db, Log: log,
@@ -524,7 +575,10 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	defer func() { stopUsage(); <-usageDone }()
 	reportBuilder := reports.New(reports.Config{Store: db, Now: func(context.Context) reports.Now {
 		return reportNow(sampler, pw)
-	}, Posture: security.Scan})
+	}, Posture: security.Scan, Timeline: func(ctx context.Context, from, to time.Time, limit int) ([]changes.Event, error) {
+		events, _, err := tracker.Timeline(ctx, from, to, nil, limit)
+		return events, err
+	}})
 	weekly := &reports.Weekly{B: reportBuilder, Settings: db, Dir: filepath.Join(paths.DataDir, "reports"), Log: log}
 	weeklyCtx, stopWeekly := context.WithCancel(ctx)
 	weeklyDone := make(chan struct{})

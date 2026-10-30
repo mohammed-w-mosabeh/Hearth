@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mohammed-w-mosabeh/hearth/internal/changes"
 	"github.com/mohammed-w-mosabeh/hearth/internal/posture"
 	"github.com/mohammed-w-mosabeh/hearth/internal/power"
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
@@ -65,6 +66,9 @@ type Config struct {
 	Store Store
 	// Now returns the current state (hostname, totals, disks, batteries).
 	Now func(ctx context.Context) Now
+	// Timeline, if set, is the change timeline (internal/changes); without
+	// it the machine report lists the audit log.
+	Timeline func(ctx context.Context, from, to time.Time, limit int) ([]changes.Event, error)
 	// Posture, if set, checks the security posture now (it has no history).
 	Posture func(ctx context.Context) posture.Report
 	// Clock is replaced in tests.
@@ -120,7 +124,7 @@ type Machine struct {
 	Trends    []Trend            `json:"trends"`
 	Top       []store.ItemTotal  `json:"top"`
 	Alerts    []store.AlertEvent `json:"alerts"`
-	Changes   []store.AuditRow   `json:"changes"`
+	Changes   []changes.Event    `json:"changes"`
 	Disks     []Disk             `json:"disks"`
 	Batteries []power.Battery    `json:"batteries"`
 	// Covered is the share of the period with recorded metrics (hearthd
@@ -245,8 +249,20 @@ func (b *Builder) Machine(ctx context.Context, period string) (Machine, error) {
 	if m.Alerts, err = b.cfg.Store.AlertEventsBetween(ctx, from, to, maxAlerts); err != nil {
 		return Machine{}, fmt.Errorf("reports: %w", err)
 	}
-	if m.Changes, err = b.cfg.Store.AuditBetween(ctx, from, to, maxChanges); err != nil {
-		return Machine{}, fmt.Errorf("reports: %w", err)
+	if b.cfg.Timeline != nil {
+		if m.Changes, err = b.cfg.Timeline(ctx, from, to, maxChanges); err != nil {
+			return Machine{}, fmt.Errorf("reports: %w", err)
+		}
+	} else {
+		rows, err := b.cfg.Store.AuditBetween(ctx, from, to, maxChanges)
+		if err != nil {
+			return Machine{}, fmt.Errorf("reports: %w", err)
+		}
+		m.Changes = make([]changes.Event, 0, len(rows))
+		for _, r := range rows {
+			m.Changes = append(m.Changes, changes.Event{Time: r.Time, Source: changes.SourceHearth, Kind: changes.KindAction,
+				Subject: r.Target, Action: r.Action, Origin: r.Origin, Result: r.Result})
+		}
 	}
 	if b.cfg.Posture != nil {
 		p := b.cfg.Posture(ctx)
@@ -307,11 +323,11 @@ func (b *Builder) Item(ctx context.Context, id, period string) (Item, error) {
 		}
 	}
 	names := itemTargets(id, it.Name)
-	changes, err := b.cfg.Store.AuditBetween(ctx, from, to, maxChanges*5)
+	actions, err := b.cfg.Store.AuditBetween(ctx, from, to, maxChanges*5)
 	if err != nil {
 		return Item{}, fmt.Errorf("reports: %w", err)
 	}
-	for _, c := range changes {
+	for _, c := range actions {
 		if names[c.Target] && len(it.Changes) < maxChanges {
 			it.Changes = append(it.Changes, c)
 		}

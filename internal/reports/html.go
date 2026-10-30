@@ -62,6 +62,8 @@ var funcs = template.FuncMap{
 	"status":   statusLabel,
 	"check":    posture.CheckName,
 	"findings": findingTexts,
+	"what":     eventWhat,
+	"detail":   eventDetail,
 }
 
 func toFloat(v any) float64 {
@@ -129,6 +131,10 @@ const changesTmpl = `{{define "changes"}}<table><thead><tr><th>{{t "time"}}</th>
 {{range .}}<tr><td class="t">{{time .Time}}</td><td>{{line .Action}}</td><td>{{line .Target}}</td><td>{{line .Result}}</td><td>{{.Origin}}</td></tr>
 {{end}}</tbody></table>{{end}}`
 
+const timelineTmpl = `{{define "timeline"}}<table><thead><tr><th>{{t "time"}}</th><th>{{t "what"}}</th><th>{{t "target"}}</th><th>{{t "detail"}}</th></tr></thead><tbody>
+{{range .}}<tr><td class="t">{{time .Time}}</td><td>{{line (what .)}}</td><td>{{line .Subject}}</td><td>{{line (detail .)}}</td></tr>
+{{end}}</tbody></table>{{end}}`
+
 const eventsTmpl = `{{define "events"}}<table><thead><tr><th>{{t "started"}}</th><th>{{t "rule"}}</th><th>{{t "on"}}</th><th>{{t "severity"}}</th><th class="n">{{t "peak"}}</th><th>{{t "ended"}}</th></tr></thead><tbody>
 {{range .}}<tr><td class="t">{{ms .StartedAt}}</td><td>{{line .RuleName}}</td><td>{{line .Instance}}</td><td class="{{.Severity}}">{{.Severity}}</td><td class="n">{{alertval .Metric .Peak}}</td><td class="t">{{ended .EndedAt}}</td></tr>
 {{end}}</tbody></table>{{end}}`
@@ -168,7 +174,7 @@ const machineTmpl = `{{template "head" (printf "%s — %s" (t "title.machine") (
 {{if .Alerts}}{{template "events" .Alerts}}{{else}}<p class="note">{{t "alerts.none"}}</p>{{end}}
 
 <h2>{{t "changes"}}</h2>
-{{if .Changes}}{{template "changes" .Changes}}{{else}}<p class="note">{{t "changes.none"}}</p>{{end}}
+{{if .Changes}}{{template "timeline" .Changes}}{{else}}<p class="note">{{t "timeline.none"}}</p>{{end}}
 </body></html>
 `
 
@@ -202,7 +208,7 @@ const itemTmpl = `{{template "head" (printf "%s — %s" (t "title.item") (line .
 `
 
 var (
-	machineHTML = template.Must(template.New("machine").Funcs(funcs).Parse(pageHead + trendsTmpl + changesTmpl + eventsTmpl + machineTmpl))
+	machineHTML = template.Must(template.New("machine").Funcs(funcs).Parse(pageHead + trendsTmpl + changesTmpl + timelineTmpl + eventsTmpl + machineTmpl))
 	itemHTML    = template.Must(template.New("item").Funcs(funcs).Parse(pageHead + trendsTmpl + changesTmpl + eventsTmpl + itemTmpl))
 )
 

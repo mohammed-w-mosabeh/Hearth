@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mohammed-w-mosabeh/hearth/internal/changes"
 	"github.com/mohammed-w-mosabeh/hearth/internal/posture"
 	"github.com/mohammed-w-mosabeh/hearth/internal/power"
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
@@ -125,7 +126,7 @@ func TestMachineReport(t *testing.T) {
 	if g := m.Disks[0].Growth; g == nil || *g != 83<<20 {
 		t.Errorf("disk growth %v", g)
 	}
-	if len(m.Top) != 2 || m.Top[0].Item != "container:0123456789ab" || len(m.Alerts) != 4 || len(m.Changes) != 2 {
+	if len(m.Top) != 2 || m.Top[0].Item != "container:0123456789ab" || len(m.Alerts) != 4 || len(m.Changes) != 2 || m.Changes[0].Source != changes.SourceHearth {
 		t.Errorf("top %+v alerts %d changes %d", m.Top, len(m.Alerts), len(m.Changes))
 	}
 
@@ -395,5 +396,43 @@ func TestHandlers(t *testing.T) {
 	rec = do("GET", "/api/v1/reports/saved/"+name, "")
 	if rec.Code != 200 || !strings.Contains(rec.Header().Get("Content-Disposition"), name) || !strings.Contains(rec.Body.String(), "Machine report") {
 		t.Errorf("saved: %d %v", rec.Code, rec.Header())
+	}
+}
+
+func TestMachineReportTimeline(t *testing.T) {
+	db := open(t)
+	seed(t, db)
+	b := builder(db)
+	b.cfg.Timeline = func(_ context.Context, _, _ time.Time, limit int) ([]changes.Event, error) {
+		if limit != maxChanges {
+			t.Errorf("limit %d", limit)
+		}
+		return []changes.Event{
+			{Time: now, Source: changes.SourcePackages, Kind: changes.KindUpgraded, Subject: evil, Before: "1", After: "2"},
+			{Time: now, Source: changes.SourceUnits, Kind: changes.KindAdded, Subject: "system/x.service", After: evil},
+			{Time: now, Source: changes.SourceHearth, Kind: changes.KindAction, Subject: "y", Action: "unit.restart", Origin: "local", Result: "ok"},
+		}, nil
+	}
+	m, err := b.Machine(context.Background(), "week")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html, err := MachineHTML(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mdText := string(MachineMarkdown(m))
+	for _, want := range []string{"Package upgraded", "Unit added", "Hearth: unit.restart", "1 → 2", "ok (local)"} {
+		if !strings.Contains(string(html), want) || !strings.Contains(strings.ReplaceAll(mdText, `\`, ""), want) {
+			t.Errorf("%q missing", want)
+		}
+	}
+	for _, key := range []string{"src.", "ev."} {
+		if strings.Contains(string(html), key+"packages") || strings.Contains(mdText, key+"upgraded") {
+			t.Errorf("an untranslated %s key", key)
+		}
+	}
+	if scriptish.MatchString(string(html)) {
+		t.Error("the timeline is not escaped")
 	}
 }

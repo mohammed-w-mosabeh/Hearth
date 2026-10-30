@@ -1,6 +1,7 @@
 <script lang="ts">
   import Chart from '../components/Chart.svelte';
   import { api, apiBlob, ApiError } from '../lib/api';
+  import { eventDetail, eventKey } from '../lib/changes';
   import { format } from '../lib/charts';
   import { bytes, duration, pct } from '../lib/format';
   import { t } from '../lib/i18n';
@@ -22,6 +23,7 @@
     type ItemTotal,
     type MachineReport,
     type Period,
+    type TimelineEvent,
     type WeeklyState,
   } from '../lib/reports';
   import { toast } from '../lib/toast.svelte';
@@ -169,6 +171,25 @@
             <td class={e.severity}>{e.severity}</td>
             <td class="t">{e.ended_at ? when(e.ended_at) : t('reports.ongoing')}</td>
           </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
+{/snippet}
+
+{#snippet timeline(list: TimelineEvent[])}
+  <div class="table">
+    <table>
+      <thead>
+        <tr>
+          <th>{t('reports.col.time')}</th><th>{t('reports.col.what')}</th><th>{t('reports.col.target')}</th>
+          <th>{t('reports.col.detail')}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each list as e, i (i)}
+          {@const key = eventKey(e)}
+          <tr><td class="t">{when(e.t)}</td><td>{key ? t(key) : (e.action ?? e.kind)}</td><td class="wrap">{e.subject}</td><td class="wrap">{eventDetail(e)}</td></tr>
         {/each}
       </tbody>
     </table>
@@ -350,9 +371,9 @@
 
       <h2>{t('reports.changes')}</h2>
       {#if m.changes.length === 0}
-        <p class="note">{t('reports.changes.none')}</p>
+        <p class="note">{t('reports.timeline.none')}</p>
       {:else}
-        {@render changes(m.changes)}
+        {@render timeline(m.changes)}
       {/if}
     </section>
   {/if}

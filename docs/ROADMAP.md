@@ -76,7 +76,7 @@ Gate 3 result (2026-10-29): **passed.** Fuzzing: 30 targets, every validator of 
 - [x] 4.2 Settings page via D-Bus (Wi-Fi/connections, brightness, power profile, audio, time zone, hostname, autostart, power actions) (Wi-Fi passwords never pass through Hearth: NetworkManager asks the desktop's secret agent; audio through pw-dump/wpctl in safeexec; autostart writes only ~/.config/autostart, never deletes)
 - [x] 4.3 Reports: machine + item reports, HTML/MD export, print-to-PDF stylesheet, weekly scheduled report (per-item usage sampled from cgroups once a minute, kept hourly for 90 days; exports are one file with a hash-pinned stylesheet and no script; security posture joins the report with 4.4)
 - [x] 4.4 Security posture page (listeners on every address, firewall, sshd_config as sshd reads it, security updates, debsecan only on request (S21c), container S12 risks, PATH write access; also in the machine report)
-- [ ] 4.5 Change timeline + snapshot diff
+- [x] 4.5 Change timeline + snapshot diff (packages from dpkg's own log; units, containers and listeners from hourly snapshots stored only when something changed, kept 90 days; named snapshots kept until deleted; the audit log joins the timeline (S18) and the machine report)
 - [ ] 4.6 Profiles (Dev / Gaming auto-mode / Battery)
 - [ ] 4.7 Space advisor (preview + trash)
 - [ ] 4.8 "Why is my fan loud?" + per-app energy estimate

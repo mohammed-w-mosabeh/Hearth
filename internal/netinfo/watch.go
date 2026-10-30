@@ -57,6 +57,42 @@ func Exposed(s Sockets) map[string]bool {
 	return out
 }
 
+// ListenerSet returns every listener by label ("TCP 631 (cupsd)") with
+// its addresses, sorted ("127.0.0.1, ::1"), for the change timeline.
+// Unconnected UDP sockets of clients are left out, as in Exposed.
+func ListenerSet(s Sockets) map[string]string {
+	addrs := map[string]map[string]bool{}
+	for _, e := range s.Listeners {
+		if e.Proto == "udp" && e.Port >= ephemeralUDP {
+			continue
+		}
+		who := e.User
+		if e.Owner != nil {
+			switch {
+			case e.Owner.GroupName != "":
+				who = e.Owner.GroupName
+			case e.Owner.Name != "":
+				who = e.Owner.Name
+			}
+		}
+		l := fmt.Sprintf("%s %d (%s)", strings.ToUpper(e.Proto), e.Port, who)
+		if addrs[l] == nil {
+			addrs[l] = map[string]bool{}
+		}
+		addrs[l][e.Address] = true
+	}
+	out := make(map[string]string, len(addrs))
+	for l, set := range addrs {
+		list := make([]string, 0, len(set))
+		for a := range set {
+			list = append(list, a)
+		}
+		sort.Strings(list)
+		out[l] = strings.Join(list, ", ")
+	}
+	return out
+}
+
 // Run polls until ctx ends.
 func (w *ExposedWatcher) Run(ctx context.Context) {
 	if w.Interval == 0 {

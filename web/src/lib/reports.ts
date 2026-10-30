@@ -1,5 +1,6 @@
 // Reports page: types of internal/reports and helpers to show them.
 
+import type { TimelineEvent } from './changes';
 import type { Unit } from './charts';
 import type { Columns } from './history';
 import type { MessageKey } from './i18n';
@@ -91,6 +92,8 @@ export interface Battery {
   cycles?: number;
 }
 
+export type { TimelineEvent } from './changes';
+
 export interface MachineReport {
   host: string;
   period: Period;
@@ -101,7 +104,7 @@ export interface MachineReport {
   trends: Trend[];
   top: ItemTotal[];
   alerts: AlertEvent[];
-  changes: Change[];
+  changes: TimelineEvent[];
   disks: Disk[];
   batteries: Battery[];
   covered: number;
