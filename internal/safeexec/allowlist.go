@@ -76,6 +76,13 @@ var allowlist = map[string]Spec{
 		Validate: exactly(OneOf("hold", "unhold"), DebPackageArch),
 		Timeout:  30 * time.Second,
 	},
+	// journalctl --vacuum-size=<kept>, run by hearth-broker as root (broker
+	// journal.vacuum, after polkit, SECURITY S16c).
+	"journal-vacuum": {
+		Paths:    []string{"/usr/bin/journalctl", "/bin/journalctl"},
+		Validate: exactly(OneOf("--vacuum-size=100M", "--vacuum-size=200M", "--vacuum-size=500M", "--vacuum-size=1000M")),
+		Timeout:  2 * time.Minute,
+	},
 	// apropos listing every man page of sections 1, 8 and 6 with its
 	// one-line summary (Tools page descriptions; tools are never run).
 	"apropos-all": {

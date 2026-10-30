@@ -122,18 +122,19 @@ func (a *FileAudit) Record(r AuditRecord) {
 	}
 }
 
+func noParams(p json.RawMessage) error {
+	if len(p) > 0 && string(p) != "null" && string(p) != "{}" {
+		return Errorf(CodeBadParams, "this method takes no params")
+	}
+	return nil
+}
+
 // BaseMethods are the methods every broker has.
 //   - broker.ping: who the broker sees, its version and methods
 //   - broker.authorize: privileged and does nothing else, so hearthd can
 //     check the polkit path (and the user can authorize once, with
 //     auth_admin_keep) before a real privileged action
 func BaseMethods(version string, names func() []string) []Method {
-	noParams := func(p json.RawMessage) error {
-		if len(p) > 0 && string(p) != "null" && string(p) != "{}" {
-			return Errorf(CodeBadParams, "this method takes no params")
-		}
-		return nil
-	}
 	return []Method{
 		{Name: "broker.ping", Handle: func(_ context.Context, c Caller, p json.RawMessage) (any, error) {
 			if err := noParams(p); err != nil {

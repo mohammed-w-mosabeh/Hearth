@@ -10,6 +10,7 @@
   import Changes from './routes/Changes.svelte';
   import Profiles from './routes/Profiles.svelte';
   import Reports from './routes/Reports.svelte';
+  import Space from './routes/Space.svelte';
   import Security from './routes/Security.svelte';
   import Settings from './routes/Settings.svelte';
   import Disks from './routes/Disks.svelte';
@@ -103,6 +104,8 @@
         <Reports />
       {:else if route?.id === 'profiles'}
         {#if live}<Profiles {live} />{/if}
+      {:else if route?.id === 'space'}
+        <Space />
       {:else if route?.id === 'changes'}
         <Changes />
       {:else if route?.id === 'security'}

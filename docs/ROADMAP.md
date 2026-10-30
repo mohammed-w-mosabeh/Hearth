@@ -78,7 +78,7 @@ Gate 3 result (2026-10-29): **passed.** Fuzzing: 30 targets, every validator of 
 - [x] 4.4 Security posture page (listeners on every address, firewall, sshd_config as sshd reads it, security updates, debsecan only on request (S21c), container S12 risks, PATH write access; also in the machine report)
 - [x] 4.5 Change timeline + snapshot diff (packages from dpkg's own log; units, containers and listeners from hourly snapshots stored only when something changed, kept 90 days; named snapshots kept until deleted; the audit log joins the timeline (S18) and the machine report)
 - [x] 4.6 Profiles (Dev / Gaming auto-mode / Battery) (each step a registered action; restores only what it changed, across restarts; apps are started, never closed; auto mode holds only user units and apps, S15a)
-- [ ] 4.7 Space advisor (preview + trash)
+- [x] 4.7 Space advisor (preview + trash) (apt cache and journal through two closed broker methods, S16c; ~/.cache and large files to the XDG trash; old kernels through package removal, never the running one or the two newest; Docker leftovers through the existing cleanup)
 - [ ] 4.8 "Why is my fan loud?" + per-app energy estimate
 - [ ] 4.9 Boot analysis + full journal viewer
 - [ ] 4.10 Polish: empty states, compact density, keyboard shortcuts, ar/en review

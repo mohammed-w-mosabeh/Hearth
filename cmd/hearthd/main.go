@@ -53,6 +53,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/scheduler/schedapi"
 	"github.com/mohammed-w-mosabeh/hearth/internal/services"
 	"github.com/mohammed-w-mosabeh/hearth/internal/settings"
+	"github.com/mohammed-w-mosabeh/hearth/internal/space"
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
 	"github.com/mohammed-w-mosabeh/hearth/internal/terminal"
 	"github.com/mohammed-w-mosabeh/hearth/internal/unitctl"
@@ -334,11 +335,19 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	exposedDone := make(chan struct{})
 	go func() { exposed.Run(exposedCtx); close(exposedDone) }()
 	defer func() { stopExposed(); <-exposedDone }()
-	pkgs.RegisterExtra(reg, pkgs.ExtraConfig{Find: extraFind, Run: &pkgs.UserRunner{
+	userRun := &pkgs.UserRunner{
 		Bus:    func(ctx context.Context) (pkgs.Bus, error) { return dbusx.SessionBus(ctx) },
 		LogDir: filepath.Join(paths.DataDir, "runs"),
-	}})
+	}
+	pkgs.RegisterExtra(reg, pkgs.ExtraConfig{Find: extraFind, Run: userRun})
 	brokerClient := &broker.Client{}
+	spaceAdvisor := space.New(space.Config{Home: appsCfg.Home, Broker: brokerClient, Run: userRun.Run, Packages: dpkgDB.Packages,
+		Release: func() string {
+			b, _ := os.ReadFile("/proc/sys/kernel/osrelease")
+			return strings.TrimSpace(string(b))
+		}})
+	spaceAdvisor.Register(reg)
+	spaceAdvisor.HandleRegister(srv.API)
 	pkgs.RegisterHold(reg, pkgCfg, brokerClient) // apt hold: no PackageKit API, so the broker
 	docker.Register(reg, brokerClient)
 	docker.RegisterImages(reg, brokerClient)

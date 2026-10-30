@@ -20,6 +20,7 @@ export const routes: Route[] = [
   { id: 'docker', label: 'nav.docker', icon: 'box', phase: 2 },
   { id: 'packages', label: 'nav.packages', icon: 'package', phase: 3 },
   { id: 'tools', label: 'nav.tools', icon: 'wrench', phase: 3 },
+  { id: 'space', label: 'nav.space', icon: 'broom', phase: 4 },
   { id: 'network', label: 'nav.network', icon: 'network', phase: 3 },
   { id: 'terminal', label: 'nav.terminal', icon: 'terminal', phase: 3 },
   { id: 'scheduler', label: 'nav.scheduler', icon: 'calendar', phase: 3 },

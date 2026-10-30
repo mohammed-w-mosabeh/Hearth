@@ -247,6 +247,34 @@ check "pkg.hold on a package that is not installed fails cleanly" call_says "not
 check "audit records pkg.hold" grep -q '"method":"pkg.hold"' /var/lib/hearth/audit.jsonl
 rm -f /etc/polkit-1/rules.d/50-hearth-itest.rules
 
+echo "== broker: cleanups"
+arch=/var/cache/apt/archives
+mkdir -p $arch /var/log/journal
+printf x >$arch/itest.deb
+printf x >$arch/itest.txt
+ln -sf /etc/hostname $arch/itest-link.deb
+check "apt.clean refused without polkit authorization" call_says "not authorized" apt.clean
+check "journal.vacuum refused without polkit authorization" call_says "not authorized" journal.vacuum '{"keep_mib":500}'
+check "journal.vacuum: other sizes refused before polkit" call_says "keep_mib must be" journal.vacuum '{"keep_mib":1}'
+check "apt.clean takes no params" call_says "takes no params" apt.clean '{"dir":"/etc"}'
+check "refused calls removed nothing" test -f $arch/itest.deb
+cat >/etc/polkit-1/rules.d/50-hearth-itest.rules <<'RULES'
+polkit.addRule(function(action, subject) {
+	if (action.id == "org.hearth.space.clean" && subject.user == "tester") {
+		return polkit.Result.YES;
+	}
+});
+RULES
+sleep 1
+check "apt.clean runs in the broker's sandbox" call_says '"removed":1' apt.clean
+check "apt.clean removed the .deb" not test -e $arch/itest.deb
+check "apt.clean left other files" test -f $arch/itest.txt
+check "apt.clean left the link and its target" test -L $arch/itest-link.deb -a -f /etc/hostname
+rm -f $arch/itest.txt $arch/itest-link.deb
+check "journal.vacuum runs in the broker's sandbox" call_says '"done":true' journal.vacuum '{"keep_mib":100}'
+check "audit records the cleanups" grep -q '"method":"apt.clean"' /var/lib/hearth/audit.jsonl
+rm -f /etc/polkit-1/rules.d/50-hearth-itest.rules
+
 exposure=$(systemd-analyze security hearth-broker.service --no-pager 2>/dev/null | tail -1 || true)
 echo "  $exposure"
 check "broker exposure level at most 2.0" awk -v s="$exposure" 'BEGIN { if (match(s, /: [0-9.]+/)) exit !(substr(s, RSTART + 2, RLENGTH - 2) + 0 <= 2.0); exit 1 }'

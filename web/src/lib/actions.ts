@@ -31,7 +31,7 @@ export interface Result {
   blocked: Blocked[];
 }
 
-type Params = Record<string, string>;
+export type Params = Record<string, string>;
 
 function post<T>(kind: string, action: string, body: object): Promise<T> {
   return api<T>(`/actions/${encodeURIComponent(kind)}/${encodeURIComponent(action)}`, {
@@ -55,6 +55,8 @@ const reasons: Record<string, MessageKey> = {
   session: 'reason.session',
   browser: 'reason.browser',
   gone: 'reason.gone',
+  changed: 'reason.changed',
+  refused: 'reason.refused',
   denied: 'reason.denied',
   error: 'reason.error',
   unauthorized: 'reason.unauthorized',
