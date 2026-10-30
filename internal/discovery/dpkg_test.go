@@ -177,3 +177,31 @@ func TestDpkgWatchesOnlyWhileFollowed(t *testing.T) {
 		t.Fatalf("published %d times", n)
 	}
 }
+
+func TestParseVersions(t *testing.T) {
+	got, err := parseVersions(strings.NewReader(`Package: vim
+Status: install ok installed
+Priority: optional
+Architecture: amd64
+Version: 2:9.1-1
+Description: an editor
+ Version: 1.0 in a description is not a version
+
+Package: gone
+Status: deinstall ok config-files
+Architecture: all
+Version: 1.0
+
+Package: half
+Status: install ok half-installed
+Architecture: amd64
+Version: 1.0
+
+Package: last
+Architecture: all
+Version: 3
+Status: install ok installed`))
+	if err != nil || len(got) != 2 || got["vim:amd64"] != "2:9.1-1" || got["last:all"] != "3" {
+		t.Fatalf("%v %+v", err, got)
+	}
+}

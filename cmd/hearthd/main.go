@@ -510,17 +510,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	// listeners and packages (stored only when something changed), and
 	// the audit log.
 	tracker := changes.New(changes.Config{Store: db, Log: log, Readers: map[string]changes.Reader{
-		changes.SourcePackages: func(context.Context) (map[string]string, error) {
-			list, err := dpkgDB.Packages()
-			if err != nil {
-				return nil, err
-			}
-			out := make(map[string]string, len(list))
-			for _, p := range list {
-				out[p.Name+":"+p.Arch] = p.Version
-			}
-			return out, nil
-		},
+		changes.SourcePackages: func(context.Context) (map[string]string, error) { return dpkgDB.Versions() },
 		changes.SourceUnits: func(ctx context.Context) (map[string]string, error) {
 			out := map[string]string{}
 			for scope, dial := range map[string]func(context.Context) (*dbusx.Conn, error){"system": dbusx.SystemBus, "user": dbusx.SessionBus} {

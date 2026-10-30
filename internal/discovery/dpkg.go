@@ -339,3 +339,46 @@ func (d *Dpkg) HandleList(w http.ResponseWriter, _ *http.Request) {
 // FileStamp is the sizes and modification times of paths, for caches
 // that must notice when they change.
 func FileStamp(paths ...string) string { return stampOf(paths...) }
+
+// Versions returns the version of each installed package by "name:arch",
+// read as a stream and not cached: Packages keeps every description in
+// memory, too much for something that runs with the UI closed.
+func (d *Dpkg) Versions() (map[string]string, error) {
+	f, err := os.Open(d.cfg.Status)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	return parseVersions(f)
+}
+
+func parseVersions(r io.Reader) (map[string]string, error) {
+	out := map[string]string{}
+	var name, arch, version string
+	installed := false
+	flush := func() {
+		if installed && name != "" {
+			out[name+":"+arch] = version
+		}
+		name, arch, version, installed = "", "", "", false
+	}
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 64<<10), 4<<20)
+	for sc.Scan() {
+		line := sc.Bytes()
+		switch {
+		case len(line) == 0:
+			flush()
+		case bytes.HasPrefix(line, []byte("Package: ")):
+			name = string(line[len("Package: "):])
+		case bytes.HasPrefix(line, []byte("Architecture: ")):
+			arch = string(line[len("Architecture: "):])
+		case bytes.HasPrefix(line, []byte("Version: ")):
+			version = string(line[len("Version: "):])
+		case bytes.HasPrefix(line, []byte("Status: ")):
+			installed = bytes.HasSuffix(line, []byte(" installed"))
+		}
+	}
+	flush()
+	return out, sc.Err()
+}
