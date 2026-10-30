@@ -25,9 +25,11 @@
   import Resources from './routes/Resources.svelte';
   import Services from './routes/Services.svelte';
   import Placeholder from './routes/Placeholder.svelte';
+  import ShortcutsDialog from './components/ShortcutsDialog.svelte';
   import { api, setSession } from './lib/api';
   import { t } from './lib/i18n';
   import { href, router, routes } from './lib/router.svelte';
+  import { Sequence } from './lib/shortcuts';
   import { loadKey } from './lib/session';
   import { Live, type WsState } from './lib/ws';
 
@@ -64,11 +66,20 @@
 
   // Ctrl+K (Cmd+K on a Mac keyboard) opens the command palette anywhere.
   let palette = $state(false);
+  let keysHelp = $state(false);
+  const sequence = new Sequence();
   function onkeydown(e: KeyboardEvent): void {
     if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k' && key !== null) {
       e.preventDefault();
       palette = !palette;
+      return;
     }
+    if (key === null || palette || keysHelp) return;
+    const out = sequence.press(e, Date.now());
+    if (out === null) return;
+    e.preventDefault();
+    if ('help' in out) keysHelp = true;
+    else location.hash = href(out.go);
   }
 </script>
 
@@ -142,6 +153,7 @@
 
 <Toaster />
 <CommandPalette open={palette && key !== null} {live} onclose={() => (palette = false)} />
+<ShortcutsDialog open={keysHelp} onclose={() => (keysHelp = false)} />
 
 <style>
   .shell {

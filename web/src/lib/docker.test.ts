@@ -241,3 +241,10 @@ describe('cleanup', () => {
     ])).toBe(40);
   });
 });
+
+describe('mergeStats with nothing running', () => {
+  it('keeps the history when a sample has no containers', () => {
+    const history = { a: [{ t: 1 } as Point] };
+    expect(mergeStats(history, { kind: 'sample' })).toEqual(history);
+  });
+});

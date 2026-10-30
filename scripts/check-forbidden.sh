@@ -26,4 +26,8 @@ report "{@html} in Svelte" \
 report "innerHTML / outerHTML / insertAdjacentHTML" \
 	"$(git grep -nE '\b(inner|outer)HTML\b|insertAdjacentHTML' -- 'web/src' || true)"
 
+# Logical CSS only, so the layout mirrors for right-to-left languages.
+report "physical-direction CSS (use margin-inline-start, text-align: start, ...)" \
+	"$(git grep -nE '(margin|padding|border)-(left|right)\b|text-align: *(left|right)\b|float: *(left|right)\b' -- 'web/src/*.svelte' 'web/src/*.css' || true)"
+
 exit $fail

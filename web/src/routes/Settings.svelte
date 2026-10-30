@@ -3,6 +3,7 @@
   import { preview, reasonKey, run, type Blocked, type Plan, type Result } from '../lib/actions';
   import { api, ApiError } from '../lib/api';
   import type { App } from '../lib/apps';
+  import { applyDensity, loadDensity, saveDensity, type Density } from '../lib/density';
   import { t, type MessageKey } from '../lib/i18n';
   import {
     bars,
@@ -183,6 +184,14 @@
     const name = apps.find((a) => a.id === addApp)?.name ?? addApp;
     if (await act('autostart', 'add', addApp, {}, t('set.auto.added', { name }), loadAutostart)) addApp = '';
   }
+
+  let density = $state<Density>(loadDensity());
+
+  function setDensity(d: Density): void {
+    density = d;
+    applyDensity(d);
+    saveDensity(d);
+  }
 </script>
 
 <header>
@@ -195,6 +204,19 @@
 {/if}
 
 <div class="sections" aria-busy={busy}>
+  <!-- Appearance -->
+  <section aria-labelledby="s-look">
+    <h2 id="s-look">{t('set.look.title')}</h2>
+    <div class="segmented" role="radiogroup" aria-label={t('set.look.density')}>
+      {#each ['comfortable', 'compact'] as const as d (d)}
+        <button type="button" role="radio" aria-checked={density === d} class:on={density === d} onclick={() => setDensity(d)}>
+          {t(d === 'compact' ? 'set.look.compact' : 'set.look.comfortable')}
+        </button>
+      {/each}
+    </div>
+    <p class="note">{t('set.look.hint')}</p>
+  </section>
+
   <!-- Network -->
   <section aria-labelledby="s-net">
     <h2 id="s-net">{t('set.net.title')}</h2>

@@ -123,7 +123,7 @@ export interface Point {
 
 export type StatsMsg =
   | { kind: 'history'; history: Record<string, Point[]> }
-  | { kind: 'sample'; sample: Record<string, Point> };
+  | { kind: 'sample'; sample?: Record<string, Point> }; // left out when nothing runs
 
 /** Samples kept per container (internal/docker HistoryLen). */
 export const HISTORY_LEN = 150;
@@ -302,7 +302,7 @@ export function filterLogs(lines: LogLine[], filter: string, stderrOnly: boolean
 export function mergeStats(history: Record<string, Point[]>, m: StatsMsg): Record<string, Point[]> {
   if (m.kind === 'history') return { ...m.history };
   const out: Record<string, Point[]> = { ...history };
-  for (const [id, p] of Object.entries(m.sample)) {
+  for (const [id, p] of Object.entries(m.sample ?? {})) {
     const h = out[id] ?? [];
     if (h.at(-1)?.t === p.t) continue;
     const next = h.concat(p);
