@@ -10,6 +10,7 @@
   import Changes from './routes/Changes.svelte';
   import Profiles from './routes/Profiles.svelte';
   import Insight from './routes/Insight.svelte';
+  import Journal from './routes/Journal.svelte';
   import Reports from './routes/Reports.svelte';
   import Space from './routes/Space.svelte';
   import Security from './routes/Security.svelte';
@@ -109,6 +110,8 @@
         <Space />
       {:else if route?.id === 'insight'}
         <Insight />
+      {:else if route?.id === 'journal'}
+        <Journal />
       {:else if route?.id === 'changes'}
         <Changes />
       {:else if route?.id === 'security'}

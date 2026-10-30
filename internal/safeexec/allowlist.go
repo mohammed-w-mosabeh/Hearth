@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // allowlist is the complete set of programs Hearth may run. Adding an entry
@@ -121,6 +123,36 @@ var allowlist = map[string]Spec{
 		Paths:    []string{"/usr/bin/journalctl", "/bin/journalctl"},
 		Validate: journalArgs,
 		Timeout:  5 * time.Second,
+	},
+	// journalctl reading the whole journal, newest first (Journal page).
+	// Only the shape journalQueryArgs accepts.
+	"journalctl-query": {
+		Paths:    []string{"/usr/bin/journalctl", "/bin/journalctl"},
+		Validate: journalQueryArgs,
+		Timeout:  10 * time.Second,
+	},
+	// journalctl listing the boots it has logs of (Journal page).
+	"journalctl-boots": {
+		Paths:    []string{"/usr/bin/journalctl", "/bin/journalctl"},
+		Validate: exactly(Literal("--list-boots"), Literal("--output=json"), Literal("--no-pager")),
+		Timeout:  5 * time.Second,
+	},
+	// systemd-analyze on the last boot (Journal page): times, the units
+	// by how long they took, the chain that held the boot up. Read-only.
+	"analyze-time": {
+		Paths:    []string{"/usr/bin/systemd-analyze"},
+		Validate: exactly(Literal("time"), Literal("--no-pager")),
+		Timeout:  15 * time.Second,
+	},
+	"analyze-blame": {
+		Paths:    []string{"/usr/bin/systemd-analyze"},
+		Validate: exactly(Literal("blame"), Literal("--no-pager")),
+		Timeout:  15 * time.Second,
+	},
+	"analyze-chain": {
+		Paths:    []string{"/usr/bin/systemd-analyze"},
+		Validate: exactly(Literal("critical-chain"), Literal("--no-pager")),
+		Timeout:  15 * time.Second,
 	},
 	// PipeWire (Settings page, audio): pw-dump lists the graph as JSON;
 	// wpctl reads and sets one node's volume and mute, and picks the
@@ -265,6 +297,91 @@ func jobJournalArgs(args []string) error {
 
 // JournalFixedArgs start every journalctl-unit command line.
 var JournalFixedArgs = []string{"--quiet", "--no-pager", "--output=json", "--output-fields=MESSAGE,PRIORITY,_PID,SYSLOG_IDENTIFIER"}
+
+// JournalQueryFixedArgs start every journalctl-query command line.
+var JournalQueryFixedArgs = []string{"--quiet", "--no-pager", "--output=json", "--reverse", "--case-sensitive=no",
+	"--output-fields=MESSAGE,PRIORITY,_PID,SYSLOG_IDENTIFIER,_SYSTEMD_UNIT,_SYSTEMD_USER_UNIT"}
+
+// MaxJournalGrep bounds --grep= for journalctl-query.
+const MaxJournalGrep = 512
+
+var (
+	journalTimeRe = regexp.MustCompile(`^@[0-9]{1,12}$`)
+	journalBootRe = regexp.MustCompile(`^[0-9a-f]{32}$`)
+)
+
+// journalQueryArgs accepts JournalQueryFixedArgs, --lines=<n>, then each of
+// these at most once, values always joined to their flag: --priority=<0-7>,
+// --since=@<unix>, --until=@<unix>, --boot=<id>, --unit= or --user-unit=,
+// --after-cursor=, --grep=<one line>.
+func journalQueryArgs(args []string) error {
+	n := len(JournalQueryFixedArgs)
+	if len(args) <= n {
+		return invalid("want more than %d arguments, got %d", n, len(args))
+	}
+	for i, want := range JournalQueryFixedArgs {
+		if err := Literal(want)(args[i]); err != nil {
+			return err
+		}
+	}
+	lines, ok := strings.CutPrefix(args[n], "--lines=")
+	if v, err := strconv.Atoi(lines); !ok || err != nil || v < 1 || v > MaxJournalLines || strconv.Itoa(v) != lines {
+		return invalid("bad --lines argument %q", args[n])
+	}
+	seen := map[string]bool{}
+	for _, a := range args[n+1:] {
+		flag, value, ok := strings.Cut(a, "=")
+		if !ok || seen[flag] {
+			return invalid("bad or repeated argument %q", a)
+		}
+		seen[flag] = true
+		var err error
+		switch flag {
+		case "--priority":
+			err = OneOf("0", "1", "2", "3", "4", "5", "6", "7")(value)
+		case "--since", "--until":
+			if !journalTimeRe.MatchString(value) {
+				err = invalid("bad time %q", value)
+			}
+		case "--boot":
+			if !journalBootRe.MatchString(value) {
+				err = invalid("bad boot %q", value)
+			}
+		case "--unit", "--user-unit":
+			err = UnitName(value)
+		case "--after-cursor":
+			if !journalCursorRe.MatchString(value) {
+				err = invalid("bad cursor")
+			}
+		case "--grep":
+			err = journalGrep(value)
+		default:
+			err = invalid("unexpected argument %q", a)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	if seen["--unit"] && seen["--user-unit"] {
+		return invalid("one unit at a time")
+	}
+	if seen["--since"] && seen["--after-cursor"] {
+		return invalid("journalctl refuses --since with a cursor")
+	}
+	return nil
+}
+
+func journalGrep(s string) error {
+	if s == "" || len(s) > MaxJournalGrep || !utf8.ValidString(s) {
+		return invalid("bad search text")
+	}
+	for _, r := range s {
+		if unicode.IsControl(r) {
+			return invalid("bad search text")
+		}
+	}
+	return nil
+}
 
 // MaxJournalLines bounds --lines= for journalctl-unit.
 const MaxJournalLines = 1000

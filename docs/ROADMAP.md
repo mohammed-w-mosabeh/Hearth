@@ -80,7 +80,7 @@ Gate 3 result (2026-10-29): **passed.** Fuzzing: 30 targets, every validator of 
 - [x] 4.6 Profiles (Dev / Gaming auto-mode / Battery) (each step a registered action; restores only what it changed, across restarts; apps are started, never closed; auto mode holds only user units and apps, S15a)
 - [x] 4.7 Space advisor (preview + trash) (apt cache and journal through two closed broker methods, S16c; ~/.cache and large files to the XDG trash; old kernels through package removal, never the running one or the two newest; Docker leftovers through the existing cleanup)
 - [x] 4.8 "Why is my fan loud?" + per-app energy estimate (causes from temps, GPU, recent load and per-item CPU; energy from hourly CPU time, CPU only, at a rate fitted from this machine's battery hours or a labelled nominal one; RAPL is root's)
-- [ ] 4.9 Boot analysis + full journal viewer
+- [x] 4.9 Boot analysis + full journal viewer (systemd-analyze time, blame and critical-chain; the journal filtered by unit, priority, time, boot and literal text, newest first with paging; read-only, as the user)
 - [ ] 4.10 Polish: empty states, compact density, keyboard shortcuts, ar/en review
 
 **Gate 4:** full SECURITY.md pre-release checklist signed off; resource budget met → tag v1.0.0 locally (no push without approval).

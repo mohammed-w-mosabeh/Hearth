@@ -32,6 +32,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/alerts"
 	"github.com/mohammed-w-mosabeh/hearth/internal/api"
 	"github.com/mohammed-w-mosabeh/hearth/internal/auth"
+	"github.com/mohammed-w-mosabeh/hearth/internal/bootinfo"
 	"github.com/mohammed-w-mosabeh/hearth/internal/broker"
 	"github.com/mohammed-w-mosabeh/hearth/internal/changes"
 	"github.com/mohammed-w-mosabeh/hearth/internal/collect"
@@ -357,6 +358,9 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	srv.API.HandleFunc("POST /api/v1/actions/{kind}/{action}", reg.Handle)
 	srv.API.HandleFunc("GET /api/v1/broker/status", brokerClient.HandleStatus)
 	srv.API.HandleFunc("GET /api/v1/services/journal", services.HandleJournal(safeexec.Run, services.CanReadSystemJournal))
+	srv.API.HandleFunc("GET /api/v1/journal", services.HandleJournalQuery(safeexec.Run, services.CanReadSystemJournal))
+	srv.API.HandleFunc("GET /api/v1/journal/boots", services.HandleBoots(safeexec.Run))
+	srv.API.HandleFunc("GET /api/v1/boot", bootinfo.Handle(safeexec.Run))
 
 	// Docker through the broker: objects, live logs and stats, each
 	// followed only while a Docker page asks for it.

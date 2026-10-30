@@ -19,6 +19,7 @@ type Entry struct {
 	Time   int64  `json:"t"` // Unix milliseconds
 	Prio   int    `json:"prio"`
 	Ident  string `json:"ident,omitempty"`
+	Unit   string `json:"unit,omitempty"`
 	PID    int    `json:"pid,omitempty"`
 	Msg    string `json:"msg"`
 }
@@ -110,6 +111,9 @@ func parseJournal(b []byte, truncated bool) []Entry {
 			e.Prio = p
 		}
 		e.PID, _ = strconv.Atoi(str(raw["_PID"]))
+		if e.Unit = str(raw["_SYSTEMD_USER_UNIT"]); e.Unit == "" {
+			e.Unit = str(raw["_SYSTEMD_UNIT"])
+		}
 		out = append(out, e)
 	}
 	return out

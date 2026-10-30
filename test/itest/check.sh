@@ -284,6 +284,15 @@ check "socket starts it again" call_says "broker.ping" broker.ping
 # Leave the group empty so purge can remove it.
 gpasswd -d "$user" hearth >/dev/null
 
+echo "== journal and boot"
+key=$(api_key)
+jget() { curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/$1"; }
+check "journal reads in hearthd's sandbox" test "$(jget 'journal?lines=5')" = 200
+check "journal search reads" test "$(jget 'journal?lines=5&text=hearth')" = 200
+check "journal refuses a bad unit" test "$(jget 'journal?unit=system/--root=/')" = 400
+check "boots listed" test "$(jget journal/boots)" = 200
+check "boot analysis answers" test "$(jget boot)" = 200
+
 echo "== packages"
 key=$(api_key)
 pkgs_api() { curl -s -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/$1"; }
