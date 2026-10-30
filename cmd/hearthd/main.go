@@ -40,6 +40,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/diskusage"
 	"github.com/mohammed-w-mosabeh/hearth/internal/docker"
 	"github.com/mohammed-w-mosabeh/hearth/internal/homepage"
+	"github.com/mohammed-w-mosabeh/hearth/internal/insight"
 	"github.com/mohammed-w-mosabeh/hearth/internal/launch"
 	"github.com/mohammed-w-mosabeh/hearth/internal/netinfo"
 	"github.com/mohammed-w-mosabeh/hearth/internal/pkgs"
@@ -615,6 +616,9 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	usageDone := make(chan struct{})
 	go func() { usage.Run(usageCtx); close(usageDone) }()
 	defer func() { stopUsage(); <-usageDone }()
+	// A sampler of its own: the main one's last sample may be 15 s old.
+	probe := collect.New(collect.Config{Log: log, Ring: store.NewRing[collect.Sample](1)})
+	insight.New(insight.Config{Store: db, Samples: sampler.Ring().Snapshot, Probe: probe.Collect, Busy: usage.Now}).Register(srv.API)
 	reportBuilder := reports.New(reports.Config{Store: db, Now: func(context.Context) reports.Now {
 		return reportNow(sampler, pw)
 	}, Posture: security.Scan, Timeline: func(ctx context.Context, from, to time.Time, limit int) ([]changes.Event, error) {

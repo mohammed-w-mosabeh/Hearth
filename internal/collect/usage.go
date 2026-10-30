@@ -247,3 +247,58 @@ func (u *UsageRecorder) flush(ctx context.Context) {
 		u.cfg.Log.Warn("usage: cannot prune", "err", err)
 	}
 }
+
+// ItemNow is an item's CPU right now, in % of the machine.
+type ItemNow struct {
+	ID   string  `json:"id"`
+	Kind string  `json:"kind"`
+	Name string  `json:"name"`
+	CPU  float64 `json:"cpu"`
+}
+
+// Now measures every item's CPU over window, apart from the hourly
+// sampling, and returns the busiest, at most limit.
+func (u *UsageRecorder) Now(ctx context.Context, window time.Duration, limit int) ([]ItemNow, error) {
+	read := func() map[string]uint64 {
+		out := map[string]uint64{}
+		for _, l := range u.leaves() {
+			if usec, ok := cpuUsage(filepath.Join(u.cfg.CgroupRoot, l.rel)); ok {
+				out[l.rel] = usec
+			}
+		}
+		return out
+	}
+	before := read()
+	start := time.Now()
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-time.After(window):
+	}
+	elapsed := time.Since(start).Seconds()
+	items := map[string]*ItemNow{}
+	for _, l := range u.leaves() {
+		usec, ok := cpuUsage(filepath.Join(u.cfg.CgroupRoot, l.rel))
+		prev, seen := before[l.rel]
+		if !ok || !seen || usec < prev {
+			continue
+		}
+		it := items[l.id]
+		if it == nil {
+			it = &ItemNow{ID: l.id, Kind: l.kind, Name: l.name}
+			if u.cfg.Name != nil {
+				if n, ok := u.cfg.Name(l.id); ok && n != "" {
+					it.Name = n
+				}
+			}
+			items[l.id] = it
+		}
+		it.CPU += float64(usec-prev) / (elapsed * 1e6 * u.ncpu) * 100
+	}
+	out := make([]ItemNow, 0, len(items))
+	for _, it := range items {
+		out = append(out, *it)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CPU > out[j].CPU })
+	return out[:min(len(out), limit)], nil
+}

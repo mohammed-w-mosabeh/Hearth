@@ -9,6 +9,7 @@
   import Games from './routes/Games.svelte';
   import Changes from './routes/Changes.svelte';
   import Profiles from './routes/Profiles.svelte';
+  import Insight from './routes/Insight.svelte';
   import Reports from './routes/Reports.svelte';
   import Space from './routes/Space.svelte';
   import Security from './routes/Security.svelte';
@@ -106,6 +107,8 @@
         {#if live}<Profiles {live} />{/if}
       {:else if route?.id === 'space'}
         <Space />
+      {:else if route?.id === 'insight'}
+        <Insight />
       {:else if route?.id === 'changes'}
         <Changes />
       {:else if route?.id === 'security'}

@@ -112,3 +112,38 @@ func TestUsageRecorder(t *testing.T) {
 		t.Errorf("second flush %+v", st.rows)
 	}
 }
+
+func TestUsageNow(t *testing.T) {
+	root := t.TempDir()
+	unit := filepath.Join(root, "system.slice/busy.service")
+	if err := os.MkdirAll(unit, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	write := func(usec string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(unit, "cpu.stat"), []byte("usage_usec "+usec+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(unit, "cgroup.events"), []byte("populated 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	write("1000")
+	u := NewUsageRecorder(UsageConfig{CgroupRoot: root, UID: 1000, Name: func(string) (string, bool) { return "Busy", true }})
+	done := make(chan []ItemNow)
+	go func() {
+		got, _ := u.Now(context.Background(), 50*time.Millisecond, 5)
+		done <- got
+	}()
+	time.Sleep(10 * time.Millisecond)
+	write("100000000")
+	got := <-done
+	if len(got) != 1 || got[0].Name != "Busy" || got[0].CPU <= 0 {
+		t.Fatalf("%+v", got)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := u.Now(ctx, time.Minute, 5); err == nil {
+		t.Error("a cancelled request should end")
+	}
+}
