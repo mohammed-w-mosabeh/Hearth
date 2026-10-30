@@ -67,6 +67,9 @@ type GamesConfig struct {
 	Running func() []string
 	Store   Playtimes
 	Log     *slog.Logger
+	// Proc and UID are replaced in tests (Playing).
+	Proc string
+	UID  int
 }
 
 // Games is the game list, scanned on demand.

@@ -156,3 +156,12 @@ func brokerError(err error) error {
 	}
 	return actions.Errorf(http.StatusBadGateway, "broker: %v", err)
 }
+
+// Running reports whether a container runs (profiles).
+func Running(ctx context.Context, b Broker, id string) (bool, error) {
+	st, err := inspectState(ctx, b, id)
+	if err != nil {
+		return false, err
+	}
+	return st.Running, nil
+}

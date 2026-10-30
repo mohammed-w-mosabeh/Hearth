@@ -48,3 +48,19 @@ func TestContainerImages(t *testing.T) {
 		t.Error("an unreadable Docker is not an empty one")
 	}
 }
+
+func TestRunningState(t *testing.T) {
+	b := &fakeBroker{answers: map[string]string{
+		"docker.containers.inspect": `{"inspect":{"Id":"0123456789abcdef","Name":"/web","State":{"Status":"running","Running":true}}}`,
+		"docker.containers.list":    `[{"State":"exited","Labels":{"com.docker.compose.project":"a"}},{"State":"running","Labels":{"com.docker.compose.project":"b"}}]`,
+	}}
+	if on, err := Running(context.Background(), b, "web"); err != nil || !on {
+		t.Errorf("%v %v", on, err)
+	}
+	if on, err := ProjectRunning(context.Background(), b, "a"); err != nil || on {
+		t.Errorf("a: %v %v", on, err)
+	}
+	if on, err := ProjectRunning(context.Background(), b, "b"); err != nil || !on {
+		t.Errorf("b: %v %v", on, err)
+	}
+}

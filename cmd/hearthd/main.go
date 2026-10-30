@@ -46,6 +46,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/posture"
 	"github.com/mohammed-w-mosabeh/hearth/internal/power"
 	"github.com/mohammed-w-mosabeh/hearth/internal/procctl"
+	"github.com/mohammed-w-mosabeh/hearth/internal/profiles"
 	"github.com/mohammed-w-mosabeh/hearth/internal/reports"
 	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
 	"github.com/mohammed-w-mosabeh/hearth/internal/scheduler"
@@ -545,6 +546,48 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	go func() { tracker.Run(trackerCtx, time.Hour); close(trackerDone) }()
 	defer func() { stopTracker(); <-trackerDone }()
 	tracker.Register(srv.API)
+
+	// Profiles: sets of things to start or stop together, by hand or while
+	// a game runs (only then is the running state polled).
+	profileManager := profiles.New(profiles.Config{Store: db, Actions: reg, Log: log,
+		Playing: games.Playing,
+		Notify: func(ctx context.Context, summary, body string) {
+			if err := notifier.Notify(ctx, summary, body, "info"); err != nil {
+				log.Debug("profiles: notification", "err", err)
+			}
+		},
+		Active: func(ctx context.Context, it profiles.Item) (bool, error) {
+			switch it.Kind {
+			case profiles.KindContainer:
+				return docker.Running(ctx, brokerClient, it.Target)
+			case profiles.KindProject:
+				return docker.ProjectRunning(ctx, brokerClient, it.Target)
+			case profiles.KindApp:
+				_, ok := apps.Running(running())[it.Target]
+				return ok, nil
+			}
+			scope, name, err := unitctl.Target(it.Target)
+			if err != nil {
+				return false, err
+			}
+			dial := dbusx.SystemBus
+			if scope == services.ScopeUser {
+				dial = dbusx.SessionBus
+			}
+			bus, err := dial(ctx)
+			if err != nil {
+				return false, err
+			}
+			defer func() { _ = bus.Close() }()
+			return netinfo.UnitActive(ctx, bus, name), nil
+		},
+	})
+	profileManager.Register(reg)
+	profileManager.HandleRegister(srv.API)
+	profilesCtx, stopProfiles := context.WithCancel(ctx)
+	profilesDone := make(chan struct{})
+	go func() { profileManager.Run(profilesCtx, 15*time.Second); close(profilesDone) }()
+	defer func() { stopProfiles(); <-profilesDone }()
 
 	// Reports: hourly usage per app, service and container from the
 	// cgroups, and a weekly machine report saved when enabled.

@@ -199,3 +199,20 @@ func runProject(ctx context.Context, b Broker, op string, p actions.Plan) (actio
 	res.Done = len(st.Members) - len(failed)
 	return res, nil
 }
+
+// ProjectRunning reports whether any container of a project runs (profiles).
+func ProjectRunning(ctx context.Context, b Broker, project string) (bool, error) {
+	var list []struct {
+		State  string
+		Labels map[string]string
+	}
+	if err := b.Call(ctx, "docker.containers.list", map[string]bool{"all": true}, &list); err != nil {
+		return false, err
+	}
+	for _, c := range list {
+		if c.Labels["com.docker.compose.project"] == project && c.State == "running" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
