@@ -95,6 +95,7 @@ fuzz: web ## Run every Fuzz* target for FUZZTIME each (default 60s)
 lint: web ## golangci-lint (incl. gosec, depguard), gosec, forbidden patterns, svelte-check, eslint
 	@out=$$(git ls-files -z '*.go' | xargs -0 -r gofmt -l); if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
 	./scripts/check-forbidden.sh
+	desktop-file-validate packaging/desktop/hearth.desktop
 	$(GO) vet ./...
 	$(GOLANGCI_LINT) run ./...
 	$(GOSEC) -quiet -exclude-dir=web/node_modules ./...
@@ -113,7 +114,8 @@ itest: deb ## Install/uninstall the .deb in a Debian 13 container with systemd
 	CGO_ENABLED=0 $(GO) build $(GO_BUILD_FLAGS) -o dist/itest-fakedocker ./test/itest/fakedocker
 	CGO_ENABLED=0 $(GO) build $(GO_BUILD_FLAGS) -o dist/brokerprobe ./test/pentest/brokerprobe
 	CGO_ENABLED=0 $(GO) build $(GO_BUILD_FLAGS) -o dist/itest-termprobe ./test/itest/termprobe
-	./test/itest/run.sh $(DEB) dist/itest-fakedocker dist/brokerprobe dist/itest-termprobe
+	CGO_ENABLED=0 $(GO) build $(GO_BUILD_FLAGS) -o dist/itest-fakeportal ./test/itest/fakeportal
+	./test/itest/run.sh $(DEB) dist/itest-fakedocker dist/brokerprobe dist/itest-termprobe dist/itest-fakeportal
 
 .PHONY: bench
 bench: build ## Measure hearthd idle RSS/CPU over BENCH_SECONDS (default 60) against the budget

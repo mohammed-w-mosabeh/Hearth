@@ -2,6 +2,7 @@
 Type=Application
 Name=Hearth
 Comment=Manage and monitor this computer
+TryExec=/usr/bin/hearthd
 Exec=/usr/bin/hearthd open
 Icon=utilities-system-monitor
 Terminal=false

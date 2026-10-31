@@ -29,6 +29,11 @@ RUN cd /opt/e2e && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm ci --ignore-scripts --
 COPY e2e/playwright.config.ts /opt/e2e/
 COPY e2e/tests /opt/e2e/tests
 
+# gio, the launcher's fallback (a layer of its own keeps the browser's cached).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libglib2.0-bin \
+ && rm -rf /var/lib/apt/lists/*
+
 COPY itest/check.sh /usr/local/bin/hearth-itest-check
 COPY itest/entrypoint.sh /usr/local/bin/hearth-itest-init
 RUN chmod 0755 /usr/local/bin/hearth-itest-check /usr/local/bin/hearth-itest-init

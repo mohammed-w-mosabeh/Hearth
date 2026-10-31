@@ -121,3 +121,28 @@ test('a snapshot label shows as text', async ({ page }) => {
   await expect(page.locator('.kept').getByText(PAYLOAD)).toBeVisible();
   await noScriptRan(page);
 });
+
+test('every sidebar page is its real page', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto(`${origin}/#/`);
+  await page.reload();
+  const links = page.locator('nav ul a');
+  await expect(links.first()).toBeVisible();
+  const hrefs = await links.evaluateAll((els) => els.map((a) => a.getAttribute('href') ?? ''));
+  expect(hrefs.length).toBeGreaterThanOrEqual(21);
+  for (const h of hrefs) {
+    await page.goto(`${origin}/${h}`);
+    await page.waitForTimeout(300);
+    const text = (await page.locator('main').textContent()) ?? '';
+    expect(text, h).not.toMatch(/arrives in phase|Page not found/);
+    expect(text.trim().length, h).toBeGreaterThan(0);
+  }
+  expect(errors).toEqual([]);
+});
+
+test('Settings shows the build version', async ({ page }) => {
+  await page.goto(`${origin}/#/settings`);
+  await page.reload();
+  await expect(page.getByTestId('version')).toHaveText(process.env.HEARTH_VERSION ?? 'unset');
+});

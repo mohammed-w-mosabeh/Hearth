@@ -564,7 +564,7 @@ steamapps=/home/$user/.local/share/Steam/steamapps
 asuser mkdir -p "$steamapps"
 printf '"AppState"\n{\n\t"appid"\t"9"\n\t"name"\t"%s"\n\t"StateFlags"\t"4"\n}\n' "${xss//\"/\\\"}" | asuser tee "$steamapps/appmanifest_9.acf" >/dev/null
 check "hostile game listed" grep -q '"id":"steam.9"' <<<"$(pkgs_api games)"
-e2e=$(cd /opt/e2e && HEARTH_URL="http://127.0.0.1:$port/auth?t=$(cat /home/$user/.config/hearth/token)" timeout 300 npx playwright test 2>&1) || true
+e2e=$(cd /opt/e2e && HEARTH_VERSION="$HEARTH_VERSION" HEARTH_URL="http://127.0.0.1:$port/auth?t=$(cat /home/$user/.config/hearth/token)" timeout 300 npx playwright test 2>&1) || true
 if grep -qE '[0-9]+ passed' <<<"$e2e" && ! grep -qE '[0-9]+ (failed|flaky)' <<<"$e2e"; then
 	echo "$e2e" | grep -E '✓|passed' | head -20 | sed 's/^/  | /'
 else
@@ -587,6 +587,75 @@ for h in evil.test 127.0.0.1.evil.test "localhost:$((port + 1))" "[::1]:$port"; 
 done
 check "Host evil.test refused (WebSocket upgrade)" test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: evil.test' -H "Origin: http://127.0.0.1:$port" -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' -H "Sec-WebSocket-Protocol: hearth.v1, hearth.key.$key" "http://127.0.0.1:$port/api/v1/terminal")" = 403
 check "a rebound page's Origin cannot open a terminal" grep -q 'refused: 403' <<<"$(asuser hearth-termprobe -url "ws://127.0.0.1:$port/api/v1/terminal" -origin "http://evil.test:$port" -key "$key" || true)"
+
+echo "== launcher"
+check "hearthd --version is the package's version" test "$(asuser /usr/bin/hearthd --version)" = "$(dpkg-query -W -f='${Version}' hearth)"
+check "and git describe's" test "$(asuser /usr/bin/hearthd --version)" = "$HEARTH_VERSION"
+units_before=$(asuser systemctl --user list-units --all --plain --no-legend 'run-*' | awk '{print $1}')
+tokenfile=/home/$user/.config/hearth/token
+stublog=/home/$user/stub-browser.log
+portallog=/home/$user/portal.log
+opener() { asuser env HOME="/home/$user" /usr/bin/hearthd open; }
+cat >/usr/local/bin/hearth-stub-browser <<'STUB'
+#!/bin/sh
+curl -s -o /dev/null -w '%{http_code}\n' "$1" >>"$HOME/stub-browser.log"
+sleep 10
+STUB
+chmod 0755 /usr/local/bin/hearth-stub-browser
+asuser mkdir -p "/home/$user/.local/share/applications"
+printf '[Desktop Entry]\nType=Application\nName=Stub\nExec=/usr/local/bin/hearth-stub-browser %%u\nMimeType=x-scheme-handler/http;\n' |
+	asuser tee "/home/$user/.local/share/applications/hearth-stub.desktop" >/dev/null
+asuser env HOME="/home/$user" gio mime x-scheme-handler/http hearth-stub.desktop >/dev/null
+stub_saw() { test "$(grep -c '^303$' "$stublog" 2>/dev/null)" -ge "$1"; }
+portal_saw() { test "$(grep -c "^$1\$" "$portallog" 2>/dev/null)" -ge "$2"; }
+stub_alive() { pgrep -f '^/bin/sh /usr/local/bin/hearth-stub-browser' >/dev/null; }
+hearthds() { pgrep -u "$user" -cfx /usr/bin/hearthd; }
+fake_portal() { # fake_portal response-code
+	asuser hearth-fakeportal -log "$portallog" -response "$1" &
+	wait_until 5 asuser gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
+		--method org.freedesktop.DBus.GetNameOwner org.freedesktop.portal.Desktop || true
+}
+stop_portal() { pkill -f hearth-fakeportal || true; wait_until 3 not pgrep -f hearth-fakeportal || true; }
+
+before=$(cat "$tokenfile")
+check "no portal: hearthd open succeeds through GIO" opener
+check "the browser reached /auth" wait_until 5 stub_saw 1
+sleep 3
+check "the browser is alive 3 s later" stub_alive
+wait_until 5 test "$before" != "$(cat "$tokenfile")" || true
+check "the token rotated after the exchange" test "$before" != "$(cat "$tokenfile")"
+check "no bad token in the exchange" not grep -q 403 "$stublog"
+second=$(cat "$tokenfile")
+
+fake_portal 0
+check "with a portal: hearthd open succeeds" opener
+check "the portal got the link and it worked" wait_until 5 portal_saw 303 1
+check "GIO was not used as well" test "$(grep -c '^303$' "$stublog")" = 1
+stop_portal
+wait_until 5 test "$second" != "$(cat "$tokenfile")" || true
+third=$(cat "$tokenfile")
+
+fake_portal 2
+check "a failing portal: hearthd open still succeeds" opener
+check "the portal refused" wait_until 5 portal_saw refused 1
+check "and GIO took over" wait_until 5 stub_saw 2
+stop_portal
+
+check "the launch tokens are in no log" not grep -qF -e "$before" -e "$second" -e "$third" <<<"$(journalctl --no-pager -o verbose 2>/dev/null)"
+check "no login link in any log" not grep -q 'auth?t=' <<<"$(journalctl --no-pager -o verbose 2>/dev/null)"
+check "nor in any unit's description" not grep -qE "auth\?t=|$before|$second|$third" <<<"$(asuser systemctl --user list-units --all --plain --no-legend)"
+check "no transient unit was made for the browser" test "$units_before" = "$(asuser systemctl --user list-units --all --plain --no-legend 'run-*' | awk '{print $1}')"
+
+asuser systemctl --user stop hearthd.service
+check "stopped" not port_open "$port"
+check "hearthd open starts the service" opener
+check "it is active" asuser systemctl --user is-active hearthd.service
+check "and reached /auth" wait_until 5 stub_saw 3
+check "one hearthd" test "$(hearthds)" = 1
+check "a second run succeeds" opener
+check "and reached /auth" wait_until 5 stub_saw 4
+check "still one hearthd" test "$(hearthds)" = 1
+pkill -f hearth-stub-browser || true
 
 echo "== purge"
 apt-get purge -y -qq hearth >/dev/null
