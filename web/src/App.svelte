@@ -24,7 +24,6 @@
   import Scheduler from './routes/Scheduler.svelte';
   import Resources from './routes/Resources.svelte';
   import Services from './routes/Services.svelte';
-  import Placeholder from './routes/Placeholder.svelte';
   import ShortcutsDialog from './components/ShortcutsDialog.svelte';
   import { api, setSession } from './lib/api';
   import { t } from './lib/i18n';
@@ -135,9 +134,7 @@
         <Scheduler />
       {:else if route?.id === 'terminal'}
         <!-- below, kept mounted -->
-      {:else if route}
-        <Placeholder {route} />
-      {:else}
+      {:else if !route}
         <EmptyState title={t('notfound.title')} body="">
           <a href={href('home')}>{t('notfound.back')}</a>
         </EmptyState>

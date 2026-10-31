@@ -4,8 +4,8 @@ import { t } from './index';
 
 describe('t', () => {
   it('fills placeholders and leaves unknown ones', () => {
-    expect(t('page.soon', { page: 'Docker', phase: 2 })).toBe('Docker arrives in phase 2.');
-    expect(t('page.soon', { page: 'Docker' })).toBe('Docker arrives in phase {phase}.');
+    expect(t('svc.count', { n: 2 })).toBe('2 units.');
+    expect(t('svc.count')).toBe('{n} units.');
   });
 
   it('has no empty messages', () => {

@@ -7,31 +7,30 @@ export interface Route {
   id: string;
   label: MessageKey;
   icon: string;
-  phase: number;
 }
 
 export const routes: Route[] = [
-  { id: 'home', label: 'nav.home', icon: 'home', phase: 1 },
-  { id: 'resources', label: 'nav.resources', icon: 'chart', phase: 1 },
-  { id: 'disks', label: 'nav.disks', icon: 'disk', phase: 1 },
-  { id: 'apps', label: 'nav.apps', icon: 'grid', phase: 1 },
-  { id: 'games', label: 'nav.games', icon: 'gamepad', phase: 4 },
-  { id: 'services', label: 'nav.services', icon: 'gear', phase: 1 },
-  { id: 'docker', label: 'nav.docker', icon: 'box', phase: 2 },
-  { id: 'packages', label: 'nav.packages', icon: 'package', phase: 3 },
-  { id: 'tools', label: 'nav.tools', icon: 'wrench', phase: 3 },
-  { id: 'space', label: 'nav.space', icon: 'broom', phase: 4 },
-  { id: 'network', label: 'nav.network', icon: 'network', phase: 3 },
-  { id: 'terminal', label: 'nav.terminal', icon: 'terminal', phase: 3 },
-  { id: 'scheduler', label: 'nav.scheduler', icon: 'calendar', phase: 3 },
-  { id: 'insight', label: 'nav.insight', icon: 'bolt', phase: 4 },
-  { id: 'journal', label: 'nav.journal', icon: 'book', phase: 4 },
-  { id: 'alerts', label: 'nav.alerts', icon: 'bell', phase: 1 },
-  { id: 'security', label: 'nav.security', icon: 'shield', phase: 4 },
-  { id: 'profiles', label: 'nav.profiles', icon: 'layers', phase: 4 },
-  { id: 'changes', label: 'nav.changes', icon: 'history', phase: 4 },
-  { id: 'reports', label: 'nav.reports', icon: 'report', phase: 4 },
-  { id: 'settings', label: 'nav.settings', icon: 'sliders', phase: 4 },
+  { id: 'home', label: 'nav.home', icon: 'home' },
+  { id: 'resources', label: 'nav.resources', icon: 'chart' },
+  { id: 'disks', label: 'nav.disks', icon: 'disk' },
+  { id: 'apps', label: 'nav.apps', icon: 'grid' },
+  { id: 'games', label: 'nav.games', icon: 'gamepad' },
+  { id: 'services', label: 'nav.services', icon: 'gear' },
+  { id: 'docker', label: 'nav.docker', icon: 'box' },
+  { id: 'packages', label: 'nav.packages', icon: 'package' },
+  { id: 'tools', label: 'nav.tools', icon: 'wrench' },
+  { id: 'space', label: 'nav.space', icon: 'broom' },
+  { id: 'network', label: 'nav.network', icon: 'network' },
+  { id: 'terminal', label: 'nav.terminal', icon: 'terminal' },
+  { id: 'scheduler', label: 'nav.scheduler', icon: 'calendar' },
+  { id: 'insight', label: 'nav.insight', icon: 'bolt' },
+  { id: 'journal', label: 'nav.journal', icon: 'book' },
+  { id: 'alerts', label: 'nav.alerts', icon: 'bell' },
+  { id: 'security', label: 'nav.security', icon: 'shield' },
+  { id: 'profiles', label: 'nav.profiles', icon: 'layers' },
+  { id: 'changes', label: 'nav.changes', icon: 'history' },
+  { id: 'reports', label: 'nav.reports', icon: 'report' },
+  { id: 'settings', label: 'nav.settings', icon: 'sliders' },
 ];
 
 export function routeId(hash: string): string {
