@@ -56,6 +56,7 @@
   }
   const loadNet = async () => void (net = await api<NetworkState>('/system/network').catch(() => null));
   const loadAudio = async () => void (audio = await api<AudioState>('/system/audio').catch(() => null));
+  let hearthVersion = $state('');
   const loadPower = async () => void (power = await api<Power>('/power').catch(() => null));
   async function loadAutostart(): Promise<void> {
     autostart = await api<{ entries: AutostartEntry[] }>('/system/autostart')
@@ -64,6 +65,9 @@
   }
 
   $effect(() => {
+    void api<{ version: string }>('/session')
+      .then((s) => (hearthVersion = s.version))
+      .catch(() => {});
     void loadInfo();
     void loadNet();
     void loadAudio();
@@ -441,6 +445,11 @@
       {#if !validHostname(staticName)}<p class="note error">{t('set.about.invalid')}</p>{/if}
     </section>
   {/if}
+
+  <section aria-labelledby="s-hearth">
+    <h2 id="s-hearth">{t('set.hearth.title')}</h2>
+    <p class="version"><span class="name">{t('set.hearth.version')}</span> <bdi data-testid="version">{hearthVersion}</bdi></p>
+  </section>
 
   <!-- Startup applications -->
   <section aria-labelledby="s-auto" class="wide">

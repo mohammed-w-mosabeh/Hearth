@@ -105,7 +105,13 @@ func systemdListener() (net.Listener, error) {
 	return ln, nil
 }
 
+// buildVersion is set by make (scripts/version.sh); a plain go build has none.
+var buildVersion string
+
 func version() string {
+	if buildVersion != "" {
+		return buildVersion
+	}
 	if bi, ok := debug.ReadBuildInfo(); ok {
 		v := bi.Main.Version
 		for _, s := range bi.Settings {

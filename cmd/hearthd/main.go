@@ -133,7 +133,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	if err != nil {
 		return err
 	}
-	srv, err := api.New(api.Config{Port: cfg.Port, Auth: am, Static: web.Dist(), Logger: log})
+	srv, err := api.New(api.Config{Port: cfg.Port, Auth: am, Static: web.Dist(), Logger: log, Version: version()})
 	if err != nil {
 		return err
 	}
@@ -820,7 +820,13 @@ func brokerCall(ctx context.Context, args []string) error {
 	return nil
 }
 
+// buildVersion is set by make (scripts/version.sh); a plain go build has none.
+var buildVersion string
+
 func version() string {
+	if buildVersion != "" {
+		return buildVersion
+	}
 	if bi, ok := debug.ReadBuildInfo(); ok {
 		v := bi.Main.Version
 		for _, s := range bi.Settings {

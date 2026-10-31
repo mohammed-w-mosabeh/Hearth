@@ -22,13 +22,13 @@ GOVULNCHECK   := $(TOOLS_BIN)/govulncheck
 GOSEC         := $(TOOLS_BIN)/gosec
 NFPM          := $(TOOLS_BIN)/nfpm
 
-# Debian version: 0.0.0~git<date>.<sha> until the first tag.
-VERSION ?= 0.0.0~git$(shell git log -1 --format=%cd --date=format:%Y%m%d).$(shell git rev-parse --short=12 HEAD)
+# From git describe: 1.0.0 on the tag, 1.0.0+git1.505fb84 after it.
+VERSION ?= $(shell ./scripts/version.sh)
 DEB      = dist/hearth_$(VERSION)_amd64.deb
 
 # Reproducible, static builds (SECURITY S25).
 export CGO_ENABLED := 0
-GO_BUILD_FLAGS := -trimpath -buildvcs=true
+GO_BUILD_FLAGS = -trimpath -buildvcs=true -ldflags '-X main.buildVersion=$(VERSION)'
 
 GO_PKGS = $(shell $(GO) list ./... 2>/dev/null)
 

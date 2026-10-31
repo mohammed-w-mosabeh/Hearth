@@ -1131,6 +1131,8 @@
   "set.time.ntp": "Set the time automatically",
   "set.time.synced": "Synchronized",
   "set.time.notSynced": "Not synchronized yet",
+  "set.hearth.title": "About Hearth",
+  "set.hearth.version": "Version",
   "set.about.title": "About this computer",
   "set.about.pretty": "Device name",
   "set.about.hostname": "Hostname",

@@ -27,6 +27,8 @@ type Config struct {
 	// Static serves the embedded UI at /. Nil serves 404 (until ROADMAP 0.7).
 	Static fs.FS
 	Logger *slog.Logger
+	// Version is shown in Settings.
+	Version string
 }
 
 // Mux is an http.ServeMux that remembers its patterns, so a test can check
@@ -85,9 +87,9 @@ func New(cfg Config) (*Server, error) {
 	}
 	s := &Server{cfg: cfg, log: cfg.Logger, API: &Mux{ServeMux: http.NewServeMux()}, newConns: map[net.Conn]struct{}{}}
 	s.Hub = newHub(s.log)
-	// Lets the UI check that its stored key is still valid.
+	// Lets the UI check that its stored key is still valid, and shows the version.
 	s.API.HandleFunc("GET /api/v1/session", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "version": s.cfg.Version})
 	})
 	s.srv = &http.Server{
 		Handler:           s.handler(),
