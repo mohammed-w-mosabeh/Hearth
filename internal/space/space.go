@@ -251,8 +251,8 @@ var (
 	kinds   = []string{"linux-image-", "linux-headers-", "linux-modules-", "linux-kbuild-"}
 )
 
-// compareKernels orders releases, numbers as numbers (6.12.9 < 6.12.10).
-func compareKernels(a, b string) int {
+// CompareKernels orders releases, numbers as numbers (6.12.9 < 6.12.10).
+func CompareKernels(a, b string) int {
 	x, y := numRe.FindAllString(a, -1), numRe.FindAllString(b, -1)
 	for i := 0; i < len(x) && i < len(y); i++ {
 		if x[i] == y[i] {
@@ -284,7 +284,7 @@ func oldKernels(pkgs []discovery.Package, running string) []Kernel {
 			releases = append(releases, m[1])
 		}
 	}
-	sort.Slice(releases, func(i, j int) bool { return compareKernels(releases[i], releases[j]) > 0 })
+	sort.Slice(releases, func(i, j int) bool { return CompareKernels(releases[i], releases[j]) > 0 })
 	if len(releases) <= keptKernels {
 		return out
 	}

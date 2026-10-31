@@ -38,6 +38,7 @@ const (
 	CheckFirewall   = "firewall"
 	CheckSSH        = "ssh"
 	CheckUpdates    = "updates"
+	CheckRestart    = "restart"
 	CheckCVEs       = "cves"
 	CheckContainers = "containers"
 	CheckPath       = "path"
@@ -99,15 +100,20 @@ type Config struct {
 	// count of all pending updates.
 	Updates    func(ctx context.Context) (security []string, total int, err error)
 	Containers func(ctx context.Context) ([]Risky, error)
-	Run        Runner
-	Settings   SettingsStore
-	Log        *slog.Logger
-	Clock      func() time.Time
+	// Release is the running kernel's; Needrestart is the optional scan
+	// through the broker.
+	Release     func() string
+	Needrestart func(ctx context.Context) (RestartScan, error)
+	Run         Runner
+	Settings    SettingsStore
+	Log         *slog.Logger
+	Clock       func() time.Time
 }
 
 // Scanner runs the checks.
 type Scanner struct {
-	cfg Config
+	cfg     Config
+	restart restartCache
 
 	mu      sync.Mutex
 	cves    CVEs
@@ -164,13 +170,14 @@ func (s *Scanner) Scan(ctx context.Context) Report {
 		return c
 	})
 	run(s.updates)
+	run(func(ctx context.Context) Check { return restartCheck(s.Restart(ctx, true)) })
 	run(s.containers)
 	run(func(context.Context) Check { return s.path() })
 	wg.Wait()
 
 	r.CVEs = s.CVEs(ctx)
 	results[CheckCVEs] = cveCheck(r.CVEs)
-	for _, id := range []string{CheckListeners, CheckFirewall, CheckSSH, CheckUpdates, CheckCVEs, CheckContainers, CheckPath} {
+	for _, id := range []string{CheckListeners, CheckFirewall, CheckSSH, CheckUpdates, CheckRestart, CheckCVEs, CheckContainers, CheckPath} {
 		c := results[id]
 		if c.Findings == nil {
 			c.Findings = []Finding{}

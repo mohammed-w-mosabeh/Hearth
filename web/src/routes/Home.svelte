@@ -1,5 +1,6 @@
 <script lang="ts">
   import HomeTiles from '../components/HomeTiles.svelte';
+  import RestartBanner from '../components/RestartBanner.svelte';
   import CpuCard from '../components/cards/CpuCard.svelte';
   import DockerCard from '../components/cards/DockerCard.svelte';
   import DiskCard from '../components/cards/DiskCard.svelte';
@@ -119,6 +120,8 @@
     </button>
   {/if}
 </header>
+
+<RestartBanner />
 
 <HomeTiles {live} />
 

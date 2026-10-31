@@ -1,0 +1,57 @@
+[Unit]
+Description=Hearth: list what still runs old libraries (needrestart)
+Documentation=https://github.com/mohammed-w-mosabeh/hearth
+# Started only by hearth-broker's system.needrestart (SECURITY S16g), and
+# only when needrestart is installed. It lists and never restarts: -r l.
+ConditionFileIsExecutable=/usr/sbin/needrestart
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/needrestart -b -r l
+# Read back by the broker, which holds no capability that could see this
+# itself. The state directory is 0700 root.
+StateDirectory=hearth
+StateDirectoryMode=0700
+StandardOutput=truncate:/var/lib/hearth/needrestart.out
+StandardError=journal
+Environment=LC_ALL=C
+UMask=0077
+Nice=19
+IOSchedulingClass=idle
+TimeoutStartSec=120s
+
+# --- Hardening (SECURITY.md "systemd hardening") ---
+# CAP_SYS_PTRACE: reading /proc/<pid>/maps of other users' processes, which
+# is the whole job; without it needrestart sees nothing and reports nothing
+# to restart. CAP_DAC_READ_SEARCH: reading their binaries and scripts. This
+# is why it is a unit of its own: the broker stays without either.
+CapabilityBoundingSet=CAP_SYS_PTRACE CAP_DAC_READ_SEARCH
+AmbientCapabilities=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+KeyringMode=private
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+# systemctl, to map processes to units.
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+MemoryMax=256M
+CPUQuota=50%
+TasksMax=64

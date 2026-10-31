@@ -59,7 +59,7 @@ export interface Report {
   counts: Partial<Record<Status, number>>;
 }
 
-export const CHECKS = ['listeners', 'firewall', 'ssh', 'updates', 'cves', 'containers', 'path'] as const;
+export const CHECKS = ['listeners', 'firewall', 'ssh', 'updates', 'restart', 'cves', 'containers', 'path'] as const;
 type CheckId = (typeof CHECKS)[number];
 
 const known = (id: string): id is CheckId => (CHECKS as readonly string[]).includes(id);
@@ -88,7 +88,9 @@ export function statusLabel(s: Status): MessageKey {
 export const FINDINGS = new Set([
   'firewall.active', 'firewall.inactive', 'firewall.none', 'listener.exposed',
   'ssh.active', 'ssh.inactive', 'ssh.root_login', 'ssh.empty_passwords', 'ssh.password_auth', 'ssh.kbd_interactive', 'ssh.unreadable', 'ssh.match',
-  'updates.security', 'updates.other', 'cves.not_installed', 'cves.not_run', 'cves.fixed', 'cves.open',
+  'updates.security', 'updates.other',
+  'restart.reboot', 'restart.kernel', 'restart.services', 'restart.sessions', 'restart.no_tool', 'restart.scan_failed', 'restart.scanning',
+  'cves.not_installed', 'cves.not_run', 'cves.fixed', 'cves.open',
   'container.risky', 'container.risky_stopped',
   'path.world', 'path.world_file', 'path.owner', 'path.owner_file', 'path.relative', 'path.truncated',
 ]);
@@ -103,6 +105,18 @@ export function riskKey(risk: string): { key: MessageKey; path?: string } {
   if (risk.startsWith('host-mount:')) return { key: 'security.risk.host-mount', path: risk.slice('host-mount:'.length) };
   const k = ['privileged', 'cap-add', 'host-pid', 'host-network', 'host-ipc'].includes(risk) ? risk : 'other';
   return { key: `security.risk.${k}` as MessageKey };
+}
+
+/** GET /api/v1/restart. */
+export interface Restart {
+  reboot: boolean;
+  services: string[];
+}
+
+/** Home's reminder for r, null when nothing waits. */
+export function restartKey(r: Restart): MessageKey | null {
+  if (r.reboot) return 'home.restart.reboot';
+  return r.services.length > 0 ? 'home.restart.services' : null;
 }
 
 /** The overall verdict: the worst status among the checks that ran. */

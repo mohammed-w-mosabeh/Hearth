@@ -96,7 +96,7 @@ Phase 5 (Phone link): cancelled, owner decision 2026-10-31.
 - [x] 5.3 SMART: broker `smartctl -j -a /dev/<validated whole disk>`, disk health card, short/long self-test and its result, the "SMART failing" default alert
 - [x] 5.4 Alerts: ntfy (HTTPS only, bounds like S21) and SMTP (TLS required) channels, secrets masked (S19); container event alerts; log-pattern alerts (RE2, length-limited, rate limit and hysteresis)
 - [x] 5.5 Docker networks and volumes page: size, used-by, remove orphans through preview tokens
-- [ ] 5.6 Restart needed: `/run/reboot-required`, running vs newest kernel, processes using deleted libraries; optional broker `needrestart -b`; on Home and Security posture
+- [x] 5.6 Restart needed: `/run/reboot-required`, running vs newest kernel, processes using deleted libraries; optional broker `needrestart -b`; on Home and Security posture
 - [ ] 5.7 Unattended-upgrades status in Security posture (read-only)
 - [ ] 5.8 Backup of Hearth: settings export/import as one JSON file (never secrets or the token), import previewed and validated; SQLite `VACUUM INTO` backup on demand and weekly, keeping the last 4
 - [ ] 5.9 Arabic locale: `ar.json`, language switch, RTL notes from ARCHITECTURE, bundled IBM Plex Sans Arabic, every page crawled in RTL

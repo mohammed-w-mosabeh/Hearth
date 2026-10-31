@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -231,7 +232,7 @@ func TestScan(t *testing.T) {
 		checks[c.ID] = c
 		order = append(order, c.ID)
 	}
-	if strings.Join(order, ",") != "listeners,firewall,ssh,updates,cves,containers,path" {
+	if strings.Join(order, ",") != "listeners,firewall,ssh,updates,restart,cves,containers,path" {
 		t.Fatalf("order %v", order)
 	}
 	want := map[string]string{
@@ -324,7 +325,7 @@ func TestCVEsHandlerAndCache(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &r); err != nil {
 		t.Fatal(err)
 	}
-	if c := r.Checks[4]; c.ID != CheckCVEs || c.Status != SevCrit || c.Findings[0].Details[0] != "CVE-2024-0002 (openssl)" {
+	if c := r.Checks[5]; c.ID != CheckCVEs || c.Status != SevCrit || c.Findings[0].Details[0] != "CVE-2024-0002 (openssl)" {
 		t.Errorf("cves %+v", c)
 	}
 	// A restart reads the kept run.
@@ -368,5 +369,138 @@ func TestTexts(t *testing.T) {
 	}
 	if CheckName(CheckCVEs) == CheckCVEs {
 		t.Error("no name")
+	}
+}
+
+func restartRoot(t *testing.T, kernels ...string) string {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "boot"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "run"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range kernels {
+		if err := os.WriteFile(filepath.Join(root, "boot", "vmlinuz-"+k), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
+
+func TestKernelFlavor(t *testing.T) {
+	for in, want := range map[string]string{"6.12.48+deb13-amd64": "amd64", "6.12.48+deb13-rt-amd64": "rt-amd64", "6.1.0-18-amd64": "amd64", "6.1.0-18-cloud-amd64": "cloud-amd64"} {
+		if got := kernelFlavor(in); got != want {
+			t.Errorf("%s: %q", in, got)
+		}
+	}
+}
+
+func TestNewestKernel(t *testing.T) {
+	root := restartRoot(t, "6.12.9+deb13-amd64", "6.12.10+deb13-amd64", "6.12.99+deb13-rt-amd64", "6.12.8+deb13-amd64")
+	if got := newestKernel(root, "6.12.9+deb13-amd64"); got != "6.12.10+deb13-amd64" {
+		t.Fatal(got)
+	}
+	if got := newestKernel(root, "6.12.10+deb13-amd64"); got != "" {
+		t.Fatal(got)
+	}
+	if got := newestKernel(root, "6.12.99+deb13-rt-amd64"); got != "" {
+		t.Fatal(got)
+	}
+	if got := newestKernel(root, ""); got != "" {
+		t.Fatal(got)
+	}
+}
+
+func restartScanner(root string, scan func(context.Context) (RestartScan, error)) *Scanner {
+	return New(Config{Root: root, Release: func() string { return "6.12.9+deb13-amd64" }, Needrestart: scan})
+}
+
+func TestRestartClean(t *testing.T) {
+	s := restartScanner(restartRoot(t, "6.12.9+deb13-amd64"), func(context.Context) (RestartScan, error) { return RestartScan{Installed: true}, nil })
+	r := s.Restart(context.Background(), true)
+	if r.Reboot || !r.Scanned || len(r.Services) != 0 {
+		t.Fatalf("%+v", r)
+	}
+	if c := restartCheck(r); c.Status != StatusOK || len(c.Findings) != 0 {
+		t.Fatalf("%+v", c)
+	}
+}
+
+func TestRestartNeeded(t *testing.T) {
+	root := restartRoot(t, "6.12.9+deb13-amd64", "6.12.10+deb13-amd64")
+	if err := os.WriteFile(filepath.Join(root, "run", "reboot-required"), []byte("*** System restart required ***\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "run", "reboot-required.pkgs"), []byte("libc6\nlinux-image-amd64\nlibc6\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := restartScanner(root, func(context.Context) (RestartScan, error) {
+		return RestartScan{Installed: true, Services: []string{"nginx.service"}, Sessions: []string{"me @ user manager service"}}, nil
+	})
+	r := s.Restart(context.Background(), true)
+	if !r.Reboot || len(r.Packages) != 2 || r.Newest != "6.12.10+deb13-amd64" || len(r.Services) != 1 {
+		t.Fatalf("%+v", r)
+	}
+	c := restartCheck(r)
+	if c.Status != SevWarn || len(c.Findings) != 4 {
+		t.Fatalf("%+v", c)
+	}
+	for _, f := range c.Findings {
+		if Text(f) == "" || strings.HasPrefix(Text(f), f.Code) {
+			t.Errorf("no text for %s", f.Code)
+		}
+	}
+}
+
+// A scan that failed or has not ended must not read as all clear.
+func TestRestartUnknownIsSaid(t *testing.T) {
+	root := restartRoot(t, "6.12.9+deb13-amd64")
+	s := restartScanner(root, func(context.Context) (RestartScan, error) { return RestartScan{}, errors.New("no") })
+	r := s.Restart(context.Background(), true)
+	if r.Error == "" || restartCheck(r).Findings[0].Code != "restart.scan_failed" {
+		t.Fatalf("%+v", r)
+	}
+	hold := make(chan struct{})
+	s = restartScanner(root, func(context.Context) (RestartScan, error) { <-hold; return RestartScan{Installed: true}, nil })
+	r = s.Restart(context.Background(), false)
+	if r.Scanned || restartCheck(r).Findings[0].Code != "restart.scanning" {
+		t.Fatalf("%+v", r)
+	}
+	close(hold)
+	if r = s.Restart(context.Background(), true); !r.Scanned {
+		t.Fatalf("%+v", r)
+	}
+	s = restartScanner(root, func(context.Context) (RestartScan, error) { return RestartScan{}, nil })
+	if c := restartCheck(s.Restart(context.Background(), true)); c.Findings[0].Code != "restart.no_tool" {
+		t.Fatalf("%+v", c)
+	}
+}
+
+func TestRestartScanIsPaced(t *testing.T) {
+	n := 0
+	s := restartScanner(restartRoot(t), func(context.Context) (RestartScan, error) { n++; return RestartScan{Installed: true}, nil })
+	for range 3 {
+		s.Restart(context.Background(), true)
+	}
+	if n != 1 {
+		t.Fatal(n)
+	}
+}
+
+// Root is "" in production, and Join then drops it: without the leading
+// slash these would be relative to the working directory, and never found.
+func TestRestartPathsAreAbsoluteInProduction(t *testing.T) {
+	root := restartRoot(t, "0.0.2-amd64")
+	if err := os.WriteFile(filepath.Join(root, "run", "reboot-required.pkgs"), []byte("relative-sentinel\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+	if got := newestKernel("", "0.0.1-amd64"); got == "0.0.2-amd64" {
+		t.Error("read boot/ relative to the working directory")
+	}
+	if slices.Contains(rebootPackages(""), "relative-sentinel") {
+		t.Error("read run/ relative to the working directory")
 	}
 }

@@ -24,6 +24,11 @@ depends:
 recommends:
   - smartmontools
 
+# Which services run old libraries. Only a suggestion: its apt hook changes
+# what an upgrade does.
+suggests:
+  - needrestart
+
 contents:
   - src: bin/hearthd
     dst: /usr/bin/hearthd
@@ -43,6 +48,10 @@ contents:
       mode: 0644
   - src: packaging/systemd/hearth-broker.service
     dst: /usr/lib/systemd/system/hearth-broker.service
+    file_info:
+      mode: 0644
+  - src: packaging/systemd/hearth-needrestart.service
+    dst: /usr/lib/systemd/system/hearth-needrestart.service
     file_info:
       mode: 0644
   - src: packaging/polkit/org.hearth.policy

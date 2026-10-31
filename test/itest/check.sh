@@ -682,6 +682,35 @@ log_alert() { asuser logger "itest-log-marker password=hunter2"; grep -q '"rule_
 check "a matching journal line opens an incident" wait_until 100 log_alert
 check "the line itself is not recorded" not grep -q hunter2 <<<"$(pkgs_api 'alerts/events?limit=20')"
 
+echo "== restart needed"
+check "a clean machine has no reboot flag" grep -q '"reboot":false,"flagged":false,"running":"' <<<"$(pkgs_api restart)"
+touch /run/reboot-required
+echo libc6 >/run/reboot-required.pkgs
+flagged=$(pkgs_api restart)
+echo "  flagged: ${flagged:0:200}"
+check "the reboot flag is seen" grep -q '"reboot":true,"flagged":true,"packages":\["libc6"\]' <<<"$flagged"
+rm -f /run/reboot-required /run/reboot-required.pkgs
+# A service that keeps a deleted library mapped: real needrestart must find
+# it, which it can only do with CAP_SYS_PTRACE (another uid's maps).
+usermod -aG hearth "$user"
+cp -L /usr/lib/x86_64-linux-gnu/libz.so.1 /usr/lib/itest-old.so
+systemd-run --quiet --unit=itest-oldlib.service -p DynamicUser=yes -p Environment=LD_PRELOAD=/usr/lib/itest-old.so /bin/sleep 600
+wait_until 5 systemctl is-active itest-oldlib.service || true
+sleep 1
+rm -f /usr/lib/itest-old.so /var/lib/hearth/needrestart.out
+nr=$(asuser /usr/bin/hearthd broker-call system.needrestart 2>&1 || true)
+echo "  needrestart: ${nr:0:200}"
+check "real needrestart ran in its sandbox" grep -q '"installed":true' <<<"$nr"
+check "and found the service on a deleted library" grep -q 'itest-oldlib.service' <<<"$nr"
+check "the broker gained no capability for it" test "$(systemctl show -p CapabilityBoundingSet --value hearth-broker.service)" = "cap_sys_rawio cap_sys_admin"
+check "it takes no params" call_says "takes no params" system.needrestart '{"args":"-r a"}'
+check "it restarted nothing" systemctl is-active itest-oldlib.service
+check "its output is root's" test "$(stat -c '%U %a' /var/lib/hearth/needrestart.out)" = "root 600"
+exposure2=$(systemd-analyze security hearth-needrestart.service --no-pager 2>/dev/null | tail -1 || true)
+echo "  $exposure2"
+systemctl stop itest-oldlib.service
+gpasswd -d "$user" hearth >/dev/null
+
 echo "== launcher"
 check "hearthd --version is the package's version" test "$(asuser /usr/bin/hearthd --version)" = "$(dpkg-query -W -f='${Version}' hearth)"
 check "and git describe's" test "$(asuser /usr/bin/hearthd --version)" = "$HEARTH_VERSION"
@@ -763,7 +792,8 @@ check "port closed" not port_open "$port"
 check "no /var/lib/hearth" test ! -e /var/lib/hearth
 check "system drop-ins removed" test ! -e /etc/systemd/system/itest-limits.service.d
 for f in /usr/bin/hearth-broker /usr/lib/systemd/system/hearth-broker.socket \
-	/usr/lib/systemd/system/hearth-broker.service /usr/share/polkit-1/actions/org.hearth.policy \
+	/usr/lib/systemd/system/hearth-broker.service /usr/lib/systemd/system/hearth-needrestart.service \
+	/usr/share/polkit-1/actions/org.hearth.policy \
 	/etc/systemd/system/sockets.target.wants/hearth-broker.socket /run/hearth; do
 	check "removed $f" test ! -e "$f"
 done

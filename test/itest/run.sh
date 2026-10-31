@@ -21,6 +21,7 @@ docker run --detach --rm --name "$name" \
 	--cgroupns=private \
 	--tmpfs /run --tmpfs /run/lock \
 	--cap-add SYS_ADMIN \
+	--cap-add SYS_PTRACE \
 	--security-opt seccomp=unconfined \
 	--security-opt apparmor=unconfined \
 	"$image" >/dev/null

@@ -26,12 +26,18 @@ type Mux interface {
 func (s *Scanner) Register(mux Mux, audit Auditor) {
 	mux.HandleFunc("GET /api/v1/security", s.handleScan)
 	mux.HandleFunc("POST /api/v1/security/cves", s.handleCVEs(audit))
+	mux.HandleFunc("GET /api/v1/restart", s.handleRestart)
 }
 
 func (s *Scanner) handleScan(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	writeJSON(w, http.StatusOK, s.Scan(ctx))
+}
+
+// handleRestart is Home's reminder: it never waits for a scan.
+func (s *Scanner) handleRestart(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.Restart(r.Context(), false))
 }
 
 // handleCVEs runs debsecan, which fetches the Debian security tracker's

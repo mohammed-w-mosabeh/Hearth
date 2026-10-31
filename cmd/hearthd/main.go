@@ -551,7 +551,16 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 			return sec, len(list), err
 		},
 		Containers: func(ctx context.Context) ([]posture.Risky, error) { return docker.Risks(ctx, brokerClient) },
-		Run:        posture.Runner(safeexec.Run), Settings: db, Log: log,
+		Release: func() string {
+			b, _ := os.ReadFile("/proc/sys/kernel/osrelease")
+			return strings.TrimSpace(string(b))
+		},
+		Needrestart: func(ctx context.Context) (posture.RestartScan, error) {
+			var r broker.NeedrestartResult
+			err := brokerClient.Call(ctx, "system.needrestart", nil, &r)
+			return posture.RestartScan{Installed: r.Installed, Services: r.Services, Sessions: r.Sessions}, err
+		},
+		Run: posture.Runner(safeexec.Run), Settings: db, Log: log,
 	})
 	security.Register(srv.API, db)
 
