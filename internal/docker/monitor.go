@@ -15,6 +15,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/mohammed-w-mosabeh/hearth/internal/alerts"
 )
 
 // UsageTopic carries running containers' CPU and memory for the Home
@@ -55,6 +57,10 @@ type Monitor struct {
 	Busy       time.Duration // default 2 s, with them
 	Refresh    time.Duration // default 5 min
 	Observe    func(ctx context.Context, now time.Time, values map[string]float64)
+	// Report receives the event metrics, "container.unhealthy" and
+	// "container.oom". Both come from what is read anyway, not from
+	// Docker's event stream, which would keep the broker from exiting.
+	Report func(ctx context.Context, now time.Time, metric string, values map[string]float64)
 
 	mu      sync.Mutex
 	last    UsageMsg
@@ -62,8 +68,10 @@ type Monitor struct {
 	names   map[string]string // container id -> name
 	stopped int
 	unexp   []string
-	known   bool      // the list has been read at least once
-	read    time.Time // when it was last read, or last failed
+	sick    []string     // running and reported unhealthy
+	ooms    alerts.Pulse // sample's goroutine only
+	known   bool         // the list has been read at least once
+	read    time.Time    // when it was last read, or last failed
 }
 
 type scope struct {
@@ -71,6 +79,10 @@ type scope struct {
 	ino   uint64 // a restarted container gets a new cgroup directory
 	usec  uint64 // cpu.stat usage_usec
 	taken time.Time
+	oom   uint64 // memory.events oom_kill
+	// counted: oom is a baseline, so a rise is a kill. A container first
+	// seen with kills had them before hearthd looked.
+	counted bool
 }
 
 // Run samples until ctx ends.
@@ -132,10 +144,12 @@ func (m *Monitor) sample(ctx context.Context, now time.Time) {
 	for id, s := range found {
 		if old, ok := m.scopes[id]; !ok || old.ino != s.ino {
 			changed = true
+			s.counted = ok // a restart starts a new cgroup from zero
 		} else {
 			s.usec, s.taken = old.usec, old.taken // keep the previous reading for the rate
-			found[id] = s
+			s.oom, s.counted = old.oom, old.counted
 		}
+		found[id] = s
 	}
 	// After a failure (Docker stopped, no broker) wait for Refresh rather
 	// than wake the broker on every reading.
@@ -163,6 +177,12 @@ func (m *Monitor) sample(ctx context.Context, now time.Time) {
 			s.usec, s.taken = usec, now
 		}
 		u.Mem = memUsed(s.dir)
+		if n, ok := oomKills(s.dir); ok {
+			if s.counted && n > s.oom {
+				m.ooms.Hit(u.Name, now)
+			}
+			s.oom, s.counted = n, true
+		}
 		found[id] = s
 		running = append(running, u)
 	}
@@ -175,6 +195,11 @@ func (m *Monitor) sample(ctx context.Context, now time.Time) {
 	})
 	msg := UsageMsg{Available: true, Running: running, Stopped: m.stopped, Unexpected: append([]string{}, m.unexp...), Time: now.UnixMilli()}
 	known := m.known
+	sick := make(map[string]float64, len(m.sick))
+	for _, n := range m.sick {
+		sick[n] = 1
+	}
+	ooms := m.ooms.Values(now)
 	m.mu.Unlock()
 	m.publish(msg)
 	if known && m.Observe != nil {
@@ -184,6 +209,25 @@ func (m *Monitor) sample(ctx context.Context, now time.Time) {
 		}
 		m.Observe(ctx, now, values)
 	}
+	if known && m.Report != nil {
+		m.Report(ctx, now, "container.unhealthy", sick)
+		m.Report(ctx, now, "container.oom", ooms)
+	}
+}
+
+// oomKills reads the cgroup's count of processes killed for lack of memory.
+func oomKills(dir string) (uint64, bool) {
+	b, err := os.ReadFile(filepath.Join(dir, "memory.events")) // #nosec G304 -- a cgroup directory found by findScopes
+	if err != nil {
+		return 0, false
+	}
+	for _, l := range strings.Split(string(b), "\n") {
+		if v, ok := strings.CutPrefix(l, "oom_kill "); ok {
+			n, err := strconv.ParseUint(v, 10, 64)
+			return n, err == nil
+		}
+	}
+	return 0, false
 }
 
 // Name returns the name of a running container from the start of its ID
@@ -232,7 +276,7 @@ func (m *Monitor) refresh(ctx context.Context) bool {
 	}
 	names := make(map[string]string, len(list))
 	stopped := 0
-	var unexp []string
+	var unexp, sick []string
 	for _, c := range list {
 		name := c.ID
 		if len(c.Names) > 0 {
@@ -245,10 +289,13 @@ func (m *Monitor) refresh(ctx context.Context) bool {
 		if m.unexpected(cctx, c) {
 			unexp = append(unexp, name)
 		}
+		if c.State == "running" && strings.HasSuffix(c.Status, "(unhealthy)") {
+			sick = append(sick, name)
+		}
 	}
 	sort.Strings(unexp)
 	m.mu.Lock()
-	m.names, m.stopped, m.unexp = names, stopped, unexp
+	m.names, m.stopped, m.unexp, m.sick = names, stopped, unexp, sick
 	m.mu.Unlock()
 	return true
 }

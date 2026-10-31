@@ -212,7 +212,7 @@ func (e *Engine) step(ctx context.Context, r *store.AlertRule, instance string, 
 			defer e.wg.Done()
 			// Not cancelled with the observation: the notification is sent
 			// even if the sample's context ends meanwhile.
-			nctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+			nctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 			defer cancel()
 			if err := e.notify.Notify(nctx, summary, body, ev.Severity); err != nil {
 				e.log.Warn("alerts: notify", "err", err)

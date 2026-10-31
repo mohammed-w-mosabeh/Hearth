@@ -658,6 +658,22 @@ FAKE
 fi
 gpasswd -d "$user" hearth >/dev/null
 
+echo "== alert channels and log alerts"
+put_channels() { curl -s -o /dev/null -w '%{http_code}' -X PUT -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$port" -H 'Content-Type: application/json' -d "$1" "http://127.0.0.1:$port/api/v1/alerts/channels"; }
+check "ntfy over plain HTTP is refused" test "$(put_channels '{"ntfy":{"enabled":true,"server":"http://ntfy.example","topic":"t"}}')" = 400
+check "mail without TLS is refused" test "$(put_channels '{"smtp":{"enabled":true,"host":"mail.example","port":25,"security":"none","from":"a@b.c","to":"d@e.f"}}')" = 400
+check "a channel saves" test "$(put_channels '{"ntfy":{"server":"https://ntfy.example","topic":"itest-topic-secret","token":"itest-token-secret"}}')" = 200
+check "the API never returns the secrets" not grep -q 'itest-.*-secret' <<<"$(pkgs_api alerts/channels)"
+check "channels file is 0600" test "$(stat -c '%a' "/home/$user/.config/hearth/channels.json")" = 600
+db="/home/$user/.local/share/hearth/hearth.db"
+check "the secrets are not in the database" not grep -aq 'itest-token-secret' "$db" "$db-wal"
+check "nor in the audit log" not grep -q 'itest-token-secret' <<<"$(pkgs_api changes)"
+check "a hostile pattern is refused" test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$port" -H 'Content-Type: application/json' -d '{"name":"x","metric":"log.match","target":".*","op":">","threshold":0,"for_s":0,"severity":"info","enabled":true}' "http://127.0.0.1:$port/api/v1/alerts/rules")" = 400
+post alerts/rules '{"name":"itest log","metric":"log.match","target":"itest-[a-z]+-marker","op":">","threshold":0,"for_s":0,"severity":"info","enabled":true}' >/dev/null
+log_alert() { asuser logger "itest-log-marker password=hunter2"; grep -q '"rule_name":"itest log"' <<<"$(pkgs_api 'alerts/events?limit=20')"; }
+check "a matching journal line opens an incident" wait_until 100 log_alert
+check "the line itself is not recorded" not grep -q hunter2 <<<"$(pkgs_api 'alerts/events?limit=20')"
+
 echo "== launcher"
 check "hearthd --version is the package's version" test "$(asuser /usr/bin/hearthd --version)" = "$(dpkg-query -W -f='${Version}' hearth)"
 check "and git describe's" test "$(asuser /usr/bin/hearthd --version)" = "$HEARTH_VERSION"

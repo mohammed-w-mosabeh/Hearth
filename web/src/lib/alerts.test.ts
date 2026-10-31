@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { applyEvent, blankRule, draftOf, conditionText, forText, lasted, ruleError, valueText, type AlertEvent, type Metric } from './alerts';
+import { channelBody, channelForm, type ChannelView } from './alerts';
 
 const disk: Metric = { id: 'disk.used_pct', label: 'Disk space used', unit: '%', instance: 'mount', hysteresis: 2, min: 0, max: 100, instances: ['/'] };
 const temp: Metric = { id: 'cpu.temp', label: 'CPU temperature', unit: '°C', hysteresis: 5, min: 0, max: 150, instances: [] };
@@ -24,6 +25,8 @@ describe('alerts text', () => {
     expect(conditionText({ metric: 'unit.failed', target: '', op: '>', threshold: 0, for_s: 0 }, unit)).toBe('Any unit failed');
     expect(conditionText({ metric: 'disk.smart_failing', target: '', op: '>', threshold: 0, for_s: 0 }, unit)).toBe('Any disk reports it is failing');
     expect(conditionText({ metric: 'disk.smart_failing', target: 'sda', op: '>', threshold: 0, for_s: 0 }, unit)).toBe('Disk sda reports it is failing');
+    expect(conditionText({ metric: 'log.match', target: 'panic', op: '>', threshold: 0, for_s: 0 }, unit)).toBe('A log line matches panic');
+    expect(conditionText({ metric: 'container.oom', target: '', op: '>', threshold: 0, for_s: 0 }, unit)).toBe('A process in any container runs out of memory');
     const ctr: Metric = { ...unit, id: 'container.exited', instance: 'container' };
     expect(conditionText({ metric: 'container.exited', target: '', op: '>', threshold: 0, for_s: 0 }, ctr)).toBe('Any container stopped unexpectedly');
     expect(conditionText({ metric: 'container.exited', target: 'web', op: '>', threshold: 0, for_s: 0 }, ctr)).toBe('web stopped unexpectedly');
@@ -48,5 +51,30 @@ describe('alerts text', () => {
     const closed = applyEvent(list, ev(2, { ended_at: 5 }));
     expect(closed.map((e) => e.id)).toEqual([2, 1]);
     expect(closed[0]?.ended_at).toBe(5);
+  });
+});
+
+describe('channels', () => {
+  const view: ChannelView = {
+    ntfy: { enabled: true, server: 'https://ntfy.sh', has_topic: true, has_token: true },
+    smtp: { enabled: false, host: '', port: 0, security: '', username: '', has_password: false, from: '', to: '' },
+  };
+  it('starts with empty secrets, which keep the saved ones', () => {
+    const f = channelForm(view);
+    expect(f.ntfy.topic).toBe('');
+    expect(f.ntfy.token).toBe('');
+    expect(f.smtp.password).toBe('');
+    expect(f.smtp.port).toBe(587);
+    expect(f.smtp.security).toBe('starttls');
+  });
+  it('sends an unused mail form as empty', () => {
+    const b = channelBody(channelForm(view), view);
+    expect(b.smtp.port).toBe(0);
+    expect(b.smtp.security).toBe('');
+  });
+  it('keeps a filled mail form', () => {
+    const f = channelForm(view);
+    f.smtp.host = 'mail.example.com';
+    expect(channelBody(f, view).smtp.port).toBe(587);
   });
 });

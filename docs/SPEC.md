@@ -88,6 +88,7 @@ Priority: **P1** = v0.x MVP, **P2** = v1.0, **P3** = after v1.0.
 ### 15. Alerts (P1)
 - Rule = metric + condition + duration + severity (+ quiet hours). Hysteresis to avoid flapping. One notification per incident until resolved.
 - Defaults: disk > 90%, RAM > 90% for 5 min, CPU > 95% for 3 min, CPU/GPU temp > 90°C for 1 min, battery < 15% discharging, SMART failing, container exited unexpectedly, unit failed, scheduled job failed, new listener on 0.0.0.0.
+- Also: container unhealthy, out-of-memory kill in a container, log line matching a pattern (RE2).
 - Channels: desktop notification (`org.freedesktop.Notifications`), optional ntfy URL, optional SMTP.
 
 ### 16. Reports (P2)

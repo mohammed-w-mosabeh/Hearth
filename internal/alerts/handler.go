@@ -28,6 +28,8 @@ type API struct {
 	Store  RuleStore
 	Engine *Engine
 	Notify Notifier
+	// Channels are the remote channels; nil has none.
+	Channels *Channels
 }
 
 // Register adds the routes to mux.
@@ -41,6 +43,8 @@ func (a *API) Register(mux interface {
 	mux.HandleFunc("GET /api/v1/alerts/events", a.events)
 	mux.HandleFunc("GET /api/v1/alerts/metrics", a.metrics)
 	mux.HandleFunc("POST /api/v1/alerts/test", a.test)
+	mux.HandleFunc("GET /api/v1/alerts/channels", a.channels)
+	mux.HandleFunc("PUT /api/v1/alerts/channels", a.saveChannels)
 }
 
 func (a *API) list(w http.ResponseWriter, r *http.Request) {
@@ -188,6 +192,10 @@ func (a *API) metrics(w http.ResponseWriter, _ *http.Request) {
 
 // test sends a sample notification so the user can see the channel works.
 func (a *API) test(w http.ResponseWriter, r *http.Request) {
+	if ch := r.URL.Query().Get("channel"); ch != "" {
+		a.testChannel(w, r, ch)
+		return
+	}
 	if a.Notify == nil {
 		httpError(w, http.StatusServiceUnavailable, "no notification channel")
 		return
@@ -197,6 +205,60 @@ func (a *API) test(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// testChannel sends a sample through a remote channel. The error is the
+// channel's own, which holds no secret.
+func (a *API) testChannel(w http.ResponseWriter, r *http.Request, channel string) {
+	if a.Channels == nil || (channel != "ntfy" && channel != "smtp") {
+		httpError(w, http.StatusBadRequest, "unknown channel")
+		return
+	}
+	err := a.Channels.Send(r.Context(), channel, "Hearth test notification", "Alerts will arrive like this.", "info")
+	result := "ok"
+	if err != nil {
+		result = "error"
+	}
+	_ = a.Store.Audit(r.Context(), store.AuditEntry{Origin: store.OriginLocal, UID: os.Getuid(),
+		Action: "alerts.channel.test", Target: "channel:" + channel, Result: result})
+	if err != nil {
+		httpError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *API) channels(w http.ResponseWriter, _ *http.Request) {
+	if a.Channels == nil {
+		httpError(w, http.StatusServiceUnavailable, "no channels")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, a.Channels.View())
+}
+
+// saveChannels audits which channels are on, and nothing of their settings.
+func (a *API) saveChannels(w http.ResponseWriter, r *http.Request) {
+	if a.Channels == nil {
+		httpError(w, http.StatusServiceUnavailable, "no channels")
+		return
+	}
+	var u ChannelUpdate
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&u); err != nil {
+		httpError(w, http.StatusBadRequest, "body must be a channels object")
+		return
+	}
+	if err := a.Channels.Update(u); err != nil {
+		httpError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	v := a.Channels.View()
+	_ = a.Store.Audit(r.Context(), store.AuditEntry{Origin: store.OriginLocal, UID: os.Getuid(), Action: "alerts.channels.update",
+		Target: "channels", Params: map[string]bool{"ntfy": v.NTFY.Enabled, "smtp": v.SMTP.Enabled}, Result: "ok"})
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, v)
 }
 
 func httpError(w http.ResponseWriter, status int, msg string) {

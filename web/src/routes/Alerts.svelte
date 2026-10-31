@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AlertChannels from '../components/AlertChannels.svelte';
   import RuleDialog from '../components/RuleDialog.svelte';
   import { applyEvent, blankRule, conditionText, draftOf, lasted, metricLabel, valueText, type AlertEvent, type Metric, type Rule, type RuleDraft } from '../lib/alerts';
   import { api, ApiError } from '../lib/api';
@@ -127,6 +128,9 @@
     if (e.metric === 'container.exited') return t('alerts.event.container', { name: e.instance });
     if (e.metric === 'net.new_listener') return t('alerts.event.listener', { name: e.instance });
     if (e.metric === 'job.failed') return t('alerts.event.job', { name: e.instance });
+    if (e.metric === 'container.unhealthy') return t('alerts.event.unhealthy', { name: e.instance });
+    if (e.metric === 'container.oom') return t('alerts.event.oom', { name: e.instance });
+    if (e.metric === 'log.match') return t('alerts.event.log', { pattern: e.instance });
     if (e.metric === 'disk.smart_failing') return t('alerts.event.smart', { name: e.instance });
     const where = e.instance ? ` (${e.instance})` : '';
     return `${metricLabel(m, e.metric)}${where}: ${valueText(e.value, m)}, ${t('alerts.event.peak', { v: valueText(e.peak, m) })}`;
@@ -240,6 +244,8 @@
   onsave={save}
   oncancel={() => (draft = null)}
 />
+
+<AlertChannels />
 
 <style>
   header {

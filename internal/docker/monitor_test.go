@@ -110,3 +110,46 @@ func TestMonitorListFails(t *testing.T) {
 		t.Fatalf("calls %d", n)
 	}
 }
+
+func TestMonitorEventMetrics(t *testing.T) {
+	root := t.TempDir()
+	sock := filepath.Join(root, "docker.sock")
+	_ = os.WriteFile(sock, nil, 0o600)
+	web := strings.Repeat("a", 64)
+	dir := cgroup(t, root, web, 1, 1, 0)
+	events := func(n int) {
+		if err := os.WriteFile(filepath.Join(dir, "memory.events"), []byte("low 0\nhigh 0\nmax 3\noom 1\noom_kill "+itoa(n)+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	events(4) // kills from before Hearth looked are not news
+	fb := &fakeBroker{answers: map[string]string{
+		"docker.containers.list": `[
+			{"Id":"` + web + `","Names":["/web"],"State":"running","Status":"Up 2 hours (unhealthy)"},
+			{"Id":"c1","Names":["/fine"],"State":"running","Status":"Up 2 hours (healthy)"},
+			{"Id":"c2","Names":["/stopping"],"State":"exited","Status":"Exited (0) (unhealthy)"}]`}}
+	got := map[string]map[string]float64{}
+	m := &Monitor{B: fb, Pub: newHub(), CgroupRoot: root, Socket: sock,
+		Report: func(_ context.Context, _ time.Time, metric string, v map[string]float64) { got[metric] = v }}
+	ctx, now := context.Background(), time.Now()
+	m.sample(ctx, now)
+	if len(got["container.unhealthy"]) != 1 || got["container.unhealthy"]["web"] != 1 {
+		t.Fatalf("%v", got)
+	}
+	if len(got["container.oom"]) != 0 {
+		t.Fatalf("baseline fired: %v", got)
+	}
+	events(5)
+	m.sample(ctx, now.Add(15*time.Second))
+	if got["container.oom"]["web"] != 1 {
+		t.Fatalf("%v", got)
+	}
+	m.sample(ctx, now.Add(5*time.Minute)) // no new kill, still in the hold: one incident
+	if got["container.oom"]["web"] != 1 {
+		t.Fatalf("%v", got)
+	}
+	m.sample(ctx, now.Add(11*time.Minute))
+	if len(got["container.oom"]) != 0 {
+		t.Fatalf("%v", got)
+	}
+}

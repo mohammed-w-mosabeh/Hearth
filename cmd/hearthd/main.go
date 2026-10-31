@@ -153,12 +153,24 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	// Alerts: rules evaluated on every metrics sample (1 s with the UI
 	// open, 15 s otherwise) and on failed units, notified on the desktop.
 	notifier := alerts.DesktopNotifier{Dial: dbusx.SessionBus}
-	engine := alerts.NewEngine(db, notifier, srv.Hub, log)
+	channels := &alerts.Channels{Path: filepath.Join(paths.ConfigDir, "channels.json"), Log: log}
+	if err := channels.Load(); err != nil {
+		log.Warn("alerts: remote channels are off", "err", err)
+	}
+	engine := alerts.NewEngine(db, alerts.Fanout{notifier, channels}, srv.Hub, log)
 	if err := engine.Load(ctx); err != nil {
 		return err
 	}
 	defer engine.Wait()
-	(&alerts.API{Store: db, Engine: engine, Notify: notifier}).Register(srv.API)
+	(&alerts.API{Store: db, Engine: engine, Notify: notifier, Channels: channels}).Register(srv.API)
+	logWatch := &alerts.LogWatcher{Read: services.JournalTail(safeexec.Run), Rules: db.AlertRules, Log: log,
+		Observe: func(ctx context.Context, now time.Time, v map[string]float64) {
+			engine.Observe(ctx, now, alerts.LogMetric, v)
+		}}
+	logCtx, stopLog := context.WithCancel(ctx)
+	logDone := make(chan struct{})
+	go func() { logWatch.Run(logCtx); close(logDone) }()
+	defer func() { stopLog(); <-logDone }()
 	// Failed hearth-job units are the Scheduler's ("job.failed", for jobs
 	// that notify), not "unit.failed"; the job stores are set further down.
 	var jobStores atomic.Pointer[map[string]*scheduler.Store]
@@ -399,7 +411,8 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	dockerMon := &docker.Monitor{B: brokerClient, Pub: srv.Hub, Log: log,
 		Observe: func(ctx context.Context, now time.Time, v map[string]float64) {
 			engine.Observe(ctx, now, "container.exited", v)
-		}}
+		},
+		Report: engine.Observe}
 	dockerWG.Add(1)
 	go func() { defer dockerWG.Done(); dockerMon.Run(dockerCtx) }()
 	srv.API.HandleFunc("GET /api/v1/docker/usage", dockerMon.HandleUsage)

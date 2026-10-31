@@ -86,11 +86,19 @@
       {#if metric?.instance}
         <label>
           {t('alerts.form.target', { what: instanceLabel(metric) })}
-          <input type="text" list="rule-instances" bind:value={r.target} placeholder={t('alerts.form.targetAny', { what: instanceLabel(metric) })} />
+          <input
+            type="text"
+            list="rule-instances"
+            bind:value={r.target}
+            maxlength={metric.id === 'log.match' ? 200 : 255}
+            required={metric.id === 'log.match'}
+            placeholder={metric.id === 'log.match' ? '' : t('alerts.form.targetAny', { what: instanceLabel(metric) })}
+          />
           <datalist id="rule-instances">
             {#each metric.instances as i (i)}<option value={i}></option>{/each}
           </datalist>
         </label>
+        {#if metric.id === 'log.match'}<p class="hint">{t('alerts.form.patternHint')}</p>{/if}
       {/if}
       {#if !isState}
         <div class="row">

@@ -44,6 +44,9 @@ var Metrics = []Metric{
 	{ID: "container.exited", Label: "Container exited unexpectedly", Instance: "container", Max: 1},
 	{ID: "job.failed", Label: "Scheduled job failed", Instance: "job", Max: 1},
 	{ID: "net.new_listener", Label: "New listener on every address", Instance: "listener", Max: 1},
+	{ID: "container.unhealthy", Label: "Container unhealthy", Instance: "container", Max: 1},
+	{ID: "container.oom", Label: "Out-of-memory kill in a container", Instance: "container", Max: 1},
+	{ID: LogMetric, Label: "Log line matches a pattern", Instance: "pattern", Max: 1},
 	{ID: "disk.smart_failing", Label: "Disk reports it is failing (SMART)", Instance: "disk", Max: 1},
 }
 
@@ -54,6 +57,11 @@ func metric(id string) (Metric, bool) {
 		}
 	}
 	return Metric{}, false
+}
+
+func logPatternError(s string) error {
+	_, err := CompilePattern(s)
+	return err
 }
 
 var hhmm = regexp.MustCompile(`^([01][0-9]|2[0-3]):[0-5][0-9]$`)
@@ -68,6 +76,8 @@ func Validate(r store.AlertRule) error {
 		return errors.New("name must be 1 to 80 characters")
 	case len(r.Target) > 255 || strings.ContainsFunc(r.Target, unicode.IsControl):
 		return errors.New("target must be at most 255 characters")
+	case r.Metric == LogMetric && logPatternError(r.Target) != nil:
+		return logPatternError(r.Target)
 	case r.Target != "" && m.Instance == "":
 		return fmt.Errorf("%s has no instances to pick", m.Label)
 	case r.Op != ">" && r.Op != "<":
@@ -146,6 +156,15 @@ func Describe(e store.AlertEvent) (summary, body string) {
 	}
 	if e.Metric == "job.failed" {
 		return e.RuleName, "The scheduled job " + e.Instance + " failed."
+	}
+	if e.Metric == "container.unhealthy" {
+		return e.RuleName, "Container " + e.Instance + " reports it is unhealthy."
+	}
+	if e.Metric == "container.oom" {
+		return e.RuleName, "A process in container " + e.Instance + " was killed for lack of memory."
+	}
+	if e.Metric == LogMetric {
+		return e.RuleName, "A log line matched this rule's pattern." // never the line, nor the pattern: this may leave the machine
 	}
 	if e.Metric == "disk.smart_failing" {
 		return e.RuleName, "Disk " + e.Instance + " reports it is failing. Back up what is on it now."

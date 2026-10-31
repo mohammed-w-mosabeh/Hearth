@@ -177,3 +177,43 @@ func writeNoStore(w http.ResponseWriter, v any) {
 	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(v)
 }
+
+// maxTailLine bounds one line handed to the log alerts.
+const maxTailLine = 4 << 10
+
+// JournalTail returns the newest messages after cursor and where to go on
+// from (log alerts). Without a cursor it only finds the journal's end, so
+// nothing from before is matched.
+func JournalTail(run Runner) func(ctx context.Context, cursor string) ([]string, string, error) {
+	return func(ctx context.Context, cursor string) ([]string, string, error) {
+		lines := safeexec.MaxJournalLines
+		if cursor == "" {
+			lines = 1
+		}
+		args := append(append([]string{}, safeexec.JournalQueryFixedArgs...), "--lines="+strconv.Itoa(lines))
+		if cursor != "" {
+			args = append(args, "--after-cursor="+cursor)
+		}
+		res, err := run(ctx, "journalctl-query", args...)
+		if err != nil && (res.ExitCode != 1 || len(res.Stdout) != 0) {
+			return nil, "", errors.New("the journal could not be read")
+		}
+		entries := parseJournal(res.Stdout, res.Truncated)
+		if len(entries) == 0 {
+			return nil, cursor, nil
+		}
+		next := entries[0].Cursor // newest first
+		if cursor == "" {
+			return nil, next, nil
+		}
+		out := make([]string, 0, len(entries))
+		for _, e := range entries {
+			m := e.Msg
+			if len(m) > maxTailLine {
+				m = m[:maxTailLine]
+			}
+			out = append(out, m)
+		}
+		return out, next, nil
+	}
+}
