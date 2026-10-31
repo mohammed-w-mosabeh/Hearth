@@ -196,8 +196,8 @@
           </div>
           {#if editing}
             <div class="edit">
-              <button type="button" class="mini" aria-label={t('tile.earlier', { name: x.name })} onclick={() => move(x, -1)}>←</button>
-              <button type="button" class="mini" aria-label={t('tile.later', { name: x.name })} onclick={() => move(x, 1)}>→</button>
+              <button type="button" class="mini" aria-label={t('tile.earlier', { name: x.name })} onclick={() => move(x, -1)}>{t('arrow.earlier')}</button>
+              <button type="button" class="mini" aria-label={t('tile.later', { name: x.name })} onclick={() => move(x, 1)}>{t('arrow.later')}</button>
               <button type="button" class="mini" onclick={() => (formFor = { form: formOf(x), id: x.id, ...(x.icon_data ? { iconData: x.icon_data } : {}) })}>{t('tile.editOne')}</button>
               <button type="button" class="mini danger" onclick={() => remove(x)}>{t('tile.delete')}</button>
             </div>

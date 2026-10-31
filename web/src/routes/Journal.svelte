@@ -1,7 +1,7 @@
 <script lang="ts">
   import { api, ApiError } from '../lib/api';
   import { phaseKey, slowLink, spanText, type BootReport } from '../lib/boot';
-  import { t } from '../lib/i18n';
+  import { locale, t } from '../lib/i18n';
   import { entryTime, journalPageQuery, prioClass, type Boot, type JournalEntry, type JournalFilter, type JournalPage } from '../lib/journal';
   import { href } from '../lib/router.svelte';
 
@@ -68,7 +68,7 @@
   }
 
   const label = (p: string) => t(p === '' ? 'journal.priority.all' : p === '3' ? 'journal.priority.3' : p === '4' ? 'journal.priority.4' : 'journal.priority.6');
-  const bootName = (b: Boot, i: number) => (i === 0 ? t('journal.boot.current') : new Date(b.first).toLocaleString());
+  const bootName = (b: Boot, i: number) => (i === 0 ? t('journal.boot.current') : new Date(b.first).toLocaleString(locale()));
 </script>
 
 <header>

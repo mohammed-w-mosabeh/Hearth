@@ -15,7 +15,7 @@
     type TagUpdate,
   } from '../lib/docker';
   import { bytes } from '../lib/format';
-  import { t, type MessageKey } from '../lib/i18n';
+  import { locale, type MessageKey, t } from '../lib/i18n';
 
   // One image: overview from a masked inspect, the layer history, the
   // registry update check and the optional Trivy scan. The last two run
@@ -144,7 +144,7 @@
   const when = (s: number | string | undefined): string => {
     if (s === undefined || s === 0) return '–';
     const d = typeof s === 'number' ? new Date(s * 1000) : new Date(s);
-    return Number.isNaN(d.getTime()) ? String(s) : d.toLocaleString();
+    return Number.isNaN(d.getTime()) ? String(s) : d.toLocaleString(locale());
   };
   const updateKey: Record<TagUpdate['status'], MessageKey> = {
     current: 'image.update.current',

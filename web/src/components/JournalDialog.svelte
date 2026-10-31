@@ -84,7 +84,7 @@
 <dialog bind:this={dialog} aria-labelledby="journal-title" onclose={() => unit && onclose()}>
   {#if unit}
     <header>
-      <h2 id="journal-title">{t('journal.title', { name: unit.name })}</h2>
+      <h2 id="journal-title">{t('journal.unitTitle', { name: unit.name })}</h2>
       <button type="button" class="x" aria-label={t('journal.close')} onclick={() => onclose()}>×</button>
     </header>
     <div class="bar">

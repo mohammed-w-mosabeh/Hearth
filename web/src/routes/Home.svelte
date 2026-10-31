@@ -165,9 +165,9 @@
             {#if editing}
               <div class="tools">
                 <button type="button" class="icon" disabled={i === 0} aria-label={t('home.moveEarlier', { name: card.title })}
-                  onclick={() => update(step(layout, arranged.visible, id, -1))}>←</button>
+                  onclick={() => update(step(layout, arranged.visible, id, -1))}>{t('arrow.earlier')}</button>
                 <button type="button" class="icon" disabled={i === arranged.visible.length - 1} aria-label={t('home.moveLater', { name: card.title })}
-                  onclick={() => update(step(layout, arranged.visible, id, 1))}>→</button>
+                  onclick={() => update(step(layout, arranged.visible, id, 1))}>{t('arrow.later')}</button>
                 <button type="button" class="icon" aria-label={t('home.hide', { name: card.title })}
                   onclick={() => update(setHidden(layout, id, true))}>✕</button>
               </div>

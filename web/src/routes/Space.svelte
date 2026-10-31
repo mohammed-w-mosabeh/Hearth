@@ -3,7 +3,7 @@
   import { preview, reasonKey, run, type Plan, type Result } from '../lib/actions';
   import { api, ApiError } from '../lib/api';
   import { bytes } from '../lib/format';
-  import { t } from '../lib/i18n';
+  import { locale, t } from '../lib/i18n';
   import { MAX_SELECTED, freeable, pathParams, toggled, type Entry, type Large, type Report } from '../lib/space';
   import { href } from '../lib/router.svelte';
   import { toast } from '../lib/toast.svelte';
@@ -125,7 +125,7 @@
     });
   }
 
-  const when = (s: number) => new Date(s * 1000).toLocaleDateString();
+  const when = (s: number) => new Date(s * 1000).toLocaleDateString(locale());
   const total = $derived(report ? freeable(report, keep, docker ?? 0) : 0);
 </script>
 

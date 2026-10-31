@@ -2,6 +2,8 @@
 // live logs ("docker.logs:<id>") and stats ("docker.stats", internal/docker),
 // and the pure helpers the pages use.
 
+import { ltr } from './i18n';
+
 export type DockerState = 'ok' | 'no-broker' | 'not-member' | 'no-docker' | 'error';
 
 export interface Port {
@@ -195,7 +197,7 @@ export function portText(p: Port): string {
   const inner = `${p.private}/${p.type}`;
   if (!p.public) return inner;
   const host = p.ip && p.ip !== '0.0.0.0' && p.ip !== '::' ? `${p.ip.includes(':') ? `[${p.ip}]` : p.ip}:` : '';
-  return `${host}${p.public}→${inner}`;
+  return ltr(`${host}${p.public}→${inner}`);
 }
 
 /**

@@ -54,6 +54,30 @@ a {
   font-family: var(--font-mono);
 }
 
+/* Right to left. Time runs left to right on a chart, and code, logs and a
+   terminal read as they were written. Elsewhere a value takes its direction
+   from its own text, so "/usr/bin/x" keeps its first slash; a message that
+   opens with a Latin word starts with a right-to-left mark in ar.json. */
+[dir='rtl'] pre,
+[dir='rtl'] code,
+[dir='rtl'] .uplot,
+[dir='rtl'] .spark,
+[dir='rtl'] .term {
+  direction: ltr;
+  text-align: start;
+}
+[dir='rtl'] td:not(.num),
+[dir='rtl'] dd,
+[dir='rtl'] input,
+[dir='rtl'] textarea,
+[dir='rtl'] span:not(.num),
+[dir='rtl'] strong,
+[dir='rtl'] a,
+[dir='rtl'] .mono {
+  unicode-bidi: plaintext;
+  text-align: right; /* rtl-physical: with plaintext, start follows the text */
+}
+
 /* Printing (Reports: "Print or save as PDF"): the page content only. */
 @media print {
   html,

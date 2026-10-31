@@ -1,7 +1,7 @@
 <script lang="ts">
   import { api, ApiError } from '../lib/api';
   import { bytes } from '../lib/format';
-  import { t } from '../lib/i18n';
+  import { ltr, t } from '../lib/i18n';
   import { pkgReasonKey, type DebDetail, type Row } from '../lib/packages';
 
   // One package in detail. For apt: dpkg's fields, dependencies, the
@@ -61,7 +61,7 @@
       <dt>{t('pkg.col.version')}</dt>
       <dd>
         {row.version || '–'}
-        {#if row.update}→ {row.update.version}
+        {#if row.update}{ltr(`→ ${row.update.version}`)}
           {#if row.update.security}<span class="tag sec">{t('pkg.tag.security')}</span>{/if}
         {/if}
       </dd>

@@ -2,7 +2,7 @@
   import Meter from '../Meter.svelte';
   import Stat from './Stat.svelte';
   import { bytes, pct } from '../../lib/format';
-  import { t } from '../../lib/i18n';
+  import { ltr, t } from '../../lib/i18n';
   import type { Disk } from '../../lib/types';
 
   let { disk }: { disk: Disk } = $props();
@@ -12,7 +12,7 @@
   {t('card.disk.detail', { used: bytes(disk.used), total: bytes(disk.total), free: bytes(disk.avail) })}
 </Stat>
 <Meter value={disk.pct} label={t('card.disk.meter', { mount: disk.mount })} />
-<p class="dev">{disk.device} · {disk.fstype}</p>
+<p class="dev">{ltr(`${disk.device} · ${disk.fstype}`)}</p>
 
 <style>
   .dev {

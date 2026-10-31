@@ -30,7 +30,9 @@
 <style>
   .toast {
     position: fixed;
-    inset: auto var(--space-5) var(--space-5) auto;
+    inset: auto;
+    inset-block-end: var(--space-5);
+    inset-inline-end: var(--space-5);
     /* Stack upward: newest at the bottom. */
     translate: 0 calc(var(--i) * -56px);
     margin: 0;

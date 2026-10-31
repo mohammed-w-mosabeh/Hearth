@@ -1,3 +1,19 @@
+/* Bundled, and fetched only when Arabic text is drawn (OFL, see assets/fonts). */
+@font-face {
+  font-family: 'IBM Plex Sans Arabic';
+  src: url('../assets/fonts/IBMPlexSansArabic-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+  unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF, U+200C-200F, U+2066-2069;
+}
+@font-face {
+  font-family: 'IBM Plex Sans Arabic';
+  src: url('../assets/fonts/IBMPlexSansArabic-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-display: swap;
+  unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF, U+200C-200F, U+2066-2069;
+}
+
 /* Design tokens. One accent (warm amber); status colors only for status. */
 :root {
   --font-ui: system-ui, -apple-system, 'Segoe UI', 'Noto Sans', 'Helvetica Neue', Arial, sans-serif;
@@ -84,4 +100,8 @@
   :root {
     --motion: 0ms;
   }
+}
+
+:root[lang='ar'] {
+  --font-ui: 'IBM Plex Sans Arabic', system-ui, 'Noto Sans', Arial, sans-serif;
 }

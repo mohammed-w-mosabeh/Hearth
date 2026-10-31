@@ -3,7 +3,7 @@
   import DiskHealth from '../components/DiskHealth.svelte';
   import { child, crumbs, exploreRoot, level, usageQuery, type Usage } from '../lib/disks';
   import { bytes, pct, rate } from '../lib/format';
-  import { t } from '../lib/i18n';
+  import { locale, t } from '../lib/i18n';
   import { href } from '../lib/router.svelte';
   import { openDir } from '../lib/shell';
   import type { Sample } from '../lib/types';
@@ -148,8 +148,8 @@
       {#if usage.running}
         {t('disks.measuring', { done: usage.done, total: usage.total, s: Math.round(usage.took_ms / 1000) })}
       {:else}
-        {t('disks.total', { size: bytes(usage.size), files: usage.files.toLocaleString('en-US') })}
-        {#if usage.cached}<span class="muted"> · {t('disks.measuredAt', { when: new Date(usage.at).toLocaleTimeString('en-GB') })}</span>{/if}
+        {t('disks.total', { size: bytes(usage.size), files: usage.files.toLocaleString(locale('en-US')) })}
+        {#if usage.cached}<span class="muted"> · {t('disks.measuredAt', { when: new Date(usage.at).toLocaleTimeString(locale('en-GB')) })}</span>{/if}
       {/if}
       {#if usage.partial}<span class="warn"> · {t('disks.partial')}</span>{/if}
       {#if usage.unreadable > 0}<span class="muted"> · {t('disks.unreadable', { n: usage.unreadable })}</span>{/if}
@@ -172,7 +172,7 @@
                 {#if !e.pending && biggest > 0}<span style:width={`${(e.size / biggest) * 100}%`}></span>{/if}
               </td>
               <td class="num">{e.pending ? t('disks.pending') : e.other_fs ? '–' : bytes(e.size)}</td>
-              <td class="num muted">{e.pending || e.other_fs ? '' : t('disks.files', { n: e.files.toLocaleString('en-US') })}</td>
+              <td class="num muted">{e.pending || e.other_fs ? '' : t('disks.files', { n: e.files.toLocaleString(locale('en-US')) })}</td>
             </tr>
           {/each}
           {#if usage.rest}
@@ -180,7 +180,7 @@
               <td class="name muted">{t('disks.rest')}</td>
               <td></td>
               <td class="num">{bytes(usage.rest.size)}</td>
-              <td class="num muted">{t('disks.files', { n: usage.rest.files.toLocaleString('en-US') })}</td>
+              <td class="num muted">{t('disks.files', { n: usage.rest.files.toLocaleString(locale('en-US')) })}</td>
             </tr>
           {/if}
         </tbody>

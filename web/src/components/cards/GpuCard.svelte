@@ -3,7 +3,7 @@
   import Sparkline from '../Sparkline.svelte';
   import Stat from './Stat.svelte';
   import { bytes, celsius, pct } from '../../lib/format';
-  import { t } from '../../lib/i18n';
+  import { ltr, t } from '../../lib/i18n';
   import type { LiveMetrics } from '../../lib/metrics.svelte';
   import type { GPU } from '../../lib/types';
 
@@ -12,7 +12,7 @@
   const data = $derived(metrics.series([key]));
   // Without a utilization figure (i915/xe need the root-only PMU) the clock
   // is the headline instead.
-  const mhz = $derived(gpu.freq_mhz !== undefined ? `${Math.round(gpu.freq_mhz)} MHz` : '');
+  const mhz = $derived(gpu.freq_mhz !== undefined ? ltr(`${Math.round(gpu.freq_mhz)} MHz`) : '');
   const headline = $derived(gpu.util_pct !== undefined ? pct(gpu.util_pct) : mhz || '–');
   const details = $derived(
     [

@@ -3,7 +3,7 @@
   import RuleDialog from '../components/RuleDialog.svelte';
   import { applyEvent, blankRule, conditionText, draftOf, lasted, metricLabel, valueText, type AlertEvent, type Metric, type Rule, type RuleDraft } from '../lib/alerts';
   import { api, ApiError } from '../lib/api';
-  import { t, type MessageKey } from '../lib/i18n';
+  import { locale, type MessageKey, t } from '../lib/i18n';
   import { toast } from '../lib/toast.svelte';
   import type { Live } from '../lib/ws';
 
@@ -121,7 +121,7 @@
     }
   }
 
-  const when = (ms: number) => new Date(ms).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+  const when = (ms: number) => new Date(ms).toLocaleString(locale('en-GB'), { dateStyle: 'medium', timeStyle: 'short' });
   const eventText = (e: AlertEvent) => {
     const m = metricOf(e.metric);
     if (e.metric === 'unit.failed') return t('alerts.event.unit', { unit: e.instance });

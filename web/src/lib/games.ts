@@ -1,6 +1,6 @@
 // Games page: types, filtering and sorting (internal/discovery games).
 
-import type { MessageKey } from './i18n';
+import { locale, type MessageKey } from './i18n';
 
 export type GameSource = 'steam' | 'lutris' | 'heroic' | 'desktop';
 
@@ -64,7 +64,7 @@ export function lastPlayed(ts: number | undefined, now: Date): { key: MessageKey
   if (days <= 0) return { key: 'games.today' };
   if (days === 1) return { key: 'games.yesterday' };
   if (days < 30) return { key: 'games.daysAgo', n: days };
-  return { key: 'games.on', date: then.toLocaleDateString('en', { year: 'numeric', month: 'short', day: 'numeric' }) };
+  return { key: 'games.on', date: then.toLocaleDateString(locale('en'), { year: 'numeric', month: 'short', day: 'numeric' }) };
 }
 
 /** Query string for GET /games/covers. */

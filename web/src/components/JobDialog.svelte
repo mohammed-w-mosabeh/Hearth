@@ -1,6 +1,6 @@
 <script lang="ts">
   import { api, ApiError } from '../lib/api';
-  import { t, type MessageKey } from '../lib/i18n';
+  import { locale, type MessageKey, t } from '../lib/i18n';
   import { DAYS, fromCalendar, jobError, toCalendar, type Builder, type Check, type Day, type Job, type Scope } from '../lib/jobs';
   import { toast } from '../lib/toast.svelte';
 
@@ -127,7 +127,7 @@
     }
   }
 
-  const when = (ms: number) => new Date(ms).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const when = (ms: number) => new Date(ms).toLocaleString(locale('en-GB'), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   const freqs: { id: Builder['freq']; label: MessageKey }[] = [
     { id: 'minutes', label: 'jobs.freq.minutes' },
     { id: 'hourly', label: 'jobs.freq.hourly' },

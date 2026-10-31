@@ -146,3 +146,47 @@ test('Settings shows the build version', async ({ page }) => {
   await page.reload();
   await expect(page.getByTestId('version')).toHaveText(process.env.HEARTH_VERSION ?? 'unset');
 });
+
+// ROADMAP 5.9: every page, right to left, with the bundled font.
+test('every page works right to left in Arabic', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => {
+    if (m.type() === 'error' && /Content Security Policy|font/i.test(m.text())) errors.push(m.text());
+  });
+  await page.evaluate(() => localStorage.setItem('hearth.lang', 'ar'));
+  await page.goto(`${origin}/#/`);
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ar');
+  const links = page.locator('nav ul a');
+  await expect(links.first()).toBeVisible();
+  const hrefs = await links.evaluateAll((els) => els.map((a) => a.getAttribute('href') ?? ''));
+  expect(hrefs.length).toBeGreaterThanOrEqual(21);
+  for (const h of hrefs) {
+    await page.goto(`${origin}/${h}`);
+    await page.waitForTimeout(300);
+    const shape = await page.evaluate(() => ({
+      arabic: /[\u0600-\u06FF]/.test(document.querySelector('main')?.textContent ?? ''),
+      sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      nav: document.querySelector('nav')!.getBoundingClientRect().left,
+      main: document.querySelector('main')!.getBoundingClientRect().left,
+    }));
+    expect(shape.arabic, `${h}: the page is in Arabic`).toBe(true);
+    expect(shape.sideways, `${h}: no sideways scroll`).toBeLessThanOrEqual(0);
+    expect(shape.nav, `${h}: the sidebar is on the right`).toBeGreaterThan(shape.main);
+  }
+  await page.evaluate(() => document.fonts.ready);
+  const font = await page.evaluate(() => [...document.fonts].some((f) => f.family.includes('Plex') && f.status === 'loaded'));
+  expect(font, 'the bundled font loaded').toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test('the language switch goes back to English', async ({ page }) => {
+  await page.evaluate(() => localStorage.setItem('hearth.lang', 'ar'));
+  await page.goto(`${origin}/#/settings`);
+  await page.reload();
+  await page.getByTestId('lang-en').click();
+  await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+  await expect(page.locator('main h1')).toHaveText('Settings');
+});

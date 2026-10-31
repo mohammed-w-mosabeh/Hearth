@@ -1,6 +1,6 @@
 <script lang="ts">
   import { api, ApiError } from '../lib/api';
-  import { t } from '../lib/i18n';
+  import { locale, t } from '../lib/i18n';
   import {
     checkHint,
     checkTitle,
@@ -59,7 +59,7 @@
     return key ? t(key, { s: f.subject ?? '' }) : `${f.code} ${f.subject ?? ''}`.trim();
   }
 
-  const when = (ms: number) => new Date(ms).toLocaleString();
+  const when = (ms: number) => new Date(ms).toLocaleString(locale());
   const verdict = $derived(report ? overall(report) : null);
   const shownCVEs = $derived(report ? cveRows(report.cves, onlyFixed) : []);
 </script>

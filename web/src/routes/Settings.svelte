@@ -6,7 +6,7 @@
   import { exportName, wordPlan, type Backups } from '../lib/backup';
   import { applyDensity, loadDensity, saveDensity, type Density } from '../lib/density';
   import { bytes } from '../lib/format';
-  import { t, type MessageKey } from '../lib/i18n';
+  import { lang, type Lang, locale, type MessageKey, saveLang, t } from '../lib/i18n';
   import {
     bars,
     otherConnections,
@@ -247,6 +247,12 @@
 
   let density = $state<Density>(loadDensity());
 
+  function setLang(l: Lang): void {
+    if (l === lang()) return;
+    saveLang(l);
+    location.reload(); // every page reads its messages as it is built
+  }
+
   function setDensity(d: Density): void {
     density = d;
     applyDensity(d);
@@ -275,6 +281,13 @@
       {/each}
     </div>
     <p class="note">{t('set.look.hint')}</p>
+    <div class="segmented" role="radiogroup" aria-label={t('set.look.language')}>
+      {#each ['en', 'ar'] as const as l (l)}
+        <button type="button" role="radio" lang={l} aria-checked={lang() === l} class:on={lang() === l} onclick={() => setLang(l)} data-testid="lang-{l}">
+          {t(l === 'ar' ? 'set.look.lang.ar' : 'set.look.lang.en')}
+        </button>
+      {/each}
+    </div>
   </section>
 
   <!-- Network -->
@@ -527,7 +540,7 @@
       {:else}
         <ul class="list">
           {#each backups.copies as c (c.name)}
-            <li class="row"><span class="grow">{new Date(c.time).toLocaleString()}</span> <span class="num">{bytes(c.size)}</span></li>
+            <li class="row"><span class="grow">{new Date(c.time).toLocaleString(locale())}</span> <span class="num">{bytes(c.size)}</span></li>
           {/each}
         </ul>
       {/if}

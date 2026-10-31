@@ -3,7 +3,7 @@
   import ManDialog from '../components/ManDialog.svelte';
   import { preview, run, type Plan } from '../lib/actions';
   import { api, ApiError } from '../lib/api';
-  import { t, type MessageKey } from '../lib/i18n';
+  import { menuLeft, type MessageKey, t } from '../lib/i18n';
   import { pkgReasonKey, removeKind } from '../lib/packages';
   import { href, router } from '../lib/router.svelte';
   import { openTool } from '../lib/shell';
@@ -83,7 +83,7 @@
     const w = menu.offsetWidth;
     const h = menu.offsetHeight;
     menu.style.top = `${b.bottom + 4 + h > innerHeight ? Math.max(4, b.top - 4 - h) : b.bottom + 4}px`;
-    menu.style.left = `${Math.min(Math.max(4, b.right - w), innerWidth - w - 4)}px`;
+    menu.style.left = `${menuLeft(b, w)}px`;
   }
 
   function man(x: Tool): void {

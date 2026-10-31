@@ -4,7 +4,7 @@
   import { eventDetail, eventKey } from '../lib/changes';
   import { format } from '../lib/charts';
   import { bytes, duration, pct } from '../lib/format';
-  import { t } from '../lib/i18n';
+  import { locale, t } from '../lib/i18n';
   import {
     PERIODS,
     attachmentName,
@@ -150,7 +150,7 @@
     }
   }
 
-  const when = (iso: string | number) => new Date(iso).toLocaleString();
+  const when = (iso: string | number) => new Date(iso).toLocaleString(locale());
   const shownItems = $derived(filterItems(items ?? [], itemSearch));
   const current = $derived(view === 'machine' ? machine : item);
 </script>

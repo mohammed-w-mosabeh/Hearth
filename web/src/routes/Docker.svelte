@@ -30,7 +30,7 @@
     type StatsMsg,
   } from '../lib/docker';
   import { bytes, pct } from '../lib/format';
-  import { t, type MessageKey } from '../lib/i18n';
+  import { menuLeft, type MessageKey, t } from '../lib/i18n';
   import { router } from '../lib/router.svelte';
   import { toast } from '../lib/toast.svelte';
   import type { Live } from '../lib/ws';
@@ -162,7 +162,7 @@
     const w = menu.offsetWidth;
     const h = menu.offsetHeight;
     const top = r.bottom + 4 + h > innerHeight ? Math.max(4, r.top - 4 - h) : r.bottom + 4;
-    const left = Math.min(Math.max(4, r.right - w), innerWidth - w - 4);
+    const left = menuLeft(r, w);
     menu.style.top = `${top}px`;
     menu.style.left = `${left}px`;
   }

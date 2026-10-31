@@ -16,7 +16,7 @@
     type Point,
   } from '../lib/docker';
   import { bytes, pct, rate } from '../lib/format';
-  import { t, type MessageKey } from '../lib/i18n';
+  import { locale, type MessageKey, t } from '../lib/i18n';
   import { toast } from '../lib/toast.svelte';
   import type { Live } from '../lib/ws';
 
@@ -156,7 +156,7 @@
   function when(iso: string | undefined): string {
     if (!iso || iso.startsWith('0001-')) return '–';
     const d = new Date(iso);
-    return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+    return Number.isNaN(d.getTime()) ? iso : d.toLocaleString(locale());
   }
 
   const words = (a: string[] | null | undefined): string => (a && a.length > 0 ? a.join(' ') : '–');

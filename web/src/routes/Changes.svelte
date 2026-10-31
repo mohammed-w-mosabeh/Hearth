@@ -20,7 +20,7 @@
     type TimelineEvent,
   } from '../lib/changes';
   import { bytes } from '../lib/format';
-  import { t } from '../lib/i18n';
+  import { locale, t } from '../lib/i18n';
   import { toast } from '../lib/toast.svelte';
 
   type View = 'timeline' | 'snapshots';
@@ -138,9 +138,9 @@
     return key ? t(key) : (e.action ?? `${e.source} ${e.kind}`);
   }
 
-  const when = (iso: string) => new Date(iso).toLocaleString();
-  const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { dateStyle: 'full' });
-  const hour = (iso: string) => new Date(iso).toLocaleTimeString();
+  const when = (iso: string) => new Date(iso).toLocaleString(locale());
+  const day = (iso: string) => new Date(iso).toLocaleDateString(locale(), { dateStyle: 'full' });
+  const hour = (iso: string) => new Date(iso).toLocaleTimeString(locale());
   const snapshotName = (s: Snapshot) => `${when(s.t)} — ${s.label || t('changes.snap.auto')}`;
 
   const days = $derived(byDay(events ?? [], day));

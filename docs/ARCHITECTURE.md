@@ -84,11 +84,11 @@ hearth/
 - **Sampling**: 1 s while a UI client subscribes to live metrics; 15 s otherwise (alerts only). Process sampling only while the processes page is open (or for alert rules that need it).
 - **Discovery**: full scan at start, then incremental via fsnotify / D-Bus signals / Docker `/events`. Debounce bursts (500 ms).
 - **Frontend**: Svelte 5 runes, TypeScript strict. No `{@html}`. All data rendered as text. Route-level code splitting; xterm.js and uPlot lazy-loaded. CSS tokens in `styles/tokens.css`, light/dark via `prefers-color-scheme`.
-- **i18n**: English only (`en.json`); structure allows adding more locales later. Numbers use tabular figures. For an Arabic (RTL) translation: set `lang` and `dir` on `<html>` (the layout already mirrors; CSS uses logical properties, enforced by `check-forbidden.sh`); wrap numbers with their units in `<bdi>` (`formatted` sizes such as `1.4 MiB` reorder otherwise); replace the fixed `en-GB`/`en-US` date formats in `journal.ts`, Alerts, Scheduler and JobDialog; check strings that join words, such as `→` in `eventDetail`.
+- **i18n**: `en.json` and `ar.json` with the same keys and placeholders (tested); only the chosen one is loaded, before the app mounts, and `applyLang` sets `lang` and `dir` on `<html>`. The choice lives in localStorage, per browser, and a change reloads the page, because pages read messages as they are built. Numbers use tabular figures, and Arabic keeps Western digits and the Gregorian calendar (`locale()`). Right to left: CSS uses logical properties (`check-forbidden.sh`; the one physical rule is marked `rtl-physical`). `t()` isolates every value, format functions and `ltr()` keep sizes and `a → b` whole (they survive `t()` and attributes, which `<bdi>` does not), inline elements and text cells take `unicode-bidi: plaintext`, and an Arabic message opening with a Latin word starts with U+200F so that auto-direction reads it as Arabic. Charts, code, logs and the terminal stay left to right. What the daemon words stays English: reasons in `detail`, errors, exported reports and the default rule names.
 
 ## Design direction
 - Calm dashboard, not a crowded admin panel. One accent color (warm amber), status colors only for status.
-- Fonts: Inter or IBM Plex Sans (UI), JetBrains Mono (numbers, terminal), bundled locally (no CDN).
+- Fonts: system UI and mono stacks; Arabic uses bundled IBM Plex Sans Arabic (no CDN), fetched only when Arabic is drawn.
 - Narrow icon sidebar + wide content; draggable card grid on Home.
 - Motion ≤ 150 ms, respect `prefers-reduced-motion`. Comfortable / compact density toggle.
 - Keyboard first: Ctrl+K palette, `g d` → Docker, etc.

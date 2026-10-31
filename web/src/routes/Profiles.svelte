@@ -3,7 +3,7 @@
   import ProfileDialog from '../components/ProfileDialog.svelte';
   import { preview, reasonKey, run, type Plan, type Result } from '../lib/actions';
   import { api, ApiError } from '../lib/api';
-  import { t } from '../lib/i18n';
+  import { locale, t } from '../lib/i18n';
   import { TEMPLATES, doKey, draftFrom, kindKey, templateKey, type Do, type Draft, type Profile } from '../lib/profiles';
   import { toast } from '../lib/toast.svelte';
   import type { Live } from '../lib/ws';
@@ -110,7 +110,7 @@
     removing = { profile: p, plan: { summary: '', items: [{ id: String(p.id), name: p.name }], blocked: [], risk: 'destructive' } };
   }
 
-  const when = (iso: string) => new Date(iso).toLocaleString();
+  const when = (iso: string) => new Date(iso).toLocaleString(locale());
 </script>
 
 <header>

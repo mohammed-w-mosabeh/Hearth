@@ -5,7 +5,7 @@
   import { ApiError } from '../lib/api';
   import { imageTitle, imageView, shortID, uniqueSize, type Container, type Image, type ImageFilter, type ImageSort } from '../lib/docker';
   import { bytes } from '../lib/format';
-  import { t, type MessageKey } from '../lib/i18n';
+  import { locale, menuLeft, type MessageKey, t } from '../lib/i18n';
   import { toast } from '../lib/toast.svelte';
 
   // Images (ROADMAP 2.6): list, detail, and remove / tag / pull through
@@ -50,7 +50,7 @@
     const w = menu.offsetWidth;
     const h = menu.offsetHeight;
     menu.style.top = `${r.bottom + 4 + h > innerHeight ? Math.max(4, r.top - 4 - h) : r.bottom + 4}px`;
-    menu.style.left = `${Math.min(Math.max(4, r.right - w), innerWidth - w - 4)}px`;
+    menu.style.left = `${menuLeft(r, w)}px`;
   }
 
   function show(im: Image, tab: 'overview' | 'updates' | 'scan' = 'overview'): void {
@@ -193,7 +193,7 @@
             <td class="mono muted">{shortID(im.id)}</td>
             <td class="num">{bytes(im.size)}</td>
             <td class="num muted">{u === null ? '–' : bytes(u)}</td>
-            <td class="muted">{new Date(im.created * 1000).toLocaleDateString()}</td>
+            <td class="muted">{new Date(im.created * 1000).toLocaleDateString(locale())}</td>
             <td>{im.containers.length > 0 ? t('image.usedCount', { n: im.containers.length }) : ''}</td>
             <td class="act">
               <button type="button" class="more-btn" aria-label={t('docker.actionsFor', { name: imageTitle(im) })} aria-busy={busy.has(im.id)} onclick={(e) => openMenu(e, im)}>

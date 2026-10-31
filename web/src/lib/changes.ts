@@ -1,6 +1,6 @@
 // Changes page: types of internal/changes and helpers to show them.
 
-import type { MessageKey } from './i18n';
+import { ltr, type MessageKey } from './i18n';
 
 export const SOURCES = ['packages', 'units', 'containers', 'listeners', 'hearth'] as const;
 export const KINDS = ['installed', 'upgraded', 'removed', 'purged', 'added', 'deleted', 'changed'] as const;
@@ -76,7 +76,7 @@ export function eventKey(e: TimelineEvent): MessageKey | null {
 
 /** "1.0 → 1.1", or the one value there is. */
 export function entryDetail(e: Pick<Entry, 'before' | 'after'>): string {
-  if (e.before && e.after) return `${e.before} → ${e.after}`;
+  if (e.before && e.after) return ltr(`${e.before} → ${e.after}`);
   return e.before || e.after || '';
 }
 

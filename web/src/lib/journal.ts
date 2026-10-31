@@ -1,5 +1,7 @@
 // Journal viewer helpers (GET /api/v1/services/journal).
 
+import { locale } from './i18n';
+
 export interface JournalEntry {
   cursor: string;
   t: number; // Unix ms
@@ -37,9 +39,9 @@ export function matches(e: JournalEntry, filter: string, errorsOnly: boolean): b
 /** "14:03:07" today, "Oct 24 14:03:07" otherwise. */
 export function entryTime(ms: number, now: Date = new Date()): string {
   const d = new Date(ms);
-  const time = d.toLocaleTimeString('en-GB', { hour12: false });
+  const time = d.toLocaleTimeString(locale('en-GB'), { hour12: false });
   if (d.toDateString() === now.toDateString()) return time;
-  return `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${time}`;
+  return `${d.toLocaleDateString(locale('en-US'), { month: 'short', day: 'numeric' })} ${time}`;
 }
 
 /** Query string for GET /services/journal; cursor '' asks for the last entries. */

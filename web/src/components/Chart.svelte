@@ -62,7 +62,7 @@
       const grid = css.getPropertyValue('--border').trim();
       const axis = { stroke: muted, grid: { stroke: grid, width: 1 }, ticks: { stroke: grid, width: 1 } };
       const series: uPlot.Series[] = [
-        {},
+        { label: t('chart.time') },
         ...keys.map((_, i) => ({ label: labels[i] ?? '', stroke: color(i), width: 1.5, value: (_u: uPlot, v: number | null) => fmt(v), points: { show: false } })),
       ];
       if (peak) {

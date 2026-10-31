@@ -32,6 +32,6 @@ report "placeholder page text" \
 
 # Logical CSS only, so the layout mirrors for right-to-left languages.
 report "physical-direction CSS (use margin-inline-start, text-align: start, ...)" \
-	"$(git grep -nE '(margin|padding|border)-(left|right)\b|text-align: *(left|right)\b|float: *(left|right)\b' -- 'web/src/*.svelte' 'web/src/*.css' || true)"
+	"$(git grep -nE '(margin|padding|border)-(left|right)\b|text-align: *(left|right)\b|float: *(left|right)\b' -- 'web/src/*.svelte' 'web/src/*.css' | grep -v 'rtl-physical' || true)"
 
 exit $fail

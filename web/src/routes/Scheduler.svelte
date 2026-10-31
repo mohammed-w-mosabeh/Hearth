@@ -4,7 +4,7 @@
   import { preview, reasonKey, run, type Plan, type Result } from '../lib/actions';
   import { api, ApiError } from '../lib/api';
   import { duration } from '../lib/format';
-  import { t, type MessageKey } from '../lib/i18n';
+  import { locale, menuLeft, type MessageKey, t } from '../lib/i18n';
   import { blank, describe, order, type Job, type Listed, type Run, type Scope } from '../lib/jobs';
   import { toast } from '../lib/toast.svelte';
 
@@ -118,10 +118,10 @@
     const w = menu.offsetWidth;
     const h = menu.offsetHeight;
     menu.style.top = `${b.bottom + 4 + h > innerHeight ? Math.max(4, b.top - 4 - h) : b.bottom + 4}px`;
-    menu.style.left = `${Math.min(Math.max(4, b.right - w), innerWidth - w - 4)}px`;
+    menu.style.left = `${menuLeft(b, w)}px`;
   }
 
-  const when = (ms: number) => new Date(ms).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+  const when = (ms: number) => new Date(ms).toLocaleString(locale('en-GB'), { dateStyle: 'medium', timeStyle: 'short' });
   function lastText(j: Listed): string {
     if (j.running) return t('jobs.state.running');
     if (!j.last) return t('jobs.never');

@@ -2,7 +2,7 @@
   import { run, reasonKey } from '../lib/actions';
   import { api, ApiError } from '../lib/api';
   import { bytes, celsius, pct } from '../lib/format';
-  import { t } from '../lib/i18n';
+  import { locale, t } from '../lib/i18n';
   import { days, pollMs, statusKeys, verdict, verdictKeys, worrying, type Health, type SmartDisk } from '../lib/smart';
   import { toast } from '../lib/toast.svelte';
 
@@ -81,7 +81,7 @@
         {#if d.supported}
           <dl>
             {#if d.temp_c !== undefined}<dt>{t('disks.health.temp')}</dt><dd>{celsius(d.temp_c)}</dd>{/if}
-            {#if d.power_on_hours !== undefined}<dt>{t('disks.health.hours')}</dt><dd>{t('disks.health.days', { n: days(d.power_on_hours).toLocaleString('en-US') })}</dd>{/if}
+            {#if d.power_on_hours !== undefined}<dt>{t('disks.health.hours')}</dt><dd>{t('disks.health.days', { n: days(d.power_on_hours).toLocaleString(locale('en-US')) })}</dd>{/if}
             {#if d.life_pct !== undefined}<dt>{t('disks.health.life')}</dt><dd>{pct(d.life_pct)}</dd>{/if}
             {#if d.reallocated !== undefined}<dt>{t('disks.health.reallocated')}</dt><dd class:warn={worrying(d.reallocated)}>{d.reallocated}</dd>{/if}
             {#if d.pending !== undefined}<dt>{t('disks.health.pending')}</dt><dd class:warn={worrying(d.pending)}>{d.pending}</dd>{/if}
