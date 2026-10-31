@@ -728,6 +728,33 @@ check "an old stamp is overdue" security_has unattended.stale
 rm -f /etc/apt/apt.conf.d/20auto-upgrades /var/lib/apt/periodic/unattended-upgrades-stamp
 systemctl stop apt-daily-upgrade.timer
 
+echo "== backup"
+preview_import() {
+	jq -n --rawfile f "$1" '{target:"settings",params:{file:$f},preview:true}' |
+		curl -s -X POST -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$port" -H 'Content-Type: application/json' \
+			-d @- "http://127.0.0.1:$port/api/v1/actions/hearth/import"
+}
+post_action() {
+	curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$port" -H 'Content-Type: application/json' \
+		-d "$2" "http://127.0.0.1:$port/api/v1/actions/hearth/$1"
+}
+check "a database copy is made on demand" test "$(post_action backup '{"target":"database"}')" = 200
+data=$(asuser sh -c 'echo "${XDG_DATA_HOME:-$HOME/.local/share}"')/hearth
+check "copies are private" test "$(stat -c '%a' "$data/backups")" = 700
+copy=$(ls -1 "$data"/backups/hearth-*.db | tail -1)
+check "and each one is 0600" test "$(stat -c '%a' "$copy")" = 600
+check "the copy is a sound database" test "$(sqlite3 "$copy" 'PRAGMA integrity_check')" = ok
+export_file=$(mktemp)
+pkgs_api backup/export >"$export_file"
+chmod 644 "$export_file"
+check "the export has the alert rules" grep -q 'Disk almost full' "$export_file"
+check "the export has no session key" not grep -qF "$key" "$export_file"
+check "re-importing an export changes nothing" grep -q '"items":\[\]' <<<"$(preview_import "$export_file")"
+echo '{"format":"hearth-settings","version":1,"tiles":[{"name":"T","url":"javascript:alert(1)"}]}' >"$export_file"
+check "a hostile tile is blocked, not applied" grep -q '"reason":"invalid"' <<<"$(preview_import "$export_file")"
+check "an import needs a preview token" test "$(post_action import '{"target":"settings","params":{"file":"{}"}}')" = 409
+rm -f "$export_file"
+
 echo "== launcher"
 check "hearthd --version is the package's version" test "$(asuser /usr/bin/hearthd --version)" = "$(dpkg-query -W -f='${Version}' hearth)"
 check "and git describe's" test "$(asuser /usr/bin/hearthd --version)" = "$HEARTH_VERSION"

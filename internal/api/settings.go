@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"regexp"
+	"slices"
 )
 
 // SettingsStore persists settings (store.DB in production).
@@ -82,6 +84,23 @@ func validateFavorites(v json.RawMessage) error {
 		}
 	}
 	return nil
+}
+
+// SettingKeys lists the settings the UI owns, sorted.
+func SettingKeys() []string {
+	return slices.Sorted(maps.Keys(settingKeys))
+}
+
+// ValidateSetting checks a value for key as PUT would.
+func ValidateSetting(key string, v json.RawMessage) error {
+	validate, ok := settingKeys[key]
+	if !ok {
+		return errors.New("unknown setting")
+	}
+	if len(v) > maxSettingBytes {
+		return errors.New("setting too large")
+	}
+	return validate(v)
 }
 
 // RegisterSettings adds GET and PUT /api/v1/settings/{key}. A key that was

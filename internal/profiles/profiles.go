@@ -207,6 +207,12 @@ func (m *Manager) validate(name string, items []Item, auto bool) error {
 	return nil
 }
 
+// ValidateImported checks a profile from a file as if it had been saved, with
+// no game trigger: importing never sets one.
+func (m *Manager) ValidateImported(name string, items []Item) error {
+	return m.validate(name, items, false)
+}
+
 // step is one planned action.
 type step struct {
 	item Item

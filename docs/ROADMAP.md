@@ -98,7 +98,7 @@ Phase 5 (Phone link): cancelled, owner decision 2026-10-31.
 - [x] 5.5 Docker networks and volumes page: size, used-by, remove orphans through preview tokens
 - [x] 5.6 Restart needed: `/run/reboot-required`, running vs newest kernel, processes using deleted libraries; optional broker `needrestart -b`; on Home and Security posture
 - [x] 5.7 Unattended-upgrades status in Security posture (read-only)
-- [ ] 5.8 Backup of Hearth: settings export/import as one JSON file (never secrets or the token), import previewed and validated; SQLite `VACUUM INTO` backup on demand and weekly, keeping the last 4
+- [x] 5.8 Backup of Hearth: settings export/import as one JSON file (never secrets or the token), import previewed and validated; SQLite `VACUUM INTO` backup on demand and weekly, keeping the last 4
 - [ ] 5.9 Arabic locale: `ar.json`, language switch, RTL notes from ARCHITECTURE, bundled IBM Plex Sans Arabic, every page crawled in RTL
 
 **Gate 5:** new validators fuzzed ≥ 60 s with no findings; broker tests reject every out-of-allowlist directive, device name and docker update field; `make itest` + e2e pass; idle < 40 MB / < 1% CPU; bundle < 300 KB gz.

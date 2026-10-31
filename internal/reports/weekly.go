@@ -108,6 +108,26 @@ func (w *Weekly) SetEnabled(ctx context.Context, on bool) (WeeklyState, error) {
 	return st, w.save(ctx, st)
 }
 
+// Toggle adapts a Weekly to what a settings import needs.
+type Toggle struct{ W *Weekly }
+
+// Enabled reports whether the weekly report is on.
+func (t Toggle) Enabled(ctx context.Context) (bool, error) {
+	st, err := t.W.State(ctx)
+	return st.Enabled, err
+}
+
+// SetEnabled turns it on or off, and makes a report due at once if on.
+func (t Toggle) SetEnabled(ctx context.Context, on bool) error {
+	if _, err := t.W.SetEnabled(ctx, on); err != nil {
+		return err
+	}
+	if on {
+		t.W.Kick()
+	}
+	return nil
+}
+
 // Run checks every interval (an hour in production) until ctx ends.
 func (w *Weekly) Run(ctx context.Context, interval time.Duration) {
 	if w.Log == nil {

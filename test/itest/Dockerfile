@@ -44,6 +44,11 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends unattended-upgrades \
  && rm -rf /var/lib/apt/lists/*
 
+# jq and sqlite3, for the backup checks (their own layer).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends jq sqlite3 \
+ && rm -rf /var/lib/apt/lists/*
+
 COPY itest/check.sh /usr/local/bin/hearth-itest-check
 COPY itest/entrypoint.sh /usr/local/bin/hearth-itest-init
 RUN chmod 0755 /usr/local/bin/hearth-itest-check /usr/local/bin/hearth-itest-init

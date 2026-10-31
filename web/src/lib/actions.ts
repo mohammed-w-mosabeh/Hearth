@@ -82,6 +82,8 @@ const reasons: Record<string, MessageKey> = {
   pip: 'reason.pip',
   unavailable: 'reason.unavailable',
   enterprise: 'reason.enterprise',
+  invalid: 'reason.invalid',
+  active: 'reason.active',
 };
 
 /** The i18n key explaining why an item was blocked or failed. */

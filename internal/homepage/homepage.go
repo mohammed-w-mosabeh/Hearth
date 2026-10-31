@@ -110,6 +110,11 @@ func validate(ctx context.Context, db Store, t *store.Tile) error {
 	return nil
 }
 
+// Validate checks a tile as the form does (an imported one, for instance).
+func Validate(ctx context.Context, db Store, t *store.Tile) error {
+	return validate(ctx, db, t)
+}
+
 // --- health check (SECURITY S21) ---
 
 // Status is a tile's last health check.

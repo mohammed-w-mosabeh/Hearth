@@ -34,6 +34,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/alerts"
 	"github.com/mohammed-w-mosabeh/hearth/internal/api"
 	"github.com/mohammed-w-mosabeh/hearth/internal/auth"
+	"github.com/mohammed-w-mosabeh/hearth/internal/backup"
 	"github.com/mohammed-w-mosabeh/hearth/internal/bootinfo"
 	"github.com/mohammed-w-mosabeh/hearth/internal/broker"
 	"github.com/mohammed-w-mosabeh/hearth/internal/changes"
@@ -678,6 +679,20 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	go func() { weekly.Run(weeklyCtx, time.Hour); close(weeklyDone) }()
 	defer func() { stopWeekly(); <-weeklyDone }()
 	(&reports.API{B: reportBuilder, Weekly: weekly, Audit: db}).Register(srv.API)
+
+	backups := backup.New(backup.Config{
+		DB: db, Dir: filepath.Join(paths.DataDir, "backups"), ValidateProfile: profileManager.ValidateImported,
+		Weekly:       reports.Toggle{W: weekly},
+		RulesChanged: func(ctx context.Context) { _ = engine.Reload(ctx) },
+		TilesChanged: checker.Changed, Log: log,
+	})
+	backups.Register(reg)
+	srv.API.HandleFunc("GET /api/v1/backup", backups.HandleList)
+	srv.API.HandleFunc("GET /api/v1/backup/export", backups.HandleExport)
+	backupCtx, stopBackup := context.WithCancel(ctx)
+	backupDone := make(chan struct{})
+	go func() { backups.Run(backupCtx, time.Hour); close(backupDone) }()
+	defer func() { stopBackup(); <-backupDone }()
 
 	if serverHook != nil {
 		serverHook(srv) // every route is registered by now

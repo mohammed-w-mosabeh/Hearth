@@ -3,7 +3,9 @@
   import { preview, reasonKey, run, type Blocked, type Plan, type Result } from '../lib/actions';
   import { api, ApiError } from '../lib/api';
   import type { App } from '../lib/apps';
+  import { exportName, wordPlan, type Backups } from '../lib/backup';
   import { applyDensity, loadDensity, saveDensity, type Density } from '../lib/density';
+  import { bytes } from '../lib/format';
   import { t, type MessageKey } from '../lib/i18n';
   import {
     bars,
@@ -73,6 +75,7 @@
     void loadAudio();
     void loadPower();
     void loadAutostart();
+    void loadBackups();
     api<{ timezones: string[] }>('/system/timezones')
       .then((r) => (zones = r.timezones))
       .catch(() => {});
@@ -188,6 +191,59 @@
     const name = apps.find((a) => a.id === addApp)?.name ?? addApp;
     if (await act('autostart', 'add', addApp, {}, t('set.auto.added', { name }), loadAutostart)) addApp = '';
   }
+
+  // Backup -------------------------------------------------------------
+
+  let backups = $state<Backups | null>(null);
+  let importing = $state<{ plan: Plan; file: string } | null>(null);
+  const loadBackups = async () => void (backups = await api<Backups>('/backup').catch(() => null));
+
+  async function exportSettings(): Promise<void> {
+    try {
+      const file = await api<unknown>('/backup/export');
+      const url = URL.createObjectURL(new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = exportName(new Date());
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      toast(errorText(err), { tone: 'error' });
+    }
+  }
+
+  async function pickImport(e: Event): Promise<void> {
+    const input = e.currentTarget as HTMLInputElement;
+    const picked = input.files?.[0];
+    input.value = ''; // the same file can be picked again
+    if (!picked) return;
+    try {
+      const file = await picked.text();
+      const plan = await preview('hearth', 'import', 'settings', { file });
+      if (plan.items.length === 0 && plan.blocked.length === 0) toast(t('set.backup.nothing'));
+      else importing = { plan, file };
+    } catch (err) {
+      toast(errorText(err), { tone: 'error' });
+    }
+  }
+
+  async function confirmImport(): Promise<void> {
+    if (!importing) return;
+    const { plan, file } = importing;
+    try {
+      const res = await run('hearth', 'import', 'settings', { file }, plan.token);
+      const fail = res.failed[0];
+      if (fail) toast(t('set.failed', { why: failText(fail) }), { tone: 'error' });
+      else toast(t('set.backup.imported', { n: res.done }));
+    } catch (err) {
+      toast(errorText(err), { tone: 'error' });
+    } finally {
+      importing = null;
+      void loadBackups();
+    }
+  }
+
+  const backupNow = () => act('hearth', 'backup', 'database', {}, t('set.backup.made'), loadBackups);
 
   let density = $state<Density>(loadDensity());
 
@@ -451,6 +507,33 @@
     <p class="version"><span class="name">{t('set.hearth.version')}</span> <bdi data-testid="version">{hearthVersion}</bdi></p>
   </section>
 
+  <section aria-labelledby="s-backup">
+    <h2 id="s-backup">{t('set.backup.title')}</h2>
+    <p class="note">{t('set.backup.fileNote')}</p>
+    <div class="row buttons">
+      <button type="button" onclick={exportSettings}>{t('set.backup.export')}</button>
+      <label class="ghost file">
+        {t('set.backup.import')}
+        <input type="file" accept=".json,application/json" onchange={pickImport} data-testid="import-file" />
+      </label>
+    </div>
+    <p class="note">{t('set.backup.dbNote', { dir: backups?.dir ?? '' })}</p>
+    <div class="row buttons">
+      <button type="button" onclick={backupNow}>{t('set.backup.now')}</button>
+    </div>
+    {#if backups}
+      {#if backups.copies.length === 0}
+        <p class="note">{t('set.backup.none')}</p>
+      {:else}
+        <ul class="list">
+          {#each backups.copies as c (c.name)}
+            <li class="row"><span class="grow">{new Date(c.time).toLocaleString()}</span> <span class="num">{bytes(c.size)}</span></li>
+          {/each}
+        </ul>
+      {/if}
+    {/if}
+  </section>
+
   <!-- Startup applications -->
   <section aria-labelledby="s-auto" class="wide">
     <h2 id="s-auto">{t('set.auto.title')}</h2>
@@ -493,6 +576,16 @@
     {/if}
   </section>
 </div>
+
+<ConfirmDialog
+  plan={importing ? wordPlan(importing.plan) : null}
+  title={t('set.backup.importTitle')}
+  verb={t('set.backup.importVerb')}
+  body={t('set.backup.importBody')}
+  warning={t('set.backup.importWarning')}
+  onconfirm={confirmImport}
+  oncancel={() => (importing = null)}
+/>
 
 <ConfirmDialog
   plan={confirming?.plan ?? null}
@@ -676,6 +769,18 @@
   .ghost.danger:hover {
     border-color: var(--crit);
     color: var(--crit);
+  }
+  .file {
+    cursor: pointer;
+  }
+  .file input {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    opacity: 0;
+  }
+  .file:focus-within {
+    outline: 2px solid var(--accent);
   }
   .buttons {
     margin-top: var(--space-3);

@@ -9,6 +9,15 @@ import (
 	"time"
 )
 
+// VacuumInto writes a consistent copy of the database to path, which must
+// not exist.
+func (db *DB) VacuumInto(ctx context.Context, path string) error {
+	if _, err := db.ExecContext(ctx, `VACUUM INTO ?`, path); err != nil {
+		return fmt.Errorf("store: vacuum into: %w", err)
+	}
+	return nil
+}
+
 // Setting returns the JSON stored under key; ok is false if none is.
 func (db *DB) Setting(ctx context.Context, key string) (value json.RawMessage, ok bool, err error) {
 	var s string
