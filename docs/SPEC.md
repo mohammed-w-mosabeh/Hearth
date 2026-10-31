@@ -11,7 +11,7 @@ Priority: **P1** = v0.x MVP, **P2** = v1.0, **P3** = after v1.0.
   - `reversible` (stop container, stop service) → no dialog, toast with Undo for 5 s
   - `destructive` (remove package, delete image, kill -9) → preview + confirm dialog (type the name for high-impact)
   - `privileged` → additionally requires polkit authentication
-- **Audit log**: every action recorded (time, origin: local/phone, action, target, result).
+- **Audit log**: every action recorded (time, origin: local, action, target, result).
 
 ## Modules
 
@@ -79,7 +79,6 @@ Priority: **P1** = v0.x MVP, **P2** = v1.0, **P3** = after v1.0.
 
 ### 13. Terminal (P1)
 - xterm.js + PTY over WebSocket, multiple tabs, runs as the user. "Open terminal here" for folders, containers (`docker exec`), tools.
-- Disabled for phone/remote sessions by default.
 
 ### 14. Scheduler (P2)
 - Form: name, command or script, schedule (visual builder → systemd `OnCalendar`, or `OnBootSec`, `OnUnitActiveSec`), run as user or root (root requires polkit), timeout, notify on failure.
@@ -89,16 +88,12 @@ Priority: **P1** = v0.x MVP, **P2** = v1.0, **P3** = after v1.0.
 ### 15. Alerts (P1)
 - Rule = metric + condition + duration + severity (+ quiet hours). Hysteresis to avoid flapping. One notification per incident until resolved.
 - Defaults: disk > 90%, RAM > 90% for 5 min, CPU > 95% for 3 min, CPU/GPU temp > 90°C for 1 min, battery < 15% discharging, SMART failing, container exited unexpectedly, unit failed, scheduled job failed, new listener on 0.0.0.0.
-- Channels: desktop notification (`org.freedesktop.Notifications`), phone, optional ntfy URL, optional SMTP.
+- Channels: desktop notification (`org.freedesktop.Notifications`), optional ntfy URL, optional SMTP.
 
 ### 16. Reports (P2)
 - Machine report (period): resource summary, top consumers, alerts, change timeline, disk/battery health, security posture.
 - Item report: one app/container/service usage over time, peaks, restarts/crashes.
 - Export: self-contained HTML, Markdown, PDF (browser print). Scheduled weekly report.
-
-### 17. Phone link — KDE Connect replacement (P3)
-- Implement the open KDE Connect protocol so the official KDE Connect Android/iOS app works: discovery, TLS pairing with fingerprint confirmation, clipboard sync, file share, phone notifications on desktop, media control, battery, find-my-phone, run predefined commands.
-- Plus a phone PWA view (opt-in LAN access) with status, alerts and Homepage.
 
 ### 18. Unique features (P2 unless noted)
 - **Command palette** Ctrl+K: search every item and action (P1).

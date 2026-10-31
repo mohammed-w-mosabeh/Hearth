@@ -12,11 +12,7 @@ import (
 // Origin says where an audited action came from.
 type Origin string
 
-const (
-	OriginLocal  Origin = "local"
-	OriginPhone  Origin = "phone"
-	OriginBroker Origin = "broker"
-)
+const OriginLocal Origin = "local"
 
 // AuditEntry is one audit_log row. Params are hashed, never stored, so the
 // log cannot leak secrets passed to an action.

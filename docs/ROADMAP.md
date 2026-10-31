@@ -87,11 +87,4 @@ Gate 3 result (2026-10-29): **passed.** Fuzzing: 30 targets, every validator of 
 
 Gate 4 result (2026-10-31): **passed; signed off by the owner (2026-10-31).** All 12 checklist items pass. No `sh -c`, `os/exec` in `internal/safeexec` only. Every route is checked against the real wiring: 84 routes, 21 state-changing, each refused without a key and with a foreign Host, Origin or none, no cookie; every GET route and `/api/v1/ws` also refuses a WebSocket upgrade from a foreign or missing Origin (the upgrade check was added for this gate and fails 128 times with the Origin check removed). Session key only through `Authorization` or the WS subprotocol; CSP without `unsafe-*`; no `{@html}`; listens on 127.0.0.1 only; broker refusals tested; XSS (13 tests, now also Profiles, Space, Journal and snapshot labels) and DNS rebinding pass; gosec and govulncheck clean; `npm audit` no high (production dependencies 0; dev tools 2 low, 12 moderate); purge leaves nothing. Fuzzing: 39 targets, 60 s each, one finding, fixed: a `group:` process target could exceed its length limit (2,272 bytes accepted), because the prefix had no bound; the string is only compared with live groups, so harmless. Fuzzing stopped at that finding, so 16 targets ran before the fix and the 23 from `FuzzTarget` on ran after it. Budget on the final code: idle peak 37.0 MB, 0.25% CPU; UI open (nine pages, 20 s each, without a session bus, measured before the procctl fix) peak 44.5 MB, 1.90% CPU; bundle 181 KB gz without the lazy terminal; binary 27.6 MB. `make itest`: all checks passed. Untested on real data: game detection with real launchers, Docker items in profiles, the energy estimate.
 
-## Phase 5 — Phone link (3–4 weeks)
-- [ ] 5.1 KDE Connect protocol: UDP discovery, TLS identity, pairing with code + fingerprint
-- [ ] 5.2 Plugins: ping, battery, clipboard, share (files), notifications, mpris (media), findmyphone
-- [ ] 5.3 runcommand with user-defined list only (S23)
-- [ ] 5.4 Optional LAN listener + phone PWA (status, alerts, Homepage), per-device permissions
-- [ ] 5.5 Devices page: paired devices, revoke, permissions
-
-**Gate 5:** owner pentest of pairing, TLS pinning, revoked device rejection, phone session limits.
+Phase 5 (Phone link): cancelled, owner decision 2026-10-31.
