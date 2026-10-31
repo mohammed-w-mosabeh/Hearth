@@ -180,3 +180,29 @@ func copyFile(t *testing.T, src, dst string) {
 		t.Fatal(err)
 	}
 }
+
+func TestStartLeavesTheProgramRunning(t *testing.T) {
+	sleep := Spec{Paths: []string{"/usr/bin/sleep", "/bin/sleep"}, Validate: exactly(Literal("0.5"))}
+	began := time.Now()
+	if err := start(sleep, 50*time.Millisecond, []string{"0.5"}); err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(began); took > 400*time.Millisecond {
+		t.Fatalf("waited for the program: %v", took)
+	}
+}
+
+func TestStartReportsAnEarlyFailureWithoutItsArguments(t *testing.T) {
+	falseCmd := Spec{Paths: []string{"/usr/bin/false", "/bin/false"}, Validate: exactly(Literal("secret"))}
+	err := start(falseCmd, 2*time.Second, []string{"secret"})
+	if err == nil || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("%v", err)
+	}
+	trueCmd := Spec{Paths: []string{"/usr/bin/true", "/bin/true"}, Validate: exactly(Literal("x"))}
+	if err := start(trueCmd, 2*time.Second, []string{"x"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := start(trueCmd, time.Second, []string{"secret"}); err == nil || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("%v", err)
+	}
+}

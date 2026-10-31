@@ -13,25 +13,27 @@ import (
 	"unicode/utf8"
 )
 
+// desktopEnv is what a browser needs from the user's session.
+var desktopEnv = []string{"DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS",
+	"XDG_CURRENT_DESKTOP", "XDG_SESSION_TYPE", "XDG_DATA_HOME", "XDG_DATA_DIRS", "XDG_CONFIG_HOME", "XDG_CONFIG_DIRS",
+	"DESKTOP_SESSION", "BROWSER", "HOME"}
+
 // allowlist is the complete set of programs Hearth may run. Adding an entry
 // needs a validator that accepts only the argument shapes the caller uses.
 var allowlist = map[string]Spec{
-	// xdg-open <http(s) URL>: open the UI (or a local service) in the browser.
+	// xdg-open and gio open <http(s) URL>: the launcher's fallbacks when no
+	// desktop portal answers (package launcher). Both go through Start, so
+	// the browser outlives hearthd open. Never from inside hearthd.service,
+	// whose sandbox the browser would inherit.
 	"xdg-open": {
 		Paths:    []string{"/usr/bin/xdg-open"},
 		Validate: exactly(HTTPURL),
-		Env:      []string{"DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", "XDG_CURRENT_DESKTOP", "HOME"},
+		Env:      desktopEnv,
 	},
-	// systemd-run --user --collect --quiet -- /usr/bin/xdg-open <URL>: open a
-	// URL from inside hearthd.service without the browser inheriting the
-	// service sandbox; the user manager starts it in a transient unit.
-	"systemd-run-xdg-open": {
-		Paths: []string{"/usr/bin/systemd-run"},
-		Validate: exactly(
-			Literal("--user"), Literal("--collect"), Literal("--quiet"), Literal("--"),
-			Literal("/usr/bin/xdg-open"), HTTPURL,
-		),
-		Env: []string{"XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", "HOME"},
+	"gio-open": {
+		Paths:    []string{"/usr/bin/gio"},
+		Validate: exactly(Literal("open"), HTTPURL),
+		Env:      desktopEnv,
 	},
 	// nvidia-smi with one fixed query (collect/gpu.go): NVIDIA exposes no
 	// usable sysfs metrics, and NVML would need cgo.

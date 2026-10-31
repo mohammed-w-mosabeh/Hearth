@@ -28,6 +28,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/godbus/dbus/v5"
+
 	"github.com/mohammed-w-mosabeh/hearth/internal/actions"
 	"github.com/mohammed-w-mosabeh/hearth/internal/alerts"
 	"github.com/mohammed-w-mosabeh/hearth/internal/api"
@@ -44,6 +46,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/homepage"
 	"github.com/mohammed-w-mosabeh/hearth/internal/insight"
 	"github.com/mohammed-w-mosabeh/hearth/internal/launch"
+	"github.com/mohammed-w-mosabeh/hearth/internal/launcher"
 	"github.com/mohammed-w-mosabeh/hearth/internal/netinfo"
 	"github.com/mohammed-w-mosabeh/hearth/internal/pkgs"
 	"github.com/mohammed-w-mosabeh/hearth/internal/posture"
@@ -671,25 +674,82 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	return <-errc
 }
 
-// openUI is `hearthd open`: check the daemon is up, then open a fresh
-// single-use launch link.
+// startWait bounds how long `hearthd open` waits for a started daemon.
+const startWait = 5 * time.Second
+
+// openHold keeps `hearthd open` alive after the link is handed over, so
+// gnome-shell can still place it in its app scope.
+const openHold = time.Second
+
+// openUI is `hearthd open`: make sure the daemon runs, then open a fresh
+// login link. It never serves anything itself: a daemon that is down is
+// started by the user manager, so there is never a second one. Any failure
+// reaches the user as a notification (the launcher has no terminal).
 func openUI(ctx context.Context, paths Paths) error {
-	b, err := os.ReadFile(paths.ConfigFile())
+	cfg := launcherConfig()
+	_, statErr := os.Stat(paths.ConfigFile())
+	port, err := ensureDaemon(ctx, paths)
 	if err != nil {
-		return fmt.Errorf("hearthd is not set up yet; start it with: systemctl --user start hearthd (%w)", err)
-	}
-	cfg, err := parseConfig(b)
-	if err != nil {
+		launcher.Notify(ctx, cfg, "Hearth could not start", err.Error()+"\nTry: systemctl --user start hearthd")
 		return err
 	}
-	if err := checkHealth(ctx, cfg.Port); err != nil {
-		return fmt.Errorf("hearthd is not running; start it with: systemctl --user start hearthd (%w)", err)
+	if statErr != nil {
+		return nil // a first run: the daemon opens the browser itself
 	}
-	u, err := launchURL(paths, cfg.Port)
+	u, err := launchURL(paths, port)
 	if err != nil {
+		launcher.Notify(ctx, cfg, "Hearth could not start", err.Error())
 		return err
 	}
-	return openBrowser(ctx, u)
+	if err := launcher.Open(ctx, cfg, u); err != nil {
+		return err
+	}
+	select {
+	case <-time.After(openHold):
+	case <-ctx.Done():
+	}
+	return nil
+}
+
+// ensureDaemon returns the running daemon's port, starting hearthd.service
+// if needed. A daemon writes a fresh token before it listens, so once it
+// answers, the token file is its own.
+func ensureDaemon(ctx context.Context, paths Paths) (int, error) {
+	up := func() (int, bool) {
+		b, err := os.ReadFile(paths.ConfigFile())
+		if err != nil {
+			return 0, false
+		}
+		cfg, err := parseConfig(b)
+		if err != nil || checkHealth(ctx, cfg.Port) != nil {
+			return 0, false
+		}
+		return cfg.Port, true
+	}
+	if port, ok := up(); ok {
+		return port, nil
+	}
+	conn, err := dbusx.SessionBus(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("cannot reach your session: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+	var job dbus.ObjectPath
+	if err := conn.Call(ctx, "org.freedesktop.systemd1", "/org/freedesktop/systemd1",
+		"org.freedesktop.systemd1.Manager.StartUnit", []any{&job}, "hearthd.service", "replace"); err != nil {
+		return 0, fmt.Errorf("cannot start hearthd: %w", err)
+	}
+	for deadline := time.Now().Add(startWait); time.Now().Before(deadline); {
+		if port, ok := up(); ok {
+			return port, nil
+		}
+		select {
+		case <-time.After(100 * time.Millisecond):
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
+	}
+	return 0, errors.New("hearthd did not start in time")
 }
 
 func checkHealth(ctx context.Context, port int) error {
@@ -720,18 +780,26 @@ func launchURL(paths Paths, port int) (string, error) {
 	return "http://127.0.0.1:" + strconv.Itoa(port) + "/auth?t=" + tok, nil
 }
 
-// openBrowser opens url for the user. Under systemd (INVOCATION_ID is set)
-// the browser would inherit hearthd's sandbox, so the user manager starts it
-// in its own transient unit instead.
-func openBrowser(ctx context.Context, url string) error {
-	var err error
-	if os.Getenv("INVOCATION_ID") != "" {
-		_, err = safeexec.Run(ctx, "systemd-run-xdg-open",
-			"--user", "--collect", "--quiet", "--", "/usr/bin/xdg-open", url)
-	} else {
-		_, err = safeexec.Run(ctx, "xdg-open", url)
+// launcherConfig reaches the user's desktop. Inside hearthd.service
+// (INVOCATION_ID is set) only the portal can start a browser outside the
+// sandbox.
+func launcherConfig() launcher.Config {
+	return launcher.Config{
+		Session: func(ctx context.Context) (launcher.Bus, error) {
+			c, err := dbusx.SessionBus(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return c, nil
+		},
+		Start:      func(name string, args ...string) error { return safeexec.Start(name, openHold, args...) },
+		PortalOnly: os.Getenv("INVOCATION_ID") != "",
 	}
-	return err
+}
+
+// openBrowser opens link for the user.
+func openBrowser(ctx context.Context, link string) error {
+	return launcher.Open(ctx, launcherConfig(), link)
 }
 
 // brokerCall is `hearthd broker-call <method> [params-json]`.

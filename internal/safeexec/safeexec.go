@@ -82,6 +82,47 @@ func check(spec Spec, args []string) error {
 	return spec.Validate(args)
 }
 
+// Start starts the allowlisted command name and leaves it running: a program
+// that becomes the user's browser has to outlive its caller, so it gets its
+// own session, no timeout and no parent-death signal. It returns the
+// command's failure if it ends within grace, nil if it is still running or
+// ended well. Errors never carry args.
+func Start(name string, grace time.Duration, args ...string) error {
+	spec, ok := allowlist[name]
+	if !ok {
+		return fmt.Errorf("%w: %q", ErrUnknownCommand, name)
+	}
+	return start(spec, grace, args)
+}
+
+func start(spec Spec, grace time.Duration, args []string) error {
+	if err := check(spec, args); err != nil {
+		return errors.New("safeexec: arguments refused")
+	}
+	bin, err := resolve(spec.Paths)
+	if err != nil {
+		return err
+	}
+	// #nosec G204 -- bin comes from the static allowlist and args are validated above.
+	cmd := exec.CommandContext(context.Background(), bin, args...) // never cancelled: it outlives us
+	cmd.Env = buildEnv(spec.Env)
+	cmd.Dir = "/"
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("safeexec: cannot start %s", bin)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			return fmt.Errorf("safeexec: %s exited with %d", bin, cmd.ProcessState.ExitCode())
+		}
+	case <-time.After(grace):
+	}
+	return nil
+}
+
 func run(ctx context.Context, spec Spec, args []string) (Result, error) {
 	if err := check(spec, args); err != nil {
 		return Result{}, err
