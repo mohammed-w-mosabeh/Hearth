@@ -267,6 +267,7 @@ func dockerMethods(d *Docker) []Method {
 		read("docker.networks.inspect", d.networkInspect),
 		read("docker.volumes.list", plain("/volumes")),
 		read("docker.volumes.inspect", d.volumeInspect),
+		read("docker.volumes.sizes", d.volumeSizes),
 		read("docker.prune.preview", d.prunePreview),
 		{Name: "docker.events", Stream: d.dockerEvents},
 		{Name: "docker.containers.logs.follow", Stream: d.containerLogsFollow},
@@ -742,6 +743,39 @@ func (d *Docker) volumeInspect(ctx context.Context, p json.RawMessage) (any, err
 		return nil, badParam("inspect takes no force")
 	}
 	return d.get(ctx, "/volumes/"+esc(name), nil)
+}
+
+// VolumeSize is one entry of docker.volumes.sizes. Size is -1 when the
+// Engine cannot tell (a driver other than local).
+type VolumeSize struct {
+	Name string `json:"name"`
+	Size int64  `json:"size"`
+}
+
+// volumeSizes asks the Engine to measure every volume. It takes no params
+// and returns names and sizes only, so a page can ask for it on opening.
+func (d *Docker) volumeSizes(ctx context.Context, p json.RawMessage) (any, error) {
+	if err := noParams(p); err != nil {
+		return nil, err
+	}
+	var df struct {
+		Volumes []struct {
+			Name      string
+			UsageData *struct{ Size int64 }
+		}
+	}
+	if err := d.getInto(ctx, "/system/df", url.Values{"type": {"volume"}}, &df); err != nil {
+		return nil, err
+	}
+	out := make([]VolumeSize, 0, len(df.Volumes))
+	for _, v := range df.Volumes {
+		s := VolumeSize{Name: v.Name, Size: -1}
+		if v.UsageData != nil {
+			s.Size = v.UsageData.Size
+		}
+		out = append(out, s)
+	}
+	return out, nil
 }
 
 func (d *Docker) volumeRemove(ctx context.Context, p json.RawMessage) (any, error) {

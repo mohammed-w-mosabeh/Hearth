@@ -4,6 +4,7 @@
   import ContainerDetail from '../components/ContainerDetail.svelte';
   import EmptyState from '../components/EmptyState.svelte';
   import ComposeProjects from '../components/ComposeProjects.svelte';
+  import DockerObjects from '../components/DockerObjects.svelte';
   import DockerCleanup from '../components/DockerCleanup.svelte';
   import ImagesTable from '../components/ImagesTable.svelte';
   import { preview, reasonKey, run, type CapField, type Params, type Plan, type Result } from '../lib/actions';
@@ -63,14 +64,24 @@
     }
   }
 
-  type Section = 'containers' | 'compose' | 'images' | 'cleanup';
+  type Section = 'containers' | 'compose' | 'images' | 'networks' | 'volumes' | 'cleanup';
   let section = $state<Section>('containers');
   const sections: { id: Section; label: MessageKey }[] = [
     { id: 'containers', label: 'docker.section.containers' },
     { id: 'compose', label: 'docker.section.compose' },
     { id: 'images', label: 'docker.section.images' },
+    { id: 'networks', label: 'docker.section.networks' },
+    { id: 'volumes', label: 'docker.section.volumes' },
     { id: 'cleanup', label: 'docker.section.cleanup' },
   ];
+
+  function sectionCount(id: Section, s: Snapshot): number {
+    if (id === 'images') return s.images.length;
+    if (id === 'compose') return s.projects.length;
+    if (id === 'networks') return s.networks.length;
+    if (id === 'volumes') return s.volumes.length;
+    return containers.length;
+  }
 
   let search = $state('');
   let stateF = $state<StateFilter>('all');
@@ -269,18 +280,22 @@
   <div class="sections" role="tablist" aria-label={t('docker.sections')}>
     {#each sections as sec (sec.id)}
       <button type="button" role="tab" aria-selected={section === sec.id} class:on={section === sec.id} onclick={() => (section = sec.id)}>
-        {t(sec.label)}{#if snap && sec.id !== 'cleanup'}<span class="count">{sec.id === 'images' ? snap.images.length : sec.id === 'compose' ? snap.projects.length : containers.length}</span>{/if}
+        {t(sec.label)}{#if snap && sec.id !== 'cleanup'}<span class="count">{sectionCount(sec.id, snap)}</span>{/if}
       </button>
     {/each}
   </div>
 
   {#if section === 'cleanup'}
     <DockerCleanup />
-  {:else if section === 'images' || section === 'compose'}
+  {:else if section === 'images' || section === 'compose' || section === 'networks' || section === 'volumes'}
     {#if snap === null}
       <p class="note">{t('docker.loading')}</p>
     {:else if section === 'images'}
       <ImagesTable images={snap.images} {containers} />
+    {:else if section === 'networks'}
+      <DockerObjects kind="network" networks={snap.networks} volumes={snap.volumes} {containers} />
+    {:else if section === 'volumes'}
+      <DockerObjects kind="volume" networks={snap.networks} volumes={snap.volumes} {containers} />
     {:else}
       <ComposeProjects projects={snap.projects} {containers} onopen={(c) => (detailId = c.id)} />
     {/if}

@@ -38,6 +38,7 @@ Priority: **P1** = v0.x MVP, **P2** = v1.0, **P3** = after v1.0.
 ### 5. Docker (P1)
 - **Containers**: state, health, uptime, CPU/RAM/net/blkio with history, ports, mounts, networks, env (secrets masked), labels, restart policy. Actions: start, stop, restart, pause, remove (confirm), logs (live), exec shell (xterm), inspect JSON.
 - **Images (detailed)**: repo:tag, ID, digest, size (unique vs shared), created, architecture/OS, default user, exposed ports, entrypoint/cmd, env, labels, full layer history with the command per layer, containers using it, "update available" (compare local digest with registry, on demand), optional Trivy vuln scan if installed. Actions: remove (blocked if in use unless forced with confirm), tag, pull latest.
+- **Networks and volumes**: driver, project, used by, volume size; remove an orphan after a preview (the name is typed for a volume).
 - **Compose projects**: grouped by `com.docker.compose.project` label; start/stop/restart whole project; show compose file path.
 - **Networks & volumes**: list, size, used-by, remove orphans.
 - **Cleanup**: dangling images, stopped containers, orphan volumes, build cache — show reclaimable size before acting.

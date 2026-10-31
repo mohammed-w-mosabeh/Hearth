@@ -41,6 +41,9 @@ var answers = map[string]struct {
 	"GET /v1.44/images/json":            {200, `[]`},
 	"GET /v1.44/networks":               {200, `[]`},
 	"GET /v1.44/volumes":                {200, `{"Volumes":[]}`},
+	"GET /v1.44/system/df":              {200, `{"Volumes":[{"Name":"orphan","UsageData":{"RefCount":0,"Size":2048}},{"Name":"busy","UsageData":{"RefCount":1,"Size":9}}]}`},
+	"DELETE /v1.44/volumes/orphan":      {204, ""},
+	"DELETE /v1.44/volumes/busy":        {409, `{"message":"volume is in use"}`},
 }
 
 // hostileFlag, when it exists, adds a container whose name, image, status

@@ -227,6 +227,14 @@ sleep 1
 check "exec refused in a privileged container with / mounted" call_says "would reach the host (privileged" docker.containers.exec '{"id":"risky"}'
 check "engine never got an exec request" not grep -q '/exec' /run/fakedocker.log
 rm -f /etc/polkit-1/rules.d/51-hearth-itest-exec.rules
+check "volume sizes through the broker, with no polkit" call_says '"name":"orphan","size":2048' docker.volumes.sizes
+check "sizes take no params" call_says "takes no params" docker.volumes.sizes '{"path":"/etc"}'
+for bad in '{"name":"../x"}' '{"name":"a/b"}' '{"name":"-f"}' '{"name":"orphan","x":1}'; do
+	check "volume remove refused before polkit: $bad" call_says "bad params\|must be a volume" docker.volumes.remove "$bad"
+done
+check "a predefined network is refused" call_says "predefined" docker.networks.remove '{"id":"bridge"}'
+check "volume remove refused without polkit authorization" call_says "not authorized" docker.volumes.remove '{"name":"orphan"}'
+check "the Engine never got that remove" not grep -q 'DELETE /v1.44/volumes/orphan' /run/fakedocker.log
 systemctl stop fakedocker
 rm -f /etc/polkit-1/rules.d/50-hearth-itest.rules
 

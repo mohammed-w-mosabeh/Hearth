@@ -32,8 +32,7 @@ import {
   view,
   type Container,
   type LogLine,
-  type Point,
-} from './docker';
+  type Point, networkRemovable, usedByNames } from './docker';
 
 const c = (name: string, state: string, extra: Partial<Container> = {}): Container => ({
   id: `${name}-id`, name, image: 'nginx', image_id: 'sha256:x', command: '', created: 0, state,
@@ -246,5 +245,16 @@ describe('mergeStats with nothing running', () => {
   it('keeps the history when a sample has no containers', () => {
     const history = { a: [{ t: 1 } as Point] };
     expect(mergeStats(history, { kind: 'sample' })).toEqual(history);
+  });
+});
+
+describe('networks and volumes', () => {
+  it('names users, and shortens an ID it cannot name', () => {
+    expect(usedByNames(['a', 'b'.repeat(64)], [{ id: 'a', name: 'web' }])).toEqual(['web', 'b'.repeat(12)]);
+  });
+  it('never offers a built-in or used network', () => {
+    expect(networkRemovable({ name: 'old', containers: [] })).toBe(true);
+    expect(networkRemovable({ name: 'old', containers: ['x'] })).toBe(false);
+    for (const name of ['bridge', 'host', 'none']) expect(networkRemovable({ name, containers: [] })).toBe(false);
   });
 });

@@ -497,3 +497,16 @@ export interface KindSummary {
 export function pruneTotal(kinds: KindSummary[]): number {
   return kinds.reduce((n, k) => n + (k.error ? 0 : Math.max(0, k.reclaimable)), 0);
 }
+
+/** Docker's own networks, which cannot be removed. */
+export const BUILT_IN_NETWORKS = ['bridge', 'host', 'none'];
+
+/** Container names for IDs; an ID no longer listed shows its first 12 digits. */
+export function usedByNames(ids: string[], containers: Pick<Container, 'id' | 'name'>[]): string[] {
+  return ids.map((id) => containers.find((c) => c.id === id)?.name ?? id.slice(0, 12));
+}
+
+/** A network the page offers to remove. The server checks again. */
+export function networkRemovable(n: Pick<Network, 'name' | 'containers'>): boolean {
+  return n.containers.length === 0 && !BUILT_IN_NETWORKS.includes(n.name);
+}
