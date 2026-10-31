@@ -1,6 +1,8 @@
 // Services page: types, filtering and sorting of systemd units
 // (internal/services, topic "services").
 
+import { api } from './api';
+
 export type Scope = 'system' | 'user';
 
 export interface Unit {
@@ -102,12 +104,13 @@ export function failedCount(units: Unit[]): number {
   return units.filter((u) => u.active === 'failed').length;
 }
 
-export type UnitOp = 'start' | 'stop' | 'restart' | 'enable' | 'disable';
+export type UnitOp = 'start' | 'stop' | 'restart' | 'enable' | 'disable' | 'mask' | 'unmask' | 'override';
 
 /** The actions that make sense for a unit in its current state. */
 export function available(u: Unit): UnitOp[] {
   const type = unitType(u.name);
-  if (type === 'device' || u.load === 'masked' || u.enabled === 'masked' || u.name.includes('@.')) return [];
+  if (type === 'device' || u.name.includes('@.')) return [];
+  if (u.load === 'masked' || u.enabled === 'masked') return ['unmask'];
   const ops: UnitOp[] = [];
   const h = health(u);
   if (type === 'scope') return h === 'running' ? ['stop'] : [];
@@ -115,5 +118,20 @@ export function available(u: Unit): UnitOp[] {
   if (h === 'running' || h === 'changing') ops.push('stop', 'restart');
   if (u.enabled === 'disabled') ops.push('enable');
   if (u.enabled === 'enabled' || u.enabled === 'enabled-runtime') ops.push('disable');
+  if (!u.name.startsWith('hearth')) {
+    ops.push('mask');
+    if (type === 'service') ops.push('override');
+  }
   return ops;
+}
+
+/** The directives a drop-in may set (internal/dropin). */
+export const overrideFields = ['MemoryMax', 'CPUQuota', 'Restart', 'RestartSec', 'Nice', 'IOWeight', 'TimeoutStopSec'] as const;
+export const restartPolicies = ['no', 'always', 'on-success', 'on-failure', 'on-abnormal', 'on-abort', 'on-watchdog'];
+
+export async function loadOverride(u: Unit): Promise<Record<string, string>> {
+  const res = await api<{ directives: Record<string, string> }>(
+    `/services/${encodeURIComponent(u.scope)}/${encodeURIComponent(u.name)}/override`,
+  );
+  return res.directives;
 }

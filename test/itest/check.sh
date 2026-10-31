@@ -448,6 +448,51 @@ token=$(post actions/job/delete "{\"target\":\"system/$rid\",\"preview\":true}" 
 check "deleted" grep -q '"done":1' <<<"$(post actions/job/delete "{\"target\":\"system/$rid\",\"token\":\"$token\"}")"
 check "root units and script removed" test ! -e "/etc/systemd/system/hearth-job-$rid.timer" -a ! -e "/var/lib/hearth/jobs/$rid"
 check "broker audited the job calls" grep -q 'sched.save.*ok' /var/lib/hearth/audit.jsonl
+
+echo "== service limits and masking"
+printf '[Service]\nExecStart=/bin/sleep 600\n' >/etc/systemd/system/itest-limits.service
+printf '[Service]\nExecStart=/bin/sleep 600\n' >/etc/systemd/user/itest-user.service
+systemctl daemon-reload
+asuser systemctl --user daemon-reload
+original=$(sha256sum /etc/systemd/system/itest-limits.service)
+dropdir=/etc/systemd/system/itest-limits.service.d
+for bad in '"ExecStart":"/bin/sh"' '"ExecStartPre":"/bin/sh"' '"Environment":"LD_PRELOAD=/tmp/x"' '"User":"root"' '"WorkingDirectory":"/root"' '"ReadWritePaths":"/"' '"MemoryMax":"1G\nExecStart=/bin/sh"'; do
+	check "refused before polkit: $bad" call_says "$(test "${bad:1:9}" = MemoryMax && echo 'bad value' || echo 'not allowed')" unit.override "{\"unit\":\"itest-limits.service\",\"directives\":{$bad}}"
+done
+check "another file is unreachable" call_says "unit" unit.override '{"unit":"../../cron.d/x.service","directives":{"Nice":"1"}}'
+check "Hearth's own units are refused" call_says "keep their limits" unit.override '{"unit":"hearth-broker.service","directives":{"Nice":"1"}}'
+check "refused without polkit authorization" call_says "not authorized" unit.override '{"unit":"itest-limits.service","directives":{"Nice":"1"}}'
+check "nothing written when refused" test ! -e "$dropdir"
+check "override asks every time (auth_admin, no keep)" grep -Pzq '(?s)org\.hearth\.units\.override">.*?<allow_active>auth_admin</allow_active>' "$policy"
+cat >/etc/polkit-1/rules.d/52-hearth-itest-units.rules <<'RULES'
+polkit.addRule(function(action, subject) {
+	if (action.id == "org.hearth.units.override" && subject.user == "tester") {
+		return polkit.Result.YES;
+	}
+});
+RULES
+sleep 1 # polkitd reloads rules on change
+limits='{"target":"system/itest-limits.service","params":{"MemoryMax":"512M","Restart":"on-failure"}}'
+check "system unit limited through the broker" grep -q '"done":1' <<<"$(post actions/unit/override "$limits")"
+check "the drop-in is root's, 0644" test "$(stat -c '%U %a' "$dropdir/hearth.conf")" = "root 644"
+check "its directory is readable by hearthd" test "$(stat -c '%a' "$dropdir")" = 755
+check "systemd reloaded and applied it" test "$(systemctl show -p MemoryMax --value itest-limits.service)" = 536870912
+check "the original unit is untouched" test "$original" = "$(sha256sum /etc/systemd/system/itest-limits.service)"
+check "shown back to the UI" grep -q '"MemoryMax":"512M"' <<<"$(pkgs_api services/system/itest-limits.service/override)"
+check "a directive outside the allowlist is refused by hearthd" test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$port" -H 'Content-Type: application/json' -d '{"target":"system/itest-limits.service","params":{"ExecStart":"/bin/sh"}}' "http://127.0.0.1:$port/api/v1/actions/unit/override")" = 400
+check "broker audited it" grep -q 'unit.override.*ok' /var/lib/hearth/audit.jsonl
+check "hearthd audited it" grep -q 'unit.override' <<<"$(pkgs_api changes)"
+check "user unit limited by hearthd" grep -q '"done":1' <<<"$(post actions/unit/override '{"target":"user/itest-user.service","params":{"CPUQuota":"50%"}}')"
+check "its drop-in is in the user's folder" grep -q '^CPUQuota=50%$' "/home/$user/.config/systemd/user/itest-user.service.d/hearth.conf"
+check "the user manager applied it" test "$(asuser systemctl --user show -p CPUQuotaPerSecUSec --value itest-user.service)" = 500ms
+check "clearing removes it" grep -q '"done":1' <<<"$(post actions/unit/override '{"target":"user/itest-user.service","params":{}}')"
+check "and its folder" test ! -e "/home/$user/.config/systemd/user/itest-user.service.d"
+check "mask" grep -q '"done":1' <<<"$(post actions/unit/mask '{"target":"user/itest-user.service"}')"
+check "masked" grep -q masked <<<"$(asuser systemctl --user is-enabled itest-user.service 2>&1 || true)"
+check "a masked unit cannot start" not asuser systemctl --user start itest-user.service
+check "unmask" grep -q '"done":1' <<<"$(post actions/unit/unmask '{"target":"user/itest-user.service"}')"
+check "unmasked" not grep -q masked <<<"$(asuser systemctl --user is-enabled itest-user.service 2>&1 || true)"
+check "Hearth's own unit cannot be masked" grep -q '"reason":"self"' <<<"$(post actions/unit/mask '{"target":"user/hearthd.service"}')"
 rm -f /etc/polkit-1/rules.d/51-hearth-itest-jobs.rules
 gpasswd -d "$user" hearth >/dev/null
 
@@ -553,6 +598,7 @@ done
 check "daemon stopped" wait_until 10 not pgrep -x hearthd
 check "port closed" not port_open "$port"
 check "no /var/lib/hearth" test ! -e /var/lib/hearth
+check "system drop-ins removed" test ! -e /etc/systemd/system/itest-limits.service.d
 for f in /usr/bin/hearth-broker /usr/lib/systemd/system/hearth-broker.socket \
 	/usr/lib/systemd/system/hearth-broker.service /usr/share/polkit-1/actions/org.hearth.policy \
 	/etc/systemd/system/sockets.target.wants/hearth-broker.socket /run/hearth; do

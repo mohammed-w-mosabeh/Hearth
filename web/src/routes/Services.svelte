@@ -1,7 +1,8 @@
 <script lang="ts">
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import JournalDialog from '../components/JournalDialog.svelte';
-  import { preview, reasonKey, run, type Plan, type Result } from '../lib/actions';
+  import OverrideDialog from '../components/OverrideDialog.svelte';
+  import { preview, reasonKey, run, type Params, type Plan, type Result } from '../lib/actions';
   import { ApiError } from '../lib/api';
   import { bytes, pct } from '../lib/format';
   import { t, type MessageKey } from '../lib/i18n';
@@ -116,7 +117,9 @@
   // destructive with the name to type), and the log viewer.
   let menu: HTMLDivElement;
   let subject = $state<Unit | null>(null);
-  let pending = $state<{ op: UnitOp; unit: Unit; plan: Plan } | null>(null);
+  let pending = $state<{ op: UnitOp; unit: Unit; plan: Plan; params?: Params } | null>(null);
+  let limitsOf = $state<Unit | null>(null);
+  let limitsError = $state('');
   let journalOf = $state<Unit | null>(null);
   let busy = $state.raw<ReadonlySet<string>>(new Set());
 
@@ -126,6 +129,9 @@
     restart: 'svc.op.restart',
     enable: 'svc.op.enable',
     disable: 'svc.op.disable',
+    mask: 'svc.op.mask',
+    unmask: 'svc.op.unmask',
+    override: 'svc.op.override',
   };
   const doneLabels: Record<UnitOp, MessageKey> = {
     start: 'svc.done.start',
@@ -133,9 +139,12 @@
     restart: 'svc.done.restart',
     enable: 'svc.done.enable',
     disable: 'svc.done.disable',
+    mask: 'svc.done.mask',
+    unmask: 'svc.done.unmask',
+    override: 'svc.done.override',
   };
   // Undo for the reversible ones (SPEC: toast with Undo for 5 s).
-  const undoOf: Partial<Record<UnitOp, UnitOp>> = { stop: 'start', enable: 'disable', disable: 'enable' };
+  const undoOf: Partial<Record<UnitOp, UnitOp>> = { stop: 'start', enable: 'disable', disable: 'enable', mask: 'unmask', unmask: 'mask' };
 
   function openMenu(e: MouseEvent, u: Unit): void {
     subject = u;
@@ -171,11 +180,11 @@
     toast(t(doneLabels[op], { name: u.name }), back ? { undo: () => void execute(back, u) } : {});
   }
 
-  async function execute(op: UnitOp, u: Unit, token?: string, typed?: string): Promise<void> {
+  async function execute(op: UnitOp, u: Unit, token?: string, typed?: string, params: Params = {}): Promise<void> {
     setBusy(u, true);
     if (u.scope === 'system') toast(t('svc.authHint'));
     try {
-      report(op, u, await run('unit', op, key(u), {}, token, typed));
+      report(op, u, await run('unit', op, key(u), params, token, typed));
     } catch (err) {
       toast(errorText(err), { tone: 'error' });
     } finally {
@@ -185,6 +194,11 @@
 
   async function act(op: UnitOp, u: Unit): Promise<void> {
     menu.hidePopover();
+    if (op === 'override') {
+      limitsError = '';
+      limitsOf = u;
+      return;
+    }
     if (op === 'start' || op === 'enable') return execute(op, u);
     try {
       const plan = await preview('unit', op, key(u));
@@ -201,9 +215,23 @@
 
   async function confirmed(typed: string): Promise<void> {
     if (!pending) return;
-    const { op, unit: u, plan } = pending;
+    const { op, unit: u, plan, params } = pending;
     pending = null;
-    await execute(op, u, plan.token, typed);
+    await execute(op, u, plan.token, typed, params);
+  }
+
+  async function saveLimits(params: Params): Promise<void> {
+    const u = limitsOf;
+    if (!u) return;
+    try {
+      const plan = await preview('unit', 'override', key(u), params);
+      limitsOf = null;
+      if (plan.items.length === 0) report('override', u, { done: 0, failed: [], blocked: plan.blocked });
+      else if (plan.risk === 'destructive') pending = { op: 'override', unit: u, plan, params };
+      else await execute('override', u, undefined, undefined, params);
+    } catch (err) {
+      limitsError = errorText(err);
+    }
   }
 
   function logs(u: Unit): void {
@@ -316,7 +344,7 @@
   {#if subject}
     {@const u = subject}
     {#each available(u) as op (op)}
-      <button type="button" class:danger={u.critical && op !== 'start' && op !== 'enable'} onclick={() => act(op, u)}>
+      <button type="button" class:danger={u.critical && op !== 'start' && op !== 'enable' && op !== 'unmask'} onclick={() => act(op, u)}>
         {t(opLabels[op])}
       </button>
     {/each}
@@ -336,6 +364,8 @@
 />
 
 <JournalDialog unit={journalOf} onclose={() => (journalOf = null)} />
+
+<OverrideDialog unit={limitsOf} error={limitsError} onsave={saveLimits} oncancel={() => (limitsOf = null)} />
 
 <style>
   header {

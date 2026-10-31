@@ -3,6 +3,8 @@ package unitctl
 import (
 	"context"
 	"errors"
+	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -11,6 +13,8 @@ import (
 	"github.com/godbus/dbus/v5"
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/actions"
+	"github.com/mohammed-w-mosabeh/hearth/internal/broker"
+	"github.com/mohammed-w-mosabeh/hearth/internal/dropin"
 )
 
 func TestTarget(t *testing.T) {
@@ -26,36 +30,36 @@ func TestTarget(t *testing.T) {
 	}
 }
 
+func opOf(n string) op {
+	for _, o := range ops {
+		if o.name == n {
+			return o
+		}
+	}
+	panic("no op " + n)
+}
+
 func TestPlan(t *testing.T) {
 	c := &ctl{cfg: Config{Self: "user/hearthd.service"}}
-	opOf := func(n string) op {
-		for _, o := range ops {
-			if o.name == n {
-				return o
-			}
-		}
-		t.Fatalf("no op %s", n)
-		return op{}
-	}
-	p, _ := c.plan(opOf("stop"), "system/cups.service")
+	p, _ := c.plan(opOf("stop"), actions.Request{Target: "system/cups.service"})
 	if p.Risk != "" || p.Confirm != "" || len(p.Items) != 1 {
 		t.Errorf("plain stop %+v", p)
 	}
 	for _, o := range []string{"stop", "restart", "disable"} {
-		p, _ := c.plan(opOf(o), "system/NetworkManager.service")
+		p, _ := c.plan(opOf(o), actions.Request{Target: "system/NetworkManager.service"})
 		if p.Risk != actions.Destructive || p.Confirm != "NetworkManager.service" {
 			t.Errorf("critical %s %+v", o, p)
 		}
 	}
 	for _, o := range []string{"start", "enable"} {
-		if p, _ := c.plan(opOf(o), "system/NetworkManager.service"); p.Risk != "" {
+		if p, _ := c.plan(opOf(o), actions.Request{Target: "system/NetworkManager.service"}); p.Risk != "" {
 			t.Errorf("critical %s escalated", o)
 		}
 	}
-	if p, _ := c.plan(opOf("stop"), "user/hearthd.service"); len(p.Items) != 0 || p.Blocked[0].Reason != ReasonSelf {
+	if p, _ := c.plan(opOf("stop"), actions.Request{Target: "user/hearthd.service"}); len(p.Items) != 0 || p.Blocked[0].Reason != ReasonSelf {
 		t.Errorf("self stop %+v", p)
 	}
-	if p, _ := c.plan(opOf("start"), "user/hearthd.service"); len(p.Items) != 1 {
+	if p, _ := c.plan(opOf("start"), actions.Request{Target: "user/hearthd.service"}); len(p.Items) != 1 {
 		t.Errorf("self start blocked %+v", p)
 	}
 }
@@ -121,11 +125,11 @@ func run(t *testing.T, b *fakeBus, opName, target string) actions.Result {
 		User: func(context.Context) (Bus, error) { return nil, errors.New("wrong bus") }, Self: "user/hearthd.service", JobWait: 50 * time.Millisecond}}
 	for _, o := range ops {
 		if o.name == opName {
-			p, err := c.plan(o, target)
+			p, err := c.plan(o, actions.Request{Target: target})
 			if err != nil {
 				t.Fatal(err)
 			}
-			res, err := c.run(context.Background(), o, target, p)
+			res, err := c.run(context.Background(), o, actions.Request{Target: target}, p)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -181,7 +185,7 @@ func TestRun(t *testing.T) {
 	// User units go to the user bus.
 	c := &ctl{cfg: Config{System: func(context.Context) (Bus, error) { return nil, errors.New("wrong bus") },
 		User: func(context.Context) (Bus, error) { return newBus(), nil }, JobWait: time.Second}}
-	if r, err := c.run(context.Background(), ops[0], "user/syncnotes.service", actions.Plan{Items: []actions.Item{{ID: "user/syncnotes.service"}}}); err != nil || r.Done != 1 {
+	if r, err := c.run(context.Background(), ops[0], actions.Request{Target: "user/syncnotes.service"}, actions.Plan{Items: []actions.Item{{ID: "user/syncnotes.service"}}}); err != nil || r.Done != 1 {
 		t.Fatalf("user start %+v %v", r, err)
 	}
 }
@@ -189,4 +193,100 @@ func TestRun(t *testing.T) {
 func TestRegister(t *testing.T) {
 	reg := actions.NewRegistry(nil)
 	Register(reg, Config{})
+}
+
+type fakeBroker struct {
+	method string
+	params any
+	err    error
+}
+
+func (f *fakeBroker) Call(_ context.Context, method string, params, _ any) error {
+	f.method, f.params = method, params
+	return f.err
+}
+
+func TestMaskAndUnmask(t *testing.T) {
+	b := newBus()
+	if res := run(t, b, "mask", "system/cups.service"); res.Done != 1 {
+		t.Fatalf("%+v", res)
+	}
+	if res := run(t, b, "unmask", "system/cups.service"); res.Done != 1 {
+		t.Fatalf("%+v", res)
+	}
+	if want := []string{"MaskUnitFiles", "Reload", "UnmaskUnitFiles", "Reload"}; !slices.Equal(b.inter, want) {
+		t.Fatalf("%v", b.inter)
+	}
+	c := &ctl{cfg: Config{Self: "user/hearthd.service"}}
+	if p, _ := c.plan(opOf("mask"), actions.Request{Target: "system/hearth-broker.socket"}); len(p.Items) != 0 || p.Blocked[0].Reason != ReasonSelf {
+		t.Fatalf("%+v", p)
+	}
+	if p, _ := c.plan(opOf("mask"), actions.Request{Target: "system/NetworkManager.service"}); p.Risk != actions.Destructive || p.Confirm == "" {
+		t.Fatalf("%+v", p)
+	}
+}
+
+func TestOverride(t *testing.T) {
+	dir := t.TempDir()
+	b := newBus()
+	fb := &fakeBroker{}
+	c := &ctl{cfg: Config{UserDir: dir, Broker: fb, User: func(context.Context) (Bus, error) { return b, nil }}}
+	d := map[string]string{"MemoryMax": "1G"}
+	r := actions.Request{Target: "user/a.service", Params: d}
+	p, err := c.plan(opOf("override"), r)
+	if err != nil || len(p.Items) != 1 || !strings.Contains(p.Items[0].Detail, "MemoryMax=1G") {
+		t.Fatalf("%+v %v", p, err)
+	}
+	if res, err := c.run(context.Background(), opOf("override"), r, p); err != nil || res.Done != 1 {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if got, _ := dropin.Read(dir, "a.service"); got["MemoryMax"] != "1G" || !slices.Equal(b.inter, []string{"Reload"}) {
+		t.Fatalf("%v %v", got, b.inter)
+	}
+	if fb.method != "" {
+		t.Fatal("a user unit went to the broker")
+	}
+
+	r.Target = "system/a.service"
+	if res, err := c.run(context.Background(), opOf("override"), r, p); err != nil || res.Done != 1 || fb.method != "unit.override" {
+		t.Fatalf("%+v %v %s", res, err, fb.method)
+	}
+	if got := fb.params.(dropin.Params); got.Unit != "a.service" || got.Directives["MemoryMax"] != "1G" {
+		t.Fatalf("%+v", got)
+	}
+	fb.err = fmt.Errorf("wrapped: %w", broker.ErrUnauthorized)
+	if res, _ := c.run(context.Background(), opOf("override"), r, p); res.Failed[0].Reason != ReasonUnauthorized {
+		t.Fatalf("%+v", res)
+	}
+	for _, target := range []string{"system/hearth-broker.service", "user/hearthd.service"} {
+		if p, _ := c.plan(opOf("override"), actions.Request{Target: target}); len(p.Items) != 0 || p.Blocked[0].Reason != ReasonSelf {
+			t.Fatalf("%s: %+v", target, p)
+		}
+	}
+	if p, _ := c.plan(opOf("override"), actions.Request{Target: "system/dbus.service"}); p.Risk != actions.Destructive {
+		t.Fatalf("%+v", p)
+	}
+}
+
+func TestOverrideValidation(t *testing.T) {
+	reg := actions.NewRegistry(nil)
+	Register(reg, Config{})
+	a, ok := reg.Lookup("unit/override")
+	if !ok {
+		t.Fatal("not registered")
+	}
+	for _, r := range []actions.Request{
+		{Target: "system/a.service", Params: map[string]string{"ExecStart": "/bin/sh"}},
+		{Target: "system/a.service", Params: map[string]string{"MemoryMax": "1G\nUser=root"}},
+		{Target: "system/a.socket", Params: map[string]string{"Nice": "1"}},
+		{Target: "system/a@.service", Params: map[string]string{"Nice": "1"}},
+	} {
+		if a.Validate(r) == nil {
+			t.Errorf("accepted %+v", r)
+		}
+	}
+	m, _ := reg.Lookup("unit/mask")
+	if m.Validate(actions.Request{Target: "system/a.service", Params: map[string]string{"x": "y"}}) == nil {
+		t.Error("mask took params")
+	}
 }

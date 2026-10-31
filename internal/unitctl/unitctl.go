@@ -1,6 +1,7 @@
-// Package unitctl implements the service actions (SPEC 10, ROADMAP 1.13):
-// start, stop, restart, enable and disable systemd units, system or user,
-// through the managers' D-Bus APIs. hearthd never runs as root: for system
+// Package unitctl implements the service actions (SPEC 10, ROADMAP 1.13,
+// 5.1): start, stop, restart, enable, disable, mask and unmask systemd
+// units, system or user, through the managers' D-Bus APIs, and resource
+// limits through a drop-in (package dropin; system units through the broker). hearthd never runs as root: for system
 // units systemd asks polkit, which shows the desktop's authentication
 // dialog (the calls allow interactive authorization).
 //
@@ -12,16 +13,20 @@ package unitctl
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/godbus/dbus/v5"
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/actions"
+	"github.com/mohammed-w-mosabeh/hearth/internal/broker"
 	"github.com/mohammed-w-mosabeh/hearth/internal/dbusx"
+	"github.com/mohammed-w-mosabeh/hearth/internal/dropin"
 	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
 	"github.com/mohammed-w-mosabeh/hearth/internal/services"
 )
@@ -50,6 +55,11 @@ type Bus interface {
 	Close() error
 }
 
+// Broker calls hearth-broker (*broker.Client in production).
+type Broker interface {
+	Call(ctx context.Context, method string, params, out any) error
+}
+
 // Config configures the unit actions.
 type Config struct {
 	System, User func(ctx context.Context) (Bus, error)
@@ -58,6 +68,10 @@ type Config struct {
 	// JobWait bounds how long a start/stop/restart is followed; a job
 	// still running then is reported as done (the list shows the rest).
 	JobWait time.Duration
+	// UserDir (~/.config/systemd/user) and SystemDir are where drop-ins
+	// live; hearthd only reads SystemDir, the broker writes it.
+	UserDir, SystemDir string
+	Broker             Broker
 }
 
 type ctl struct{ cfg Config }
@@ -82,6 +96,8 @@ type op struct {
 	risk     actions.Risk
 	escalate bool // critical units need the typed confirmation
 	self     bool // refused on hearthd's own unit
+	own      bool // refused on every hearth* unit
+	params   bool // takes directives (the rest take none)
 }
 
 var ops = []op{
@@ -90,6 +106,9 @@ var ops = []op{
 	{name: "restart", risk: actions.Reversible, escalate: true, self: true},
 	{name: "enable", risk: actions.Reversible},
 	{name: "disable", risk: actions.Reversible, escalate: true, self: true},
+	{name: "mask", risk: actions.Reversible, escalate: true, own: true},
+	{name: "unmask", risk: actions.Reversible},
+	{name: "override", risk: actions.Reversible, escalate: true, own: true, params: true},
 }
 
 // Register adds the unit/* actions to reg.
@@ -104,45 +123,67 @@ func Register(reg *actions.Registry, cfg Config) {
 	for _, o := range ops {
 		reg.Register(actions.Action{Kind: "unit", Name: o.name, Risk: o.risk,
 			Validate: func(r actions.Request) error {
-				if len(r.Params) != 0 {
+				if !o.params && len(r.Params) != 0 {
 					return errors.New("params must be empty")
 				}
-				_, _, err := Target(r.Target)
-				return err
+				_, name, err := Target(r.Target)
+				if err != nil || !o.params {
+					return err
+				}
+				if strings.HasPrefix(name, "hearth") {
+					return nil // the plan says why
+				}
+				if err := dropin.ValidUnit(name); err != nil {
+					return err
+				}
+				return dropin.Validate(r.Params)
 			},
-			Plan: func(_ context.Context, r actions.Request) (actions.Plan, error) { return c.plan(o, r.Target) },
+			Plan: func(_ context.Context, r actions.Request) (actions.Plan, error) { return c.plan(o, r) },
 			Run: func(ctx context.Context, r actions.Request, p actions.Plan) (actions.Result, error) {
-				return c.run(ctx, o, r.Target, p)
+				return c.run(ctx, o, r, p)
 			}})
 	}
 }
 
-func (c *ctl) plan(o op, target string) (actions.Plan, error) {
+func (c *ctl) plan(o op, r actions.Request) (actions.Plan, error) {
+	target := r.Target
 	scope, name, err := Target(target)
 	if err != nil {
 		return actions.Plan{}, actions.Errorf(http.StatusBadRequest, "%v", err)
 	}
 	it := actions.Item{ID: target, Name: name, Detail: scope}
 	p := actions.Plan{Summary: o.name + " " + name, Items: []actions.Item{}, Blocked: []actions.Blocked{}}
-	if o.self && target == c.cfg.Self {
+	if (o.self && target == c.cfg.Self) || (o.own && strings.HasPrefix(name, "hearth")) {
 		p.Blocked = append(p.Blocked, actions.Blocked{Item: it, Reason: ReasonSelf})
 		return p, nil
 	}
-	p.Items = append(p.Items, it)
+	if o.params {
+		p.Items = append(p.Items, actions.Item{ID: target, Name: name, Detail: string(dropin.Render(r.Params))})
+	} else {
+		p.Items = append(p.Items, it)
+	}
 	if o.escalate && services.Critical(scope, name) {
 		p.Risk, p.Confirm = actions.Destructive, name
 	}
 	return p, nil
 }
 
-func (c *ctl) run(ctx context.Context, o op, target string, p actions.Plan) (actions.Result, error) {
+func (c *ctl) run(ctx context.Context, o op, r actions.Request, p actions.Plan) (actions.Result, error) {
 	res := actions.Result{Failed: []actions.Blocked{}}
 	if len(p.Items) == 0 {
 		return res, nil
 	}
-	scope, name, err := Target(target)
+	scope, name, err := Target(r.Target)
 	if err != nil {
 		return res, err
+	}
+	if o.name == "override" && scope == services.ScopeSystem {
+		if err := c.cfg.Broker.Call(ctx, "unit.override", dropin.Params{Unit: name, Directives: r.Params}, nil); err != nil {
+			res.Failed = append(res.Failed, failure(p.Items[0], err))
+			return res, nil
+		}
+		res.Done = 1
+		return res, nil
 	}
 	dial := c.cfg.System
 	if scope == services.ScopeUser {
@@ -172,6 +213,22 @@ func (c *ctl) run(ctx context.Context, o op, target string, p actions.Plan) (act
 		var changes []change
 		if err = bus.CallInteractive(ctx, systemd, objPath, manager+".DisableUnitFiles", []any{&changes},
 			[]string{name}, false); err == nil {
+			err = c.reload(ctx, bus)
+		}
+	case "mask":
+		var changes []change
+		if err = bus.CallInteractive(ctx, systemd, objPath, manager+".MaskUnitFiles", []any{&changes},
+			[]string{name}, false, false); err == nil {
+			err = c.reload(ctx, bus)
+		}
+	case "unmask":
+		var changes []change
+		if err = bus.CallInteractive(ctx, systemd, objPath, manager+".UnmaskUnitFiles", []any{&changes},
+			[]string{name}, false); err == nil {
+			err = c.reload(ctx, bus)
+		}
+	case "override":
+		if err = dropin.Write(c.cfg.UserDir, name, r.Params); err == nil {
 			err = c.reload(ctx, bus)
 		}
 	}
@@ -252,6 +309,8 @@ func failure(it actions.Item, err error) actions.Blocked {
 		return actions.Blocked{Item: it, Reason: ReasonJobFailed}
 	case errors.Is(err, errNoInstall):
 		return actions.Blocked{Item: it, Reason: ReasonNoInstall}
+	case errors.Is(err, broker.ErrUnauthorized):
+		return actions.Blocked{Item: it, Reason: ReasonUnauthorized}
 	}
 	switch dbusx.ErrorName(err) {
 	case "org.freedesktop.DBus.Error.AccessDenied", "org.freedesktop.DBus.Error.InteractiveAuthorizationRequired",
@@ -267,4 +326,34 @@ func failure(it actions.Item, err error) actions.Blocked {
 		it.Detail = err.Error()
 	}
 	return actions.Blocked{Item: it, Reason: ReasonError}
+}
+
+// Override is the unit's current hearth.conf.
+type Override struct {
+	Directives dropin.Directives `json:"directives"`
+}
+
+// HandleOverride answers GET /api/v1/services/{scope}/{name}/override.
+func HandleOverride(cfg Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		scope, name, err := Target(r.PathValue("scope") + "/" + r.PathValue("name"))
+		if err == nil {
+			err = dropin.ValidUnit(name)
+		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		dir := cfg.SystemDir
+		if scope == services.ScopeUser {
+			dir = cfg.UserDir
+		}
+		d, err := dropin.Read(dir, name)
+		if err != nil && !errors.Is(err, os.ErrPermission) {
+			http.Error(w, "cannot read the override", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(Override{Directives: d})
+	}
 }

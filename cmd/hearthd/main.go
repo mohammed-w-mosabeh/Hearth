@@ -40,6 +40,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/discovery"
 	"github.com/mohammed-w-mosabeh/hearth/internal/diskusage"
 	"github.com/mohammed-w-mosabeh/hearth/internal/docker"
+	"github.com/mohammed-w-mosabeh/hearth/internal/dropin"
 	"github.com/mohammed-w-mosabeh/hearth/internal/homepage"
 	"github.com/mohammed-w-mosabeh/hearth/internal/insight"
 	"github.com/mohammed-w-mosabeh/hearth/internal/launch"
@@ -269,10 +270,15 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	srv.API.HandleFunc("GET /api/v1/system/network", sysSettings.HandleNetwork)
 	srv.API.HandleFunc("GET /api/v1/system/audio", sysSettings.HandleAudio)
 	srv.API.HandleFunc("GET /api/v1/system/autostart", sysSettings.HandleAutostart)
-	unitctl.Register(reg, unitctl.Config{
-		System: func(ctx context.Context) (unitctl.Bus, error) { return dbusx.SystemBus(ctx) },
-		User:   func(ctx context.Context) (unitctl.Bus, error) { return dbusx.SessionBus(ctx) },
-	})
+	unitCfg := unitctl.Config{
+		System:    func(ctx context.Context) (unitctl.Bus, error) { return dbusx.SystemBus(ctx) },
+		User:      func(ctx context.Context) (unitctl.Bus, error) { return dbusx.SessionBus(ctx) },
+		UserDir:   filepath.Join(filepath.Dir(paths.ConfigDir), "systemd/user"),
+		SystemDir: dropin.SystemDir,
+		Broker:    &broker.Client{},
+	}
+	unitctl.Register(reg, unitCfg)
+	srv.API.HandleFunc("GET /api/v1/services/{scope}/{name}/override", unitctl.HandleOverride(unitCfg))
 	// Debian packages: dpkg's database read on demand (watched while the
 	// Packages page follows "pkgs"), changes through PackageKit.
 	dpkgDB := discovery.NewDpkg(discovery.DpkgConfig{Pub: srv.Hub, Log: log})

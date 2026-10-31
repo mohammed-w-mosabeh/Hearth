@@ -30,9 +30,10 @@ ReadWritePaths=/var/lib/dpkg
 # apt.clean and journal.vacuum (SECURITY S16c): both directories' files are
 # root's (no capability needed). "-": they may not exist.
 ReadWritePaths=-/var/cache/apt/archives -/var/log/journal
-# sched.*: root jobs' units, hearth-job-<id>.service/.timer only (the
-# broker writes no other name there); their scripts are in the
-# StateDirectory, /var/lib/hearth/jobs/<id>/run (SECURITY S13).
+# sched.*: root jobs' units, hearth-job-<id>.service/.timer (their scripts
+# are in the StateDirectory, /var/lib/hearth/jobs/<id>/run, SECURITY S13).
+# unit.override: <unit>.service.d/hearth.conf (S16d). The broker writes no
+# other name there; root owns the directory, so no capability is needed.
 ReadWritePaths=/etc/systemd/system
 ProtectHome=yes
 PrivateTmp=yes

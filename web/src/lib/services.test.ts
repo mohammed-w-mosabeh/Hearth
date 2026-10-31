@@ -48,10 +48,12 @@ describe('services view', () => {
 
 describe('available actions', () => {
   it('follows state and unit file state', () => {
-    expect(available(u('cups.service', 'active', { enabled: 'enabled' }))).toEqual(['stop', 'restart', 'disable']);
-    expect(available(u('ssh.service', 'inactive', { enabled: 'disabled' }))).toEqual(['start', 'enable']);
-    expect(available(u('broken.service', 'failed', { enabled: 'static' }))).toEqual(['start']);
-    expect(available(u('x.service', 'inactive', { enabled: 'masked' }))).toEqual([]);
+    expect(available(u('cups.service', 'active', { enabled: 'enabled' }))).toEqual(['stop', 'restart', 'disable', 'mask', 'override']);
+    expect(available(u('ssh.service', 'inactive', { enabled: 'disabled' }))).toEqual(['start', 'enable', 'mask', 'override']);
+    expect(available(u('broken.service', 'failed', { enabled: 'static' }))).toEqual(['start', 'mask', 'override']);
+    expect(available(u('x.service', 'inactive', { enabled: 'masked' }))).toEqual(['unmask']);
+    expect(available(u('hearth-broker.service', 'active', { enabled: 'static' }))).toEqual(['stop', 'restart']);
+    expect(available(u('cups.socket', 'inactive', { enabled: 'static' }))).toEqual(['start', 'mask']);
     expect(available(u('dev-sda.device', 'active'))).toEqual([]);
     expect(available(u('session-2.scope', 'active'))).toEqual(['stop']);
   });

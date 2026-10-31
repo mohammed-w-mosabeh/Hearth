@@ -19,6 +19,7 @@ import (
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/broker"
 	"github.com/mohammed-w-mosabeh/hearth/internal/dbusx"
+	"github.com/mohammed-w-mosabeh/hearth/internal/dropin"
 	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
 	"github.com/mohammed-w-mosabeh/hearth/internal/scheduler"
 )
@@ -56,6 +57,13 @@ func run(log *slog.Logger) error {
 			}
 			return c, nil
 		},
+	})...)
+	methods = append(methods, dropin.BrokerMethods(dropin.SystemDir, func(ctx context.Context) (dropin.Reloader, error) {
+		c, err := dbusx.SystemBus(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return c, nil
 	})...)
 	srv, err = broker.NewServer(broker.Config{
 		Methods:   methods,
