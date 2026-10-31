@@ -68,6 +68,15 @@ var allowlist = map[string]Spec{
 		Env:      []string{"HOME"},
 		Timeout:  2 * time.Minute,
 	},
+	// apt-config reading the two automatic-update settings (Security page,
+	// SECURITY S21e). `shell` returns only these keys; `dump` would also
+	// hand over any proxy credentials.
+	"apt-config-periodic": {
+		Paths: []string{"/usr/bin/apt-config"},
+		Validate: exactly(Literal("shell"), Literal("U"), Literal("APT::Periodic::Unattended-Upgrade"),
+			Literal("L"), Literal("APT::Periodic::Update-Package-Lists")),
+		Timeout: 5 * time.Second,
+	},
 	"trivy-version": {
 		Paths:    []string{"/usr/bin/trivy", "/usr/local/bin/trivy"},
 		Validate: exactly(Literal("--version")),

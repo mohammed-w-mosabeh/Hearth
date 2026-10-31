@@ -232,7 +232,7 @@ func TestScan(t *testing.T) {
 		checks[c.ID] = c
 		order = append(order, c.ID)
 	}
-	if strings.Join(order, ",") != "listeners,firewall,ssh,updates,restart,cves,containers,path" {
+	if strings.Join(order, ",") != "listeners,firewall,ssh,updates,unattended,restart,cves,containers,path" {
 		t.Fatalf("order %v", order)
 	}
 	want := map[string]string{
@@ -325,7 +325,7 @@ func TestCVEsHandlerAndCache(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &r); err != nil {
 		t.Fatal(err)
 	}
-	if c := r.Checks[5]; c.ID != CheckCVEs || c.Status != SevCrit || c.Findings[0].Details[0] != "CVE-2024-0002 (openssl)" {
+	if c := r.Checks[6]; c.ID != CheckCVEs || c.Status != SevCrit || c.Findings[0].Details[0] != "CVE-2024-0002 (openssl)" {
 		t.Errorf("cves %+v", c)
 	}
 	// A restart reads the kept run.
@@ -502,5 +502,81 @@ func TestRestartPathsAreAbsoluteInProduction(t *testing.T) {
 	}
 	if slices.Contains(rebootPackages(""), "relative-sentinel") {
 		t.Error("read run/ relative to the working directory")
+	}
+}
+
+func TestParseAptShell(t *testing.T) {
+	if u, l := parseAptShell([]byte("U='1'\nL='always'\n")); u != "1" || l != "always" {
+		t.Fatal(u, l)
+	}
+	if u, l := parseAptShell(nil); u != "" || l != "" {
+		t.Fatal(u, l)
+	}
+	for v, on := range map[string]bool{"": false, "0": false, "-1": false, "no": false, "1": true, "7": true, "always": true} {
+		if _, got := periodicDays(v); got != on {
+			t.Errorf("%q: %v", v, got)
+		}
+	}
+}
+
+func TestUnattended(t *testing.T) {
+	now := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	stamp := func(root string, age time.Duration) {
+		write(t, root, "var/lib/apt/periodic/unattended-upgrades-stamp", "", 0o600)
+		at := now.Add(-age)
+		if err := os.Chtimes(filepath.Join(root, "var/lib/apt/periodic/unattended-upgrades-stamp"), at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, tc := range map[string]struct {
+		installed bool
+		out       string
+		err       error
+		timer     bool
+		age       time.Duration // 0: no stamp
+		status    string
+		codes     string
+	}{
+		"not installed": {status: StatusOK, codes: "unattended.no_tool"},
+		"off":           {installed: true, timer: true, status: SevWarn, codes: "unattended.off"},
+		"zero":          {installed: true, out: "U='0'\nL='1'\n", timer: true, status: SevWarn, codes: "unattended.off"},
+		"unreadable":    {installed: true, err: errors.New("no"), status: StatusUnknown},
+		"on":            {installed: true, out: "U='1'\nL='1'\n", timer: true, age: time.Hour, status: StatusOK, codes: "unattended.active"},
+		"never":         {installed: true, out: "U='1'\nL='1'\n", timer: true, status: StatusOK, codes: "unattended.never"},
+		"stale":         {installed: true, out: "U='1'\nL='1'\n", timer: true, age: 8 * 24 * time.Hour, status: SevWarn, codes: "unattended.stale"},
+		"long interval": {installed: true, out: "U='30'\nL='1'\n", timer: true, age: 20 * 24 * time.Hour, status: StatusOK, codes: "unattended.active"},
+		"no lists":      {installed: true, out: "U='1'\n", timer: true, age: time.Hour, status: SevWarn, codes: "unattended.no_lists,unattended.active"},
+		"no timer":      {installed: true, out: "U='1'\nL='1'\n", age: time.Hour, status: SevWarn, codes: "unattended.no_timer,unattended.active"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			if tc.installed {
+				write(t, root, "usr/bin/unattended-upgrade", "", 0o700)
+			}
+			if tc.age != 0 {
+				stamp(root, tc.age)
+			}
+			s := New(Config{
+				Root: root, Clock: func() time.Time { return now },
+				UnitActive: func(context.Context, string) bool { return tc.timer },
+				Run: func(_ context.Context, name string, args ...string) (safeexec.Result, error) {
+					if name != "apt-config-periodic" || slices.Contains(args, "dump") {
+						t.Errorf("%s %v", name, args)
+					}
+					return safeexec.Result{Stdout: []byte(tc.out)}, tc.err
+				},
+			})
+			c := s.unattended(context.Background())
+			var codes []string
+			for _, f := range c.Findings {
+				codes = append(codes, f.Code)
+				if Text(f) == "" || strings.HasPrefix(Text(f), f.Code) {
+					t.Errorf("no text for %s", f.Code)
+				}
+			}
+			if c.Status != tc.status || strings.Join(codes, ",") != tc.codes {
+				t.Fatalf("%+v", c)
+			}
+		})
 	}
 }

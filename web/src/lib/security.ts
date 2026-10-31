@@ -59,7 +59,7 @@ export interface Report {
   counts: Partial<Record<Status, number>>;
 }
 
-export const CHECKS = ['listeners', 'firewall', 'ssh', 'updates', 'restart', 'cves', 'containers', 'path'] as const;
+export const CHECKS = ['listeners', 'firewall', 'ssh', 'updates', 'unattended', 'restart', 'cves', 'containers', 'path'] as const;
 type CheckId = (typeof CHECKS)[number];
 
 const known = (id: string): id is CheckId => (CHECKS as readonly string[]).includes(id);
@@ -89,6 +89,7 @@ export const FINDINGS = new Set([
   'firewall.active', 'firewall.inactive', 'firewall.none', 'listener.exposed',
   'ssh.active', 'ssh.inactive', 'ssh.root_login', 'ssh.empty_passwords', 'ssh.password_auth', 'ssh.kbd_interactive', 'ssh.unreadable', 'ssh.match',
   'updates.security', 'updates.other',
+  'unattended.active', 'unattended.never', 'unattended.stale', 'unattended.off', 'unattended.no_lists', 'unattended.no_timer', 'unattended.no_tool',
   'restart.reboot', 'restart.kernel', 'restart.services', 'restart.sessions', 'restart.no_tool', 'restart.scan_failed', 'restart.scanning',
   'cves.not_installed', 'cves.not_run', 'cves.fixed', 'cves.open',
   'container.risky', 'container.risky_stopped',

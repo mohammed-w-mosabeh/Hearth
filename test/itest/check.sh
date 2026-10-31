@@ -711,6 +711,23 @@ echo "  $exposure2"
 systemctl stop itest-oldlib.service
 gpasswd -d "$user" hearth >/dev/null
 
+echo "== automatic updates"
+security_has() { pkgs_api security | grep -q "\"code\":\"$1\""; }
+rm -f /etc/apt/apt.conf.d/20auto-upgrades
+check "installed but not configured is off" security_has unattended.off
+cat >/etc/apt/apt.conf.d/20auto-upgrades <<'CONF'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+CONF
+mkdir -p /var/lib/apt/periodic
+touch /var/lib/apt/periodic/unattended-upgrades-stamp
+systemctl start apt-daily-upgrade.timer
+check "the real settings and stamp read as on" security_has unattended.active
+touch -d '30 days ago' /var/lib/apt/periodic/unattended-upgrades-stamp
+check "an old stamp is overdue" security_has unattended.stale
+rm -f /etc/apt/apt.conf.d/20auto-upgrades /var/lib/apt/periodic/unattended-upgrades-stamp
+systemctl stop apt-daily-upgrade.timer
+
 echo "== launcher"
 check "hearthd --version is the package's version" test "$(asuser /usr/bin/hearthd --version)" = "$(dpkg-query -W -f='${Version}' hearth)"
 check "and git describe's" test "$(asuser /usr/bin/hearthd --version)" = "$HEARTH_VERSION"

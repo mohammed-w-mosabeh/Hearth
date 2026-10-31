@@ -39,6 +39,7 @@ const (
 	CheckSSH        = "ssh"
 	CheckUpdates    = "updates"
 	CheckRestart    = "restart"
+	CheckUnattended = "unattended"
 	CheckCVEs       = "cves"
 	CheckContainers = "containers"
 	CheckPath       = "path"
@@ -170,6 +171,7 @@ func (s *Scanner) Scan(ctx context.Context) Report {
 		return c
 	})
 	run(s.updates)
+	run(s.unattended)
 	run(func(ctx context.Context) Check { return restartCheck(s.Restart(ctx, true)) })
 	run(s.containers)
 	run(func(context.Context) Check { return s.path() })
@@ -177,7 +179,7 @@ func (s *Scanner) Scan(ctx context.Context) Report {
 
 	r.CVEs = s.CVEs(ctx)
 	results[CheckCVEs] = cveCheck(r.CVEs)
-	for _, id := range []string{CheckListeners, CheckFirewall, CheckSSH, CheckUpdates, CheckRestart, CheckCVEs, CheckContainers, CheckPath} {
+	for _, id := range []string{CheckListeners, CheckFirewall, CheckSSH, CheckUpdates, CheckUnattended, CheckRestart, CheckCVEs, CheckContainers, CheckPath} {
 		c := results[id]
 		if c.Findings == nil {
 			c.Findings = []Finding{}
