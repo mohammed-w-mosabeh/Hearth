@@ -81,6 +81,17 @@
       <allow_active>auth_admin</allow_active>
     </defaults>
   </action>
+  <!-- A disk self-test (SECURITY S16f): keeps the data, slows the disk. -->
+  <action id="org.hearth.disk.selftest">
+    <description>Start a disk self-test through Hearth</description>
+    <message>Authentication is required to let Hearth start a disk self-test</message>
+    <icon_name>drive-harddisk</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
   <action id="org.hearth.units.override">
     <description>Change how a system service runs through Hearth</description>
     <message>Authentication is required to change a system service's limits</message>

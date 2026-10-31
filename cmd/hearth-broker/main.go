@@ -48,6 +48,7 @@ func run(log *slog.Logger) error {
 	methods = append(methods, broker.DockerMethods(broker.NewDocker(broker.DockerSocket))...)
 	methods = append(methods, broker.PackageMethods(safeexec.Run)...)
 	methods = append(methods, broker.SpaceMethods(safeexec.Run, broker.AptArchives)...)
+	methods = append(methods, broker.SmartMethods(safeexec.Run, broker.SysRoot)...)
 	methods = append(methods, scheduler.BrokerMethods(scheduler.BrokerConfig{
 		UnitDir: scheduler.SystemUnitDir, JobsDir: scheduler.SystemJobsDir, Run: safeexec.Run,
 		Bus: func(ctx context.Context) (scheduler.Bus, error) {

@@ -64,6 +64,7 @@ const (
 	CodeConflict     = 5 // the object is in use or in the wrong state (Docker 409)
 	CodeNoDocker     = 6 // the Docker Engine is not running or not installed
 	CodeRefused      = 7 // refused by policy (SECURITY), whoever asks
+	CodeNoSmartctl   = 8 // smartmontools is not installed
 )
 
 // Error is a call's failure.
@@ -91,6 +92,7 @@ var (
 	ErrUnauthorized = &Error{Code: CodeUnauthorized, Message: "not authorized"}
 	ErrNoMethod     = &Error{Code: CodeNoMethod, Message: "unknown method"}
 	ErrNoDocker     = &Error{Code: CodeNoDocker, Message: "docker is not available"}
+	ErrNoSmartctl   = &Error{Code: CodeNoSmartctl, Message: "smartmontools is not installed"}
 )
 
 // PingResult is broker.ping's result.

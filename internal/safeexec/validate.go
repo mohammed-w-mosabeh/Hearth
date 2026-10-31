@@ -195,6 +195,27 @@ func isUnitChar(r rune) bool {
 
 var containerIDRe = regexp.MustCompile(`^[a-f0-9]{12,64}$`)
 
+var diskNameRe = regexp.MustCompile(`^(?:sd[a-z]{1,3}|nvme[0-9]{1,3}n[0-9]{1,3})$`)
+
+// DiskName accepts the kernel's name for a whole SATA, SAS or NVMe disk
+// (sda, nvme0n1). Partitions (sda1, nvme0n1p1) do not match, nor do loop,
+// RAM and optical devices, which have no SMART.
+func DiskName(s string) error {
+	if !diskNameRe.MatchString(s) {
+		return invalid("not a whole disk: %q", s)
+	}
+	return nil
+}
+
+// WholeDisk accepts /dev/<DiskName>.
+func WholeDisk(s string) error {
+	name, ok := strings.CutPrefix(s, "/dev/")
+	if !ok {
+		return invalid("not a disk device: %q", s)
+	}
+	return DiskName(name)
+}
+
 // ContainerID validates a short or full Docker container/image ID.
 func ContainerID(s string) error {
 	if err := baseCheck(s); err != nil {

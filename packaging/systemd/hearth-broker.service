@@ -15,12 +15,15 @@ StateDirectoryMode=0700
 UMask=0077
 
 # --- Hardening (SECURITY.md "systemd hardening") ---
-# It runs as root but needs no capabilities for what it does so far
+# It runs as root and needs no capabilities for most of what it does
 # (answering on its socket, asking polkit over the system bus, writing its
 # StateDirectory). Docker needs none either: /run/docker.sock is root's
-# (connecting needs no write access to the read-only /run). Each later
-# method that needs a capability adds it here with a comment.
-CapabilityBoundingSet=
+# (connecting needs no write access to the read-only /run). Each method
+# that needs a capability adds it here with a comment.
+# disk.smart and disk.selftest (SECURITY S16f): ATA passthrough needs
+# CAP_SYS_RAWIO and NVMe admin commands need CAP_SYS_ADMIN. Mounting,
+# setuid and the like stay out of reach of the system call filter below.
+CapabilityBoundingSet=CAP_SYS_RAWIO CAP_SYS_ADMIN
 AmbientCapabilities=
 NoNewPrivileges=yes
 ProtectSystem=strict
@@ -37,7 +40,13 @@ ReadWritePaths=-/var/cache/apt/archives -/var/log/journal
 ReadWritePaths=/etc/systemd/system
 ProtectHome=yes
 PrivateTmp=yes
-PrivateDevices=yes
+# Not PrivateDevices=yes: it hides the disks and drops CAP_SYS_RAWIO. The
+# device policy is as closed: pseudo devices, plus SCSI/SATA disks and
+# block-blkext (NVMe namespaces) for smartctl, nothing else. Partitions of
+# those share the majors, but no method takes a path to one.
+DevicePolicy=closed
+DeviceAllow=block-sd rw
+DeviceAllow=block-blkext rw
 PrivateNetwork=no
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
@@ -46,7 +55,9 @@ ProtectControlGroups=yes
 ProtectClock=yes
 ProtectHostname=yes
 # Not ProtectProc=invisible: the broker reads the caller's /proc/<pid>/stat
-# (start time) so polkit can identify the calling process.
+# (start time) so polkit can identify the calling process. Nothing it runs
+# needs the rest of /proc.
+ProcSubset=pid
 KeyringMode=private
 RestrictSUIDSGID=yes
 LockPersonality=yes
@@ -55,7 +66,7 @@ RestrictRealtime=yes
 RestrictNamespaces=yes
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
-SystemCallFilter=~@privileged
+SystemCallFilter=~@privileged @resources
 SystemCallErrorNumber=EPERM
 # Unix only: its socket and the system bus. No network at all.
 RestrictAddressFamilies=AF_UNIX

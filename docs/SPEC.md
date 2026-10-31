@@ -59,7 +59,7 @@ Priority: **P1** = v0.x MVP, **P2** = v1.0, **P3** = after v1.0.
 - History retention: 1 s resolution in-memory for 10 min; 1 min for 7 days; 1 h for 1 year (SQLite, downsampled).
 
 ### 9. Disks & battery (P1)
-- Disks: usage per mount, I/O speed, SMART (temp, reallocated sectors, power-on hours, SSD life %) via broker, folder size explorer.
+- Disks: usage per mount, I/O speed, SMART (temp, reallocated sectors, power-on hours, SSD life %, short/long self-test and its result) via broker, folder size explorer.
 - Battery (UPower): %, state, health (full vs design capacity), cycles, discharge rate W, time remaining, 7-day chart, power profile switch (power-profiles-daemon).
 
 ### 10. Services (P1)

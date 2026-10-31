@@ -22,6 +22,8 @@ describe('alerts text', () => {
     expect(conditionText({ metric: 'disk.used_pct', target: '/home', op: '>', threshold: 80, for_s: 0 }, disk)).toBe('Disk space used (/home) > 80%');
     expect(conditionText({ metric: 'cpu.temp', target: '', op: '>', threshold: 90, for_s: 60 }, temp)).toBe('CPU temperature > 90 °C for 1 min');
     expect(conditionText({ metric: 'unit.failed', target: '', op: '>', threshold: 0, for_s: 0 }, unit)).toBe('Any unit failed');
+    expect(conditionText({ metric: 'disk.smart_failing', target: '', op: '>', threshold: 0, for_s: 0 }, unit)).toBe('Any disk reports it is failing');
+    expect(conditionText({ metric: 'disk.smart_failing', target: 'sda', op: '>', threshold: 0, for_s: 0 }, unit)).toBe('Disk sda reports it is failing');
     const ctr: Metric = { ...unit, id: 'container.exited', instance: 'container' };
     expect(conditionText({ metric: 'container.exited', target: '', op: '>', threshold: 0, for_s: 0 }, ctr)).toBe('Any container stopped unexpectedly');
     expect(conditionText({ metric: 'container.exited', target: 'web', op: '>', threshold: 0, for_s: 0 }, ctr)).toBe('web stopped unexpectedly');

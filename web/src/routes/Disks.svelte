@@ -1,5 +1,6 @@
 <script lang="ts">
   import { api, ApiError } from '../lib/api';
+  import DiskHealth from '../components/DiskHealth.svelte';
   import { child, crumbs, exploreRoot, level, usageQuery, type Usage } from '../lib/disks';
   import { bytes, pct, rate } from '../lib/format';
   import { t } from '../lib/i18n';
@@ -102,6 +103,9 @@
     {/each}
   </ul>
 {/if}
+
+<h2>{t('disks.health')}</h2>
+<DiskHealth />
 
 {#if io.length > 0}
   <h2>{t('disks.activity')}</h2>

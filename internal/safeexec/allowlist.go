@@ -80,6 +80,19 @@ var allowlist = map[string]Spec{
 		Validate: exactly(OneOf("hold", "unhold"), DebPackageArch),
 		Timeout:  30 * time.Second,
 	},
+	// smartctl reading one whole disk's report as JSON, or starting one of
+	// its self-tests, run by hearth-broker as root (SECURITY S16f). -n
+	// standby: a read never spins up a sleeping disk.
+	"smartctl-read": {
+		Paths:    []string{"/usr/sbin/smartctl"},
+		Validate: exactly(Literal("-j"), Literal("-a"), Literal("-n"), Literal("standby"), WholeDisk),
+		Timeout:  20 * time.Second,
+	},
+	"smartctl-test": {
+		Paths:    []string{"/usr/sbin/smartctl"},
+		Validate: exactly(Literal("-j"), Literal("-t"), OneOf("short", "long"), WholeDisk),
+		Timeout:  20 * time.Second,
+	},
 	// journalctl --vacuum-size=<kept>, run by hearth-broker as root (broker
 	// journal.vacuum, after polkit, SECURITY S16c).
 	"journal-vacuum": {

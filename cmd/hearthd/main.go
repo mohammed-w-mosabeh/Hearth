@@ -59,6 +59,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/scheduler/schedapi"
 	"github.com/mohammed-w-mosabeh/hearth/internal/services"
 	"github.com/mohammed-w-mosabeh/hearth/internal/settings"
+	"github.com/mohammed-w-mosabeh/hearth/internal/smart"
 	"github.com/mohammed-w-mosabeh/hearth/internal/space"
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
 	"github.com/mohammed-w-mosabeh/hearth/internal/terminal"
@@ -385,6 +386,14 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	}
 	defer func() { stopDocker(); dockerWG.Wait() }()
 	srv.API.HandleFunc("GET /api/v1/docker", dockerObjs.HandleSnapshot)
+	diskHealth := smart.New(smart.Config{Broker: brokerClient, Log: log,
+		Observe: func(ctx context.Context, now time.Time, v map[string]float64) {
+			engine.Observe(ctx, now, smart.Metric, v)
+		}})
+	diskHealth.Register(reg)
+	srv.API.HandleFunc("GET /api/v1/disks/health", diskHealth.Handle)
+	dockerWG.Add(1)
+	go func() { defer dockerWG.Done(); diskHealth.Run(dockerCtx) }()
 	// Container usage for Home and the "container exited" alert, from the
 	// cgroups; the broker is asked only when the running set changes.
 	dockerMon := &docker.Monitor{B: brokerClient, Pub: srv.Hub, Log: log,

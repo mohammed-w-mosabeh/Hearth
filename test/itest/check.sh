@@ -147,7 +147,11 @@ check "bad params rejected" call_says "takes no params" broker.ping '{"x":1}'
 check "privileged call refused without polkit authorization" call_says "not authorized" broker.authorize
 bpid=$(pgrep -x hearth-broker || true)
 check "broker runs as root" test "$(stat -c %u /proc/"$bpid" 2>/dev/null)" = 0
-check "broker has no capabilities" grep -Eq '^CapEff:\s+0+$' /proc/"$bpid"/status
+# Only what disk.smart needs (S16f): CAP_SYS_RAWIO (bit 17), CAP_SYS_ADMIN (21).
+capeff=$(awk '/^CapEff:/ {print $2}' /proc/"$bpid"/status)
+check "broker holds no capability but RAWIO and SYS_ADMIN" test "$(((0x$capeff) & ~0x220000))" = 0
+check "the unit bounds them" test "$(systemctl show -p CapabilityBoundingSet --value hearth-broker.service)" = "cap_sys_rawio cap_sys_admin"
+check "the broker opens disks only" test "$(systemctl show -p DevicePolicy --value hearth-broker.service)" = closed
 check "broker NoNewPrivs=1" grep -Eq '^NoNewPrivs:\s+1$' /proc/"$bpid"/status
 check "broker seccomp filter active" grep -Eq '^Seccomp:\s+2$' /proc/"$bpid"/status
 # Between calls the broker holds sockets only: the audit log and the
@@ -604,12 +608,55 @@ check "disk priority set" grep -q '"done":1' <<<"$(post actions/proc/ionice "{\"
 check "it is idle" grep -q idle <<<"$(ionice -p "$sleeper")"
 check "the realtime class is refused" test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$port" -H 'Content-Type: application/json' -d "{\"target\":\"pid:$sleeper:$started\",\"params\":{\"class\":\"realtime\",\"level\":\"0\"}}" "http://127.0.0.1:$port/api/v1/actions/proc/ionice")" = 400
 asuser systemctl --user stop itest-cap.service
+# Broker access again: the e2e section took both away.
+usermod -aG hearth "$user"
+systemd-run --quiet --unit=fakedocker /root/fakedocker
+wait_until 10 test -S /run/docker.sock || fail "fake docker started for limits"
+cat >/etc/polkit-1/rules.d/50-hearth-itest.rules <<'RULES'
+polkit.addRule(function(action, subject) {
+	if (action.id == "org.hearth.docker.control" && subject.user == "tester") {
+		return polkit.Result.YES;
+	}
+});
+RULES
+sleep 1 # polkitd reloads rules on change
 for bad in '{"id":"web","privileged":true}' '{"id":"web","CapAdd":["ALL"]}' '{"id":"web","memory":1}' '{"id":"web","restart":"sometimes"}' '{"id":"web"}'; do
 	check "update refused before polkit: $bad" call_says "bad params\|memory must\|restart must\|nothing to update" docker.containers.update "$bad"
 done
 check "a container limit goes through the broker" call_says '"ok":true' docker.containers.update '{"id":"web","memory":67108864,"nano_cpus":500000000,"restart":"always"}'
 check "the Engine saw it" grep -q 'POST /v1.44/containers/web/update' /run/fakedocker.log
 check "broker audited it" grep -q 'docker.containers.update.*ok' /var/lib/hearth/audit.jsonl
+systemctl stop fakedocker
+rm -f /etc/polkit-1/rules.d/50-hearth-itest.rules
+
+echo "== disk health"
+disk=$(for d in /sys/block/*; do n=${d##*/}; [[ $n =~ ^(sd[a-z]+|nvme[0-9]+n[0-9]+)$ ]] && [ -e "$d/device" ] && echo "$n" && break; done || true)
+check "without smartmontools the broker says so" test -z "$disk" -o -n "$(call_says 'smartmontools is not installed' disk.smart "{\"device\":\"$disk\"}" && echo y)"
+check "the default alert exists" grep -q '"metric":"disk.smart_failing"' <<<"$(pkgs_api alerts/rules)"
+for bad in '{"device":"sda1"}' '{"device":"../../etc/shadow"}' '{"device":"/dev/sda"}' '{"device":"-a"}' '{"device":"loop0"}' '{"device":"sda","x":1}'; do
+	check "disk.smart refused: $bad" call_says "bad params\|whole disk" disk.smart "$bad"
+done
+for bad in '{"device":"sda1","kind":"short"}' '{"device":"sda","kind":"offline"}' '{"device":"sda","kind":"short","force":true}'; do
+	check "disk.selftest refused before polkit: $bad" call_says "bad params\|whole disk\|kind must\|no such disk" disk.selftest "$bad"
+done
+check "self-test policy is present" grep -q 'org.hearth.disk.selftest' "$policy"
+check "the health route answers" grep -q '"status":' <<<"$(pkgs_api disks/health)"
+if [ -n "$disk" ]; then
+	check "disk.selftest refused without polkit authorization" call_says "not authorized" disk.selftest "{\"device\":\"$disk\",\"kind\":\"short\"}"
+	# A stand-in smartctl: this container has no disk the broker may open.
+	install -m 0755 /dev/stdin /usr/sbin/smartctl <<'FAKE'
+#!/bin/bash
+echo "$*" >>/var/lib/hearth/fakesmart.log
+echo '{"device":{"protocol":"ATA"},"model_name":"<b>Fake</b>","serial_number":"SERIALSECRET","smart_status":{"passed":false},"temperature":{"current":33},"power_on_time":{"hours":48}}'
+exit 8
+FAKE
+	check "a read goes through the broker" call_says '"failing":true' disk.smart "{\"device\":\"$disk\"}"
+	check "the serial stays in the broker" not call_says SERIALSECRET disk.smart "{\"device\":\"$disk\"}"
+	check "smartctl got the fixed argv" grep -qx -- "-j -a -n standby /dev/$disk" /var/lib/hearth/fakesmart.log
+	check "broker audited it" grep -q 'disk.smart.*ok' /var/lib/hearth/audit.jsonl
+	rm -f /usr/sbin/smartctl /var/lib/hearth/fakesmart.log
+fi
+gpasswd -d "$user" hearth >/dev/null
 
 echo "== launcher"
 check "hearthd --version is the package's version" test "$(asuser /usr/bin/hearthd --version)" = "$(dpkg-query -W -f='${Version}' hearth)"

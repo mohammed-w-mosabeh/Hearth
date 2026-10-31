@@ -20,6 +20,10 @@ depends:
   - polkitd
   - passwd
 
+# Disk health on the Disks page; without it the page says what to install.
+recommends:
+  - smartmontools
+
 contents:
   - src: bin/hearthd
     dst: /usr/bin/hearthd

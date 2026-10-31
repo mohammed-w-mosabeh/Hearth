@@ -572,3 +572,73 @@ func FuzzDebianSuite(f *testing.F) {
 		}
 	})
 }
+
+func TestDiskName(t *testing.T) {
+	for _, ok := range []string{"sda", "sdz", "sdaa", "sdabc", "nvme0n1", "nvme12n3"} {
+		if err := DiskName(ok); err != nil {
+			t.Errorf("%q refused: %v", ok, err)
+		}
+		if err := WholeDisk("/dev/" + ok); err != nil {
+			t.Errorf("/dev/%q refused: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"", "sda1", "sd", "sdA", "sdabcd", "nvme0", "nvme0n1p1", "nvme0n", "loop0", "sr0", "dm-0", "zram0", "md0",
+		"../sda", "sda/", "sda\n", " sda", "-a", "--scan", "sda;id", "/dev/sda"} {
+		if DiskName(bad) == nil {
+			t.Errorf("DiskName accepted %q", bad)
+		}
+	}
+	for _, bad := range []string{"sda", "/dev/sda1", "/dev/../dev/sda", "/dev//sda", "/dev/sda/", "/etc/shadow", "/dev/mem", "-d", "/dev/nvme0"} {
+		if WholeDisk(bad) == nil {
+			t.Errorf("WholeDisk accepted %q", bad)
+		}
+	}
+}
+
+func TestSmartctlShapes(t *testing.T) {
+	if err := Check("smartctl-read", "-j", "-a", "-n", "standby", "/dev/sda"); err != nil {
+		t.Error(err)
+	}
+	if err := Check("smartctl-test", "-j", "-t", "long", "/dev/nvme0n1"); err != nil {
+		t.Error(err)
+	}
+	for _, a := range [][]string{
+		{"-j", "-a", "/dev/sda"},
+		{"-j", "-a", "-n", "never", "/dev/sda"},
+		{"-j", "-a", "-n", "standby", "/dev/sda1"},
+		{"-j", "-a", "-n", "standby", "/dev/sda", "-d", "sat"},
+		{"-j", "-a", "-n", "standby", "--scan"},
+	} {
+		if Check("smartctl-read", a...) == nil {
+			t.Errorf("smartctl-read accepted %q", a)
+		}
+	}
+	for _, a := range [][]string{
+		{"-j", "-t", "offline", "/dev/sda"},
+		{"-j", "-t", "force", "/dev/sda"},
+		{"-j", "-X", "/dev/sda"},
+		{"-j", "-t", "short", "/dev/mem"},
+		{"-j", "-t", "short", "-s", "off", "/dev/sda"},
+	} {
+		if Check("smartctl-test", a...) == nil {
+			t.Errorf("smartctl-test accepted %q", a)
+		}
+	}
+}
+
+func FuzzDiskName(f *testing.F) {
+	for _, s := range []string{"sda", "nvme0n1", "sda1", "../sda", "-a", "nvme0n1p1", "/dev/sda"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		if DiskName(s) != nil {
+			return
+		}
+		if strings.ContainsAny(s, "/.-\x00\n") || baseCheck(s) != nil {
+			t.Fatalf("accepted %q", s)
+		}
+		if WholeDisk("/dev/"+s) != nil {
+			t.Fatalf("WholeDisk refused accepted name %q", s)
+		}
+	})
+}

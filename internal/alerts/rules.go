@@ -44,6 +44,7 @@ var Metrics = []Metric{
 	{ID: "container.exited", Label: "Container exited unexpectedly", Instance: "container", Max: 1},
 	{ID: "job.failed", Label: "Scheduled job failed", Instance: "job", Max: 1},
 	{ID: "net.new_listener", Label: "New listener on every address", Instance: "listener", Max: 1},
+	{ID: "disk.smart_failing", Label: "Disk reports it is failing (SMART)", Instance: "disk", Max: 1},
 }
 
 func metric(id string) (Metric, bool) {
@@ -145,6 +146,9 @@ func Describe(e store.AlertEvent) (summary, body string) {
 	}
 	if e.Metric == "job.failed" {
 		return e.RuleName, "The scheduled job " + e.Instance + " failed."
+	}
+	if e.Metric == "disk.smart_failing" {
+		return e.RuleName, "Disk " + e.Instance + " reports it is failing. Back up what is on it now."
 	}
 	val := func(v float64) string {
 		if m.Unit == "%" {

@@ -59,6 +59,7 @@ const metricKeys: Record<string, MessageKey> = {
   'container.exited': 'metric.container.exited',
   'job.failed': 'metric.job.failed',
   'net.new_listener': 'metric.net.new_listener',
+  'disk.smart_failing': 'metric.disk.smart_failing',
 };
 const instanceKeys: Record<string, MessageKey> = {
   mount: 'instance.mount',
@@ -68,6 +69,7 @@ const instanceKeys: Record<string, MessageKey> = {
   container: 'instance.container',
   job: 'instance.job',
   listener: 'instance.listener',
+  disk: 'instance.disk',
 };
 
 /** The metric's name in the UI language (the server's English label otherwise). */
@@ -137,6 +139,7 @@ export function conditionText(r: Pick<Rule, 'metric' | 'target' | 'op' | 'thresh
   if (r.metric === 'container.exited') return r.target ? t('alerts.cond.container', { name: r.target }) : t('alerts.cond.anyContainer');
   if (r.metric === 'net.new_listener') return r.target ? t('alerts.cond.listener', { name: r.target }) : t('alerts.cond.anyListener');
   if (r.metric === 'job.failed') return r.target ? t('alerts.cond.job', { name: r.target }) : t('alerts.cond.anyJob');
+  if (r.metric === 'disk.smart_failing') return r.target ? t('alerts.cond.smart', { name: r.target }) : t('alerts.cond.anySmart');
   const where = m?.instance ? ` (${r.target || t('alerts.cond.any', { what: instanceLabel(m) })})` : '';
   const when = r.for_s > 0 ? ` ${forText(r.for_s)}` : '';
   return `${metricLabel(m, r.metric)}${where} ${r.op} ${valueText(r.threshold, m)}${when}`;

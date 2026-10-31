@@ -93,7 +93,7 @@ Phase 5 (Phone link): cancelled, owner decision 2026-10-31.
 - [x] 5.0 Fix launch, stale install, placeholders and versioning: open through the desktop portal (no transient unit, no token in logs), `hearthd open` starts the unit instead of a second server, no placeholder pages, version from `git describe`
 - [x] 5.1 Services: mask/unmask; resource limits through a drop-in override, user units in `~/.config/systemd/user/<unit>.d/hearth.conf`, system units through one closed broker method and an allowlist of directives (S16d)
 - [x] 5.2 Resource caps: MemoryMax/CPUQuota on Hearth-launched transient units and the user's own scopes via `SetUnitProperties` (runtime only), ionice, container memory/CPU limits through an allowlisted broker `docker.containers.update`
-- [ ] 5.3 SMART: broker `smartctl -j -a /dev/<validated whole disk>`, disk health card, short/long self-test and its result, the "SMART failing" default alert
+- [x] 5.3 SMART: broker `smartctl -j -a /dev/<validated whole disk>`, disk health card, short/long self-test and its result, the "SMART failing" default alert
 - [ ] 5.4 Alerts: ntfy (HTTPS only, bounds like S21) and SMTP (TLS required) channels, secrets masked (S19); container event alerts; log-pattern alerts (RE2, length-limited, rate limit and hysteresis)
 - [ ] 5.5 Docker networks and volumes page: size, used-by, remove orphans through preview tokens
 - [ ] 5.6 Restart needed: `/run/reboot-required`, running vs newest kernel, processes using deleted libraries; optional broker `needrestart -b`; on Home and Security posture
