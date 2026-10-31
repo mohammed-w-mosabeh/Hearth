@@ -120,6 +120,7 @@ func Register(reg *actions.Registry, cfg Config) {
 		cfg.JobWait = 30 * time.Second
 	}
 	c := &ctl{cfg: cfg}
+	reg.Register(c.capAction())
 	for _, o := range ops {
 		reg.Register(actions.Action{Kind: "unit", Name: o.name, Risk: o.risk,
 			Validate: func(r actions.Request) error {

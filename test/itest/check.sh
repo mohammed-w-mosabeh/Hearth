@@ -588,6 +588,29 @@ done
 check "Host evil.test refused (WebSocket upgrade)" test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: evil.test' -H "Origin: http://127.0.0.1:$port" -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' -H "Sec-WebSocket-Protocol: hearth.v1, hearth.key.$key" "http://127.0.0.1:$port/api/v1/terminal")" = 403
 check "a rebound page's Origin cannot open a terminal" grep -q 'refused: 403' <<<"$(asuser hearth-termprobe -url "ws://127.0.0.1:$port/api/v1/terminal" -origin "http://evil.test:$port" -key "$key" || true)"
 
+echo "== resource caps"
+asuser systemd-run --user --quiet --unit=itest-cap.service /bin/sleep 300
+check "a user unit is capped" grep -q '"done":1' <<<"$(post actions/unit/cap '{"target":"user/itest-cap.service","params":{"MemoryMax":"64M","CPUQuota":"50%"}}')"
+check "memory applied" test "$(asuser systemctl --user show -p MemoryMax --value itest-cap.service)" = 67108864
+check "CPU applied" test "$(asuser systemctl --user show -p CPUQuotaPerSecUSec --value itest-cap.service)" = 500ms
+check "nothing written to the unit folder" test -z "$(ls /home/$user/.config/systemd/user | grep itest-cap || true)"
+check "clearing removes the cap" grep -q '"done":1' <<<"$(post actions/unit/cap '{"target":"user/itest-cap.service","params":{}}')"
+check "no memory limit left" test "$(asuser systemctl --user show -p MemoryMax --value itest-cap.service)" = infinity
+check "a critical unit is refused" grep -q '"reason":"critical"' <<<"$(post actions/unit/cap '{"target":"user/dbus.service","params":{"MemoryMax":"64M"}}')"
+check "a system unit is refused" test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$port" -H 'Content-Type: application/json' -d '{"target":"system/cron.service","params":{"MemoryMax":"64M"}}' "http://127.0.0.1:$port/api/v1/actions/unit/cap")" = 400
+sleeper=$(asuser systemctl --user show -p MainPID --value itest-cap.service)
+started=$(awk '{print $22}' "/proc/$sleeper/stat")
+check "disk priority set" grep -q '"done":1' <<<"$(post actions/proc/ionice "{\"target\":\"pid:$sleeper:$started\",\"params\":{\"class\":\"idle\"}}")"
+check "it is idle" grep -q idle <<<"$(ionice -p "$sleeper")"
+check "the realtime class is refused" test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$port" -H 'Content-Type: application/json' -d "{\"target\":\"pid:$sleeper:$started\",\"params\":{\"class\":\"realtime\",\"level\":\"0\"}}" "http://127.0.0.1:$port/api/v1/actions/proc/ionice")" = 400
+asuser systemctl --user stop itest-cap.service
+for bad in '{"id":"web","privileged":true}' '{"id":"web","CapAdd":["ALL"]}' '{"id":"web","memory":1}' '{"id":"web","restart":"sometimes"}' '{"id":"web"}'; do
+	check "update refused before polkit: $bad" call_says "bad params\|memory must\|restart must\|nothing to update" docker.containers.update "$bad"
+done
+check "a container limit goes through the broker" call_says '"ok":true' docker.containers.update '{"id":"web","memory":67108864,"nano_cpus":500000000,"restart":"always"}'
+check "the Engine saw it" grep -q 'POST /v1.44/containers/web/update' /run/fakedocker.log
+check "broker audited it" grep -q 'docker.containers.update.*ok' /var/lib/hearth/audit.jsonl
+
 echo "== launcher"
 check "hearthd --version is the package's version" test "$(asuser /usr/bin/hearthd --version)" = "$(dpkg-query -W -f='${Version}' hearth)"
 check "and git describe's" test "$(asuser /usr/bin/hearthd --version)" = "$HEARTH_VERSION"

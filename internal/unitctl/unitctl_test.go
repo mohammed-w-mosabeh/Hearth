@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"sync"
@@ -289,4 +290,65 @@ func TestOverrideValidation(t *testing.T) {
 	if m.Validate(actions.Request{Target: "system/a.service", Params: map[string]string{"x": "y"}}) == nil {
 		t.Error("mask took params")
 	}
+}
+
+func TestCap(t *testing.T) {
+	b := newBus()
+	c := &ctl{cfg: Config{User: func(context.Context) (Bus, error) { return b, nil }}}
+	a := c.capAction()
+	for _, r := range []actions.Request{
+		{Target: "system/cups.service", Params: map[string]string{"MemoryMax": "1G"}},
+		{Target: "user/a.socket", Params: map[string]string{"MemoryMax": "1G"}},
+		{Target: "user/a.service", Params: map[string]string{"MemoryMax": "1M"}},
+		{Target: "user/a.service", Params: map[string]string{"MemoryMax": "50%"}},
+		{Target: "user/a.service", Params: map[string]string{"CPUQuota": "150"}},
+		{Target: "user/a.service", Params: map[string]string{"CPUQuota": "0%"}},
+		{Target: "user/a.service", Params: map[string]string{"TasksMax": "1"}},
+		{Target: "user/a.service", Params: map[string]string{"ExecStart": "/bin/sh"}},
+	} {
+		if a.Validate(r) == nil {
+			t.Errorf("accepted %+v", r)
+		}
+	}
+	r := actions.Request{Target: "user/app-hearth-x@1.service", Params: map[string]string{"MemoryMax": "1G", "CPUQuota": "150%"}}
+	if err := a.Validate(r); err != nil {
+		t.Fatal(err)
+	}
+	p, err := a.Plan(context.Background(), r)
+	if err != nil || len(p.Items) != 1 {
+		t.Fatalf("%+v %v", p, err)
+	}
+	if res, err := a.Run(context.Background(), r, p); err != nil || res.Done != 1 {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if !slices.Equal(b.inter, []string{"SetUnitProperties"}) {
+		t.Fatalf("%v", b.inter)
+	}
+	for _, target := range []string{"user/hearthd.service", "user/dbus.service"} {
+		if p, _ := a.Plan(context.Background(), actions.Request{Target: target}); len(p.Items) != 0 || p.Blocked[0].Reason != ReasonCritical {
+			t.Errorf("%s: %+v", target, p)
+		}
+	}
+}
+
+func TestCapProps(t *testing.T) {
+	props, err := capProps(map[string]string{"MemoryMax": "1G", "CPUQuota": "150%"})
+	if err != nil || props[0].Value.Value() != uint64(1<<30) || props[1].Value.Value() != uint64(1_500_000) {
+		t.Fatalf("%+v %v", props, err)
+	}
+	props, err = capProps(nil)
+	if err != nil || props[0].Value.Value() != uint64(math.MaxUint64) || props[1].Value.Value() != uint64(math.MaxUint64) {
+		t.Fatalf("clearing: %+v %v", props, err)
+	}
+}
+
+func FuzzCapProps(f *testing.F) {
+	f.Add("MemoryMax", "1G")
+	f.Add("CPUQuota", "150%")
+	f.Add("ExecStart", "/bin/sh")
+	f.Fuzz(func(t *testing.T, k, v string) {
+		if _, err := capProps(map[string]string{k: v}); err == nil && k != "MemoryMax" && k != "CPUQuota" {
+			t.Fatalf("accepted %q", k)
+		}
+	})
 }

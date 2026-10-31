@@ -276,6 +276,7 @@ func dockerMethods(d *Docker) []Method {
 		change("docker.containers.restart", ActionDockerControl, stopWait, d.containerAction("restart")),
 		change("docker.containers.pause", ActionDockerControl, 0, d.containerAction("pause")),
 		change("docker.containers.unpause", ActionDockerControl, 0, d.containerAction("unpause")),
+		change("docker.containers.update", ActionDockerControl, 0, d.containerUpdate),
 		change("docker.images.tag", ActionDockerControl, 0, d.imageTag),
 		change("docker.images.pull", ActionDockerControl, 30*time.Minute, d.imagePull),
 

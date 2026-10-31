@@ -222,3 +222,41 @@ func FuzzTarget(f *testing.F) {
 		}
 	})
 }
+
+func TestIOPriority(t *testing.T) {
+	for _, tc := range []struct {
+		p    map[string]string
+		want int
+	}{
+		{map[string]string{"class": "none"}, 0},
+		{map[string]string{"class": "idle"}, 3 << 13},
+		{map[string]string{"class": "best-effort", "level": "7"}, 2<<13 | 7},
+	} {
+		if got, err := ioPriority(tc.p); err != nil || got != tc.want {
+			t.Errorf("%v: %d %v", tc.p, got, err)
+		}
+	}
+	for _, p := range []map[string]string{
+		nil, {"class": "realtime"}, {"class": "realtime", "level": "0"}, {"class": "idle", "level": "1"},
+		{"class": "best-effort"}, {"class": "best-effort", "level": "8"}, {"class": "best-effort", "level": "-1"},
+		{"class": "best-effort", "level": "01"}, {"class": "none", "x": "y"},
+	} {
+		if _, err := ioPriority(p); err == nil {
+			t.Errorf("accepted %v", p)
+		}
+	}
+}
+
+func FuzzIOPriority(f *testing.F) {
+	f.Add("best-effort", "7")
+	f.Add("realtime", "0")
+	f.Fuzz(func(t *testing.T, class, level string) {
+		v, err := ioPriority(map[string]string{"class": class, "level": level})
+		if err != nil {
+			return
+		}
+		if c := v >> ioprioClassShift; c != ioprioClassBE || v&7 != v-c<<ioprioClassShift {
+			t.Fatalf("%q %q -> %d", class, level, v)
+		}
+	})
+}

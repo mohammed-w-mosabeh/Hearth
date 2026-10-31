@@ -218,7 +218,7 @@ func TestDockerHasNoCreateExecOrPassthrough(t *testing.T) {
 	h, f, d := dockerHarness(t, true, nil)
 	for _, m := range []string{
 		"docker.containers.create", "docker.exec", "docker.raw", "docker.request",
-		"docker.containers.update", "docker.containers.archive", "docker.images.build", "docker.images.load",
+		"docker.containers.archive", "docker.images.build", "docker.images.load",
 		"docker.images.push", "docker.volumes.create", "docker.networks.connect", "docker.plugins.install",
 		"docker.swarm.init", "docker.secrets.list",
 	} {

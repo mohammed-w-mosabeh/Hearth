@@ -134,7 +134,7 @@ func (c *ctl) check(action string, refs []collect.ProcRef, browserGroup string) 
 			reason = ReasonSelf
 		case !r.Own:
 			reason = ReasonOtherUser
-		case action != "renice" && action != "resume" && (sessionCritical[r.Name] || critical[r.Group]):
+		case action != "renice" && action != "ionice" && action != "resume" && (sessionCritical[r.Name] || critical[r.Group]):
 			reason = ReasonSession
 		case action == "freeze" && browserGroup != "" && r.Group == browserGroup:
 			reason = ReasonBrowser
@@ -211,6 +211,19 @@ func Register(reg *actions.Registry, cfg Config) {
 		Run: func(_ context.Context, r actions.Request, p actions.Plan) (actions.Result, error) {
 			n, _ := nice(r.Params)
 			return c.each(p, func(pid int, start uint64) error { return c.renice(pid, start, n) }), nil
+		}})
+	reg.Register(actions.Action{Kind: "proc", Name: "ionice", Risk: actions.Reversible,
+		Validate: func(r actions.Request) error {
+			if err := validate(r); err != nil {
+				return err
+			}
+			_, err := ioPriority(r.Params)
+			return err
+		},
+		Plan: plan("ionice"),
+		Run: func(_ context.Context, r actions.Request, p actions.Plan) (actions.Result, error) {
+			v, _ := ioPriority(r.Params)
+			return c.each(p, func(pid int, start uint64) error { return c.ionice(pid, start, v) }), nil
 		}})
 	if cfg.AppGroups != nil {
 		reg.Register(c.closeApp())
@@ -313,6 +326,50 @@ func (c *ctl) renice(pid int, start uint64, n int) error {
 		return errGone
 	}
 	return syscall.Setpriority(syscall.PRIO_PROCESS, pid, n)
+}
+
+// Disk priority classes (ioprio_set(2)). The realtime class needs
+// CAP_SYS_ADMIN, which hearthd never has, so it is not offered.
+const (
+	ioprioClassShift = 13
+	ioprioClassNone  = 0
+	ioprioClassBE    = 2
+	ioprioClassIdle  = 3
+	ioprioWhoProcess = 1
+)
+
+// ioPriority reads {"class": "none"|"idle"|"best-effort", "level": "0".."7"};
+// only best-effort has levels.
+func ioPriority(p map[string]string) (int, error) {
+	bad := errors.New(`params must be {"class": "none"}, {"class": "idle"} or {"class": "best-effort", "level": "0".."7"}`)
+	switch p["class"] {
+	case "none":
+		if len(p) == 1 {
+			return ioprioClassNone << ioprioClassShift, nil
+		}
+	case "idle":
+		if len(p) == 1 {
+			return ioprioClassIdle << ioprioClassShift, nil
+		}
+	case "best-effort":
+		l := p["level"]
+		if n, err := strconv.Atoi(l); err == nil && len(p) == 2 && n >= 0 && n <= 7 && l == strconv.Itoa(n) {
+			return ioprioClassBE<<ioprioClassShift | n, nil
+		}
+	}
+	return 0, bad
+}
+
+// ionice sets the disk priority. Like setpriority it has no pidfd form; the
+// start time is checked immediately before.
+func (c *ctl) ionice(pid int, start uint64, v int) error {
+	if got, err := c.sampler().StartTime(pid); err != nil || got != start {
+		return errGone
+	}
+	if _, _, errno := syscall.Syscall(syscall.SYS_IOPRIO_SET, ioprioWhoProcess, uintptr(pid), uintptr(v)); errno != 0 { // #nosec G115 -- a positive pid
+		return errno
+	}
+	return nil
 }
 
 // browserGroup returns the process group of the browser behind the

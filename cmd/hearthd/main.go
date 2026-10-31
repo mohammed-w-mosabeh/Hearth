@@ -361,6 +361,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	spaceAdvisor.HandleRegister(srv.API)
 	pkgs.RegisterHold(reg, pkgCfg, brokerClient) // apt hold: no PackageKit API, so the broker
 	docker.Register(reg, brokerClient)
+	docker.RegisterLimits(reg, brokerClient)
 	docker.RegisterImages(reg, brokerClient)
 	docker.RegisterProjects(reg, brokerClient)
 	docker.RegisterPrune(reg, brokerClient)

@@ -8,7 +8,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/actions"
@@ -164,4 +166,66 @@ func Running(ctx context.Context, b Broker, id string) (bool, error) {
 		return false, err
 	}
 	return st.Running, nil
+}
+
+// limitParams turns the form's {memory, cpus, restart} into the broker's.
+func limitParams(id string, p map[string]string) (broker.UpdateParams, error) {
+	v := broker.UpdateParams{ID: id}
+	var err error
+	for k, s := range p {
+		switch k {
+		case "memory":
+			v.Memory, err = broker.ParseBytes(s)
+		case "cpus":
+			v.NanoCPUs, err = broker.ParseCPUs(s)
+		case "restart":
+			if !slices.Contains(broker.RestartPolicies, s) {
+				err = errors.New("restart must be no, always, unless-stopped or on-failure")
+			}
+			v.Restart = s
+		default:
+			err = fmt.Errorf("%q cannot be set", k)
+		}
+		if err != nil {
+			return v, err
+		}
+	}
+	if len(p) == 0 {
+		return v, errors.New("nothing to change")
+	}
+	return v, nil
+}
+
+// RegisterLimits adds container/limit (SECURITY S16e).
+func RegisterLimits(reg *actions.Registry, b Broker) {
+	o := op{name: "limit", risk: actions.Reversible}
+	reg.Register(actions.Action{Kind: "container", Name: "limit", Risk: o.risk,
+		Validate: func(r actions.Request) error {
+			if !broker.ValidContainer(r.Target) {
+				return errors.New("target must be a container ID or name")
+			}
+			_, err := limitParams(r.Target, r.Params)
+			return err
+		},
+		Plan: func(ctx context.Context, r actions.Request) (actions.Plan, error) { return plan(ctx, b, o, r.Target) },
+		Run: func(ctx context.Context, r actions.Request, p actions.Plan) (actions.Result, error) {
+			res := actions.Result{Failed: []actions.Blocked{}, Blocked: p.Blocked}
+			if len(p.Items) == 0 {
+				return res, nil
+			}
+			v, err := limitParams(p.Items[0].ID, r.Params)
+			if err != nil {
+				return res, err
+			}
+			if err := b.Call(ctx, "docker.containers.update", v, nil); err != nil {
+				bl, ok := failure(p.Items[0], err)
+				if !ok {
+					return res, brokerError(err)
+				}
+				res.Failed = append(res.Failed, bl)
+				return res, nil
+			}
+			res.Done = 1
+			return res, nil
+		}})
 }

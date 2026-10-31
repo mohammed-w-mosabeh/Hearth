@@ -37,9 +37,10 @@ var answers = map[string]struct {
 	"POST /v1.44/containers/web/start": {204, ""},
 	"DELETE /v1.44/containers/web":     {204, ""},
 	// The rest of a Docker page snapshot.
-	"GET /v1.44/images/json": {200, `[]`},
-	"GET /v1.44/networks":    {200, `[]`},
-	"GET /v1.44/volumes":     {200, `{"Volumes":[]}`},
+	"POST /v1.44/containers/web/update": {200, `{"Warnings":[]}`},
+	"GET /v1.44/images/json":            {200, `[]`},
+	"GET /v1.44/networks":               {200, `[]`},
+	"GET /v1.44/volumes":                {200, `{"Volumes":[]}`},
 }
 
 // hostileFlag, when it exists, adds a container whose name, image, status

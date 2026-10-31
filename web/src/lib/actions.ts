@@ -33,6 +33,14 @@ export interface Result {
 
 export type Params = Record<string, string>;
 
+/** One field of CapDialog. */
+export interface CapField {
+  key: string;
+  label: MessageKey;
+  options?: string[];
+  none?: MessageKey;
+}
+
 function post<T>(kind: string, action: string, body: object): Promise<T> {
   return api<T>(`/actions/${encodeURIComponent(kind)}/${encodeURIComponent(action)}`, {
     method: 'POST',
@@ -52,6 +60,7 @@ const reasons: Record<string, MessageKey> = {
   'other-user': 'reason.otherUser',
   system: 'reason.system',
   self: 'reason.self',
+  critical: 'reason.critical',
   session: 'reason.session',
   browser: 'reason.browser',
   gone: 'reason.gone',

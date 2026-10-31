@@ -1,11 +1,12 @@
 <script lang="ts">
+  import CapDialog from '../components/CapDialog.svelte';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import ContainerDetail from '../components/ContainerDetail.svelte';
   import EmptyState from '../components/EmptyState.svelte';
   import ComposeProjects from '../components/ComposeProjects.svelte';
   import DockerCleanup from '../components/DockerCleanup.svelte';
   import ImagesTable from '../components/ImagesTable.svelte';
-  import { preview, reasonKey, run, type Plan, type Result } from '../lib/actions';
+  import { preview, reasonKey, run, type CapField, type Params, type Plan, type Result } from '../lib/actions';
   import { api, ApiError } from '../lib/api';
   import {
     available,
@@ -129,6 +130,7 @@
     pause: 'docker.op.pause',
     unpause: 'docker.op.unpause',
     remove: 'docker.op.remove',
+    limit: 'docker.op.limit',
   };
   const doneLabels: Record<ContainerOp, MessageKey> = {
     start: 'docker.done.start',
@@ -137,6 +139,7 @@
     pause: 'docker.done.pause',
     unpause: 'docker.done.unpause',
     remove: 'docker.done.remove',
+    limit: 'docker.done.limit',
   };
   const undoOf: Partial<Record<ContainerOp, ContainerOp>> = { stop: 'start', pause: 'unpause' };
 
@@ -210,6 +213,26 @@
     const { c, plan } = pending;
     pending = null;
     await execute('remove', c, plan.token, typed);
+  }
+
+  let limitsOf = $state<Container | null>(null);
+  let limitsError = $state('');
+  const limitFields: CapField[] = [
+    { key: 'memory', label: 'docker.limit.memory' },
+    { key: 'cpus', label: 'docker.limit.cpus' },
+    { key: 'restart', label: 'docker.limit.restart', options: ['no', 'always', 'unless-stopped', 'on-failure'], none: 'docker.limit.keep' },
+  ];
+
+  async function saveLimits(params: Params): Promise<void> {
+    const c = limitsOf;
+    if (!c) return;
+    try {
+      const res = await run('container', 'limit', c.id, params);
+      limitsOf = null;
+      report('limit', c, res);
+    } catch (err) {
+      limitsError = errorText(err);
+    }
   }
 
   function openDetail(c: Container): void {
@@ -363,8 +386,28 @@
     {#each available(c) as op (op)}
       <button type="button" class:danger={op === 'remove'} onclick={() => act(op, c)}>{t(opLabels[op])}</button>
     {/each}
+    {#if c.state !== 'removing'}
+      <button
+        type="button"
+        onclick={() => {
+          menu.hidePopover();
+          limitsError = '';
+          limitsOf = c;
+        }}>{t('docker.op.limit')}</button
+      >
+    {/if}
   {/if}
 </div>
+
+<CapDialog
+  open={limitsOf !== null}
+  title={limitsOf ? t('docker.limit.title', { name: limitsOf.name }) : ''}
+  intro={t('docker.limit.intro')}
+  fields={limitFields}
+  error={limitsError}
+  onsave={saveLimits}
+  oncancel={() => (limitsOf = null)}
+/>
 
 <ConfirmDialog
   plan={pending?.plan ?? null}

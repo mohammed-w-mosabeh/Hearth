@@ -1,6 +1,7 @@
 <script lang="ts">
+  import CapDialog from './CapDialog.svelte';
   import ConfirmDialog from './ConfirmDialog.svelte';
-  import { preview, reasonKey, run, type Blocked, type Plan, type Result } from '../lib/actions';
+  import { preview, reasonKey, run, type Blocked, type CapField, type Params, type Plan, type Result } from '../lib/actions';
   import { ApiError } from '../lib/api';
   import { bytes, pct, rate } from '../lib/format';
   import { toast } from '../lib/toast.svelte';
@@ -64,7 +65,7 @@
   // Actions (ROADMAP 1.9). One shared menu (a popover="auto" panel: top
   // layer, light dismiss, Esc) and one confirmation dialog for all rows.
   type Destructive = 'terminate' | 'kill';
-  type Subject = { target: string; name: string; group: boolean; stopped: boolean };
+  type Subject = { target: string; name: string; group: boolean; stopped: boolean; unit?: string | undefined };
 
   let menu: HTMLDivElement;
   let subject = $state<Subject | null>(null);
@@ -76,6 +77,8 @@
     freeze: 'action.freeze',
     resume: 'action.resume',
     renice: 'action.renice',
+    ionice: 'action.ionice',
+    cap: 'action.cap',
   };
 
   function openMenu(e: MouseEvent, s: Subject): void {
@@ -91,6 +94,28 @@
     const left = Math.min(Math.max(4, r.right - w), innerWidth - w - 4);
     menu.style.top = `${top}px`;
     menu.style.left = `${left}px`;
+  }
+
+  // Caps (ROADMAP 5.2) act on the user's own units, until they end.
+  let capOf = $state<Subject | null>(null);
+  let capError = $state('');
+  const capFields: CapField[] = [
+    { key: 'MemoryMax', label: 'cap.memory' },
+    { key: 'CPUQuota', label: 'cap.cpu' },
+  ];
+  const capUnit = (g: { kind: string; unit?: string }) =>
+    (g.kind === 'app' || g.kind === 'user-service') && g.unit ? g.unit : undefined;
+
+  async function saveCap(params: Params): Promise<void> {
+    const s = capOf;
+    if (!s) return;
+    try {
+      const res = await run('unit', 'cap', `user/${s.unit}`, params);
+      capOf = null;
+      toast(describe('cap', s.name, res), { tone: res.done === 0 ? 'error' : 'info' });
+    } catch (err) {
+      capError = errorText(err);
+    }
   }
 
   function errorText(err: unknown): string {
@@ -206,7 +231,7 @@
                 class="more-btn"
                 aria-label={t('apps.actionsFor', { name: g.name })}
                 onclick={(e) =>
-                  openMenu(e, { target: `group:${g.id}`, name: g.name, group: true, stopped: g.procs.length > 0 && g.procs.every((p) => p.state === 'T') })}
+                  openMenu(e, { target: `group:${g.id}`, name: g.name, group: true, unit: capUnit(g), stopped: g.procs.length > 0 && g.procs.every((p) => p.state === 'T') })}
                 >⋯</button
               >
             </td>
@@ -258,8 +283,33 @@
     <button type="button" onclick={() => act('renice', s, { nice: '0' })}>{t('menu.prioNormal')}</button>
     <button type="button" onclick={() => act('renice', s, { nice: '10' })}>{t('menu.prioLow')}</button>
     <button type="button" onclick={() => act('renice', s, { nice: '19' })}>{t('menu.prioLowest')}</button>
+    <hr />
+    <span class="label">{t('menu.disk')}</span>
+    <button type="button" onclick={() => act('ionice', s, { class: 'none' })}>{t('menu.diskNormal')}</button>
+    <button type="button" onclick={() => act('ionice', s, { class: 'idle' })}>{t('menu.diskIdle')}</button>
+    {#if s.unit}
+      <hr />
+      <button
+        type="button"
+        onclick={() => {
+          menu.hidePopover();
+          capError = '';
+          capOf = s;
+        }}>{t('menu.cap')}</button
+      >
+    {/if}
   {/if}
 </div>
+
+<CapDialog
+  open={capOf !== null}
+  title={capOf ? t('cap.title', { name: capOf.name }) : ''}
+  intro={t('cap.intro')}
+  fields={capFields}
+  error={capError}
+  onsave={saveCap}
+  oncancel={() => (capOf = null)}
+/>
 
 <ConfirmDialog
   plan={pending?.plan ?? null}

@@ -172,7 +172,7 @@ export function exitCode(status: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
-export type ContainerOp = 'start' | 'stop' | 'restart' | 'pause' | 'unpause' | 'remove';
+export type ContainerOp = 'start' | 'stop' | 'restart' | 'pause' | 'unpause' | 'remove' | 'limit';
 
 /** The actions that make sense for a container in its current state. */
 export function available(c: Container): ContainerOp[] {
