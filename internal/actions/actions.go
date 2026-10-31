@@ -159,6 +159,14 @@ func (r *Registry) Register(a Action) {
 	r.actions[key] = a
 }
 
+// Lookup returns the action registered as "kind/name".
+func (r *Registry) Lookup(key string) (Action, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	a, ok := r.actions[key]
+	return a, ok
+}
+
 // body is the request body.
 type body struct {
 	Target  string            `json:"target"`

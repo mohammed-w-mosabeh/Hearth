@@ -67,8 +67,8 @@ func (c *ctl) sampler() *collect.ProcSampler {
 }
 
 var (
-	groupTarget = regexp.MustCompile(`^group:([a-z-]+:?[A-Za-z0-9._@:/ \\-]{0,300}|kernel)$`)
-	pidTarget   = regexp.MustCompile(`^pid:([1-9][0-9]{0,9}):([0-9]{1,20})$`)
+	groupTarget = regexp.MustCompile(`^group:([a-z-]{1,12}:?[A-Za-z0-9._@:/ \\-]{0,300}|kernel)$`)
+	pidTarget   = regexp.MustCompile(`^pid:([1-9][0-9]{0,9}):(0|[1-9][0-9]{0,19})$`)
 )
 
 // target parses "group:<id>" or "pid:<pid>:<start>".

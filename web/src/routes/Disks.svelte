@@ -3,6 +3,8 @@
   import { child, crumbs, exploreRoot, level, usageQuery, type Usage } from '../lib/disks';
   import { bytes, pct, rate } from '../lib/format';
   import { t } from '../lib/i18n';
+  import { href } from '../lib/router.svelte';
+  import { openDir } from '../lib/shell';
   import type { Sample } from '../lib/types';
   import type { Live } from '../lib/ws';
 
@@ -133,6 +135,7 @@
         <button type="button" class="link" onclick={() => open(c.path)}>{c.name}</button>
       {/if}
     {/each}
+    <a class="here" href={href('terminal', openDir(usage?.path ?? path))}>{t('term.here')}</a>
     <button type="button" class="refresh" onclick={() => open(path, true)} disabled={usage?.running}>{t('disks.refresh')}</button>
   </nav>
   {#if error}<p class="note error" role="status">{error}</p>{/if}
@@ -361,8 +364,13 @@
   .sep {
     color: var(--text-muted);
   }
-  .refresh {
+  .here {
     margin-inline-start: auto;
+    font-size: 13px;
+    color: var(--accent);
+  }
+  .refresh {
+    margin-inline-start: var(--space-3);
   }
   .measure {
     font-size: 13px;

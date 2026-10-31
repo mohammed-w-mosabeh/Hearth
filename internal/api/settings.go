@@ -38,7 +38,7 @@ func validateHomeLayout(v json.RawMessage) error {
 	dec := json.NewDecoder(bytes.NewReader(v))
 	dec.DisallowUnknownFields()
 	// null would decode into an empty layout; require an object.
-	if t := bytes.TrimSpace(v); len(t) == 0 || t[0] != '{' || dec.Decode(&l) != nil {
+	if t := bytes.TrimSpace(v); len(t) == 0 || t[0] != '{' || dec.Decode(&l) != nil || !atEnd(dec) {
 		return errors.New(`layout must be {"order": [...], "hidden": [...]}`)
 	}
 	if len(l.Order) > 256 || len(l.Hidden) > 256 {
@@ -52,6 +52,13 @@ func validateHomeLayout(v json.RawMessage) error {
 	return nil
 }
 
+// atEnd reports whether nothing but space follows the decoded value: the
+// value is stored and served as it came, so it must be one JSON value.
+func atEnd(dec *json.Decoder) bool {
+	_, err := dec.Token()
+	return err == io.EOF
+}
+
 // appIDRe matches desktop file IDs ("org.gnome.TextEditor", "Among Us",
 // "appimage.obsidian-1.5.3"): printable, no path separators.
 var appIDRe = regexp.MustCompile(`^[^/\x00-\x1f\x7f]{1,255}$`)
@@ -63,7 +70,7 @@ func validateFavorites(v json.RawMessage) error {
 	}
 	dec := json.NewDecoder(bytes.NewReader(v))
 	dec.DisallowUnknownFields()
-	if t := bytes.TrimSpace(v); len(t) == 0 || t[0] != '{' || dec.Decode(&f) != nil {
+	if t := bytes.TrimSpace(v); len(t) == 0 || t[0] != '{' || dec.Decode(&f) != nil || !atEnd(dec) {
 		return errors.New(`favorites must be {"ids": [...]}`)
 	}
 	if len(f.IDs) > 500 {

@@ -65,7 +65,7 @@
       <p>{body ?? t('confirm.affects', { n: plan.items.length })}</p>
       <ul class="items">
         {#each plan.items.slice(0, SHOW) as it (it.id)}
-          <li><span class="name">{it.name}</span> <span class="muted">{it.id.includes(':') ? it.id.split(':')[1] : (it.detail ?? '')}</span></li>
+          <li><span class="name">{it.name}</span> <span class="muted">{it.id.startsWith('pid:') ? it.id.split(':')[1] : (it.detail ?? '')}</span></li>
         {/each}
         {#if plan.items.length > SHOW}
           <li class="muted">{t('apps.more', { n: plan.items.length - SHOW })}</li>

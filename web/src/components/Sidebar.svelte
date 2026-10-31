@@ -35,6 +35,7 @@
 
 <style>
   nav {
+    position: relative;
     width: var(--sidebar-w);
     height: 100%;
     display: flex;
@@ -44,6 +45,8 @@
     padding: var(--space-3) 0;
     background: var(--surface);
     border-inline-end: 1px solid var(--border);
+    overflow-y: auto;
+    scrollbar-width: none;
   }
   ul {
     list-style: none;
@@ -52,7 +55,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
-    flex: 1;
+    flex: 1 0 auto;
   }
   a,
   .search {

@@ -11,14 +11,19 @@ RestartSec=2s
 # The sandbox below makes $HOME read-only, so create Hearth's directories
 # first. "+" runs this one command outside the sandbox (still as the user).
 ExecStartPre=+/usr/bin/mkdir -p -m 0700 %h/.config/hearth %h/.local/share/hearth
+ExecStartPre=+/usr/bin/mkdir -p %h/.config/systemd/user %h/.config/autostart
 
 # --- Hardening (SECURITY.md "systemd hardening") ---
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=read-only
-# Relaxation: hearthd writes its config/token and database. Uses the XDG
-# defaults; a custom XDG_CONFIG_HOME/XDG_DATA_HOME needs a drop-in.
-ReadWritePaths=%h/.config/hearth %h/.local/share/hearth
+# Relaxation: hearthd writes its config/token and database, and the
+# Scheduler's user jobs (hearth-job-* units in ~/.config/systemd/user; their
+# scripts under ~/.local/share/hearth/jobs), and the Settings page's
+# autostart entries (~/.config/autostart; files are rewritten, never
+# deleted). Uses the XDG defaults; a custom XDG_CONFIG_HOME/XDG_DATA_HOME
+# needs a drop-in.
+ReadWritePaths=%h/.config/hearth %h/.local/share/hearth %h/.config/systemd/user %h/.config/autostart
 PrivateTmp=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
@@ -48,6 +53,8 @@ CPUQuota=10%
 # Relaxation: anything hearthd launches for the user (browser, apps,
 # terminals) would inherit this sandbox, so it is started through
 # `systemd-run --user` in its own unit instead (needs AF_UNIX to the user bus).
+# Terminal shells: hearthd opens the pty (/dev/ptmx exists in the private
+# /dev) and hands only the terminal's fd to a transient user unit over D-Bus.
 
 [Install]
 WantedBy=default.target

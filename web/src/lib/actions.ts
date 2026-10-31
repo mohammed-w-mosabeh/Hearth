@@ -31,7 +31,7 @@ export interface Result {
   blocked: Blocked[];
 }
 
-type Params = Record<string, string>;
+export type Params = Record<string, string>;
 
 function post<T>(kind: string, action: string, body: object): Promise<T> {
   return api<T>(`/actions/${encodeURIComponent(kind)}/${encodeURIComponent(action)}`, {
@@ -55,6 +55,8 @@ const reasons: Record<string, MessageKey> = {
   session: 'reason.session',
   browser: 'reason.browser',
   gone: 'reason.gone',
+  changed: 'reason.changed',
+  refused: 'reason.refused',
   denied: 'reason.denied',
   error: 'reason.error',
   unauthorized: 'reason.unauthorized',
@@ -62,6 +64,15 @@ const reasons: Record<string, MessageKey> = {
   masked: 'reason.masked',
   'no-install': 'reason.noInstall',
   'job-failed': 'reason.jobFailed',
+  'in-use': 'reason.inUse',
+  essential: 'reason.essential',
+  protected: 'reason.protected',
+  required: 'reason.required',
+  manager: 'reason.manager',
+  root: 'reason.root',
+  pip: 'reason.pip',
+  unavailable: 'reason.unavailable',
+  enterprise: 'reason.enterprise',
 };
 
 /** The i18n key explaining why an item was blocked or failed. */

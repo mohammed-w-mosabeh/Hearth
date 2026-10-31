@@ -12,13 +12,15 @@ const maxArgs = 64
 // fields are the values the field codes of an Exec line expand to.
 type fields struct {
 	Name, Icon, Path string // %c, %i, %k
+	URL              string // %u and %U standing alone; "" for none
 }
 
 // parseExec splits a raw Exec value (Desktop Entry Specification 1.5,
 // "The Exec key") into argv and expands its field codes. Hearth passes no
-// files or URLs, so %f %F %u %U expand to nothing; the deprecated codes
-// are removed as the spec asks. Nothing is ever given to a shell: quoting
-// only groups arguments.
+// files, so %f %F expand to nothing; %u %U expand to f.URL, a URL Hearth
+// built itself for a game launch (steam://rungameid/<id>), or to nothing.
+// The deprecated codes are removed as the spec asks. Nothing is ever
+// given to a shell: quoting only groups arguments.
 func parseExec(raw string, f fields) ([]string, error) {
 	words, err := splitExec(unescapeString(raw))
 	if err != nil {
@@ -32,7 +34,13 @@ func parseExec(raw string, f fields) ([]string, error) {
 		}
 		// A field code standing alone may expand to zero or two arguments.
 		switch w.text {
-		case "%f", "%F", "%u", "%U":
+		case "%f", "%F":
+			continue
+		case "%u", "%U":
+			if f.URL != "" {
+				argv = append(argv, f.URL)
+				f.URL = "" // once, even if the line has both
+			}
 			continue
 		case "%i":
 			if f.Icon != "" {

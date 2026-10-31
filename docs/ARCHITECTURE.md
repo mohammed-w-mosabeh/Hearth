@@ -23,7 +23,7 @@ Phone (opt-in, LAN, TLS + paired key) ─────┤
 ```
 
 - **hearthd**: `/usr/bin/hearthd`, unit `/usr/lib/systemd/user/hearthd.service`. Never root (refuses to start if `euid == 0`).
-- **hearth-broker**: `/usr/bin/hearth-broker`, `hearth-broker.socket` at `/run/hearth/broker.sock` mode `0660`, group `hearth`. Speaks a small JSON-RPC over the Unix socket. Checks the caller with `SO_PEERCRED` (uid must be in group `hearth`). Every method is in a static allowlist; destructive methods call polkit `CheckAuthorization` for the caller before acting. No "exec arbitrary command" method exists.
+- **hearth-broker**: `/usr/bin/hearth-broker`, `hearth-broker.socket` at `/run/hearth/broker.sock` mode `0660`, group `hearth`. Speaks a small JSON-RPC over the Unix socket. Checks the caller with `SO_PEERCRED` (uid must be in group `hearth`). Every method is in a static allowlist; destructive methods call polkit `CheckAuthorization` for the caller before acting. No "exec arbitrary command" method exists; the one interactive method, `docker.containers.exec`, runs a fixed `/bin/sh` under SECURITY S12a. Methods are calls (one answer), streams (items until the end) or sessions (items both ways, e.g. terminal input and resize).
 
 ## Directory layout
 
@@ -48,6 +48,7 @@ hearth/
     services/     # systemd D-Bus wrapper
     launch/       # app launch: Exec= parsing, transient app-hearth-<id>@<n>.service via the user manager (D-Bus)
     netinfo/      # sock_diag, interfaces, NM
+    settings/     # Settings page: hostnamed, timedated, logind, NetworkManager, PipeWire (wpctl), autostart
     alerts/       # rules, evaluator, hysteresis, channels
     scheduler/    # systemd timer generator, history from journal
     terminal/     # pty sessions
@@ -79,13 +80,13 @@ hearth/
 
 - **Go**: Go 1.22+ `net/http` routing (`mux.HandleFunc("GET /api/v1/containers", ...)`). Context everywhere, timeouts on every external call (D-Bus 5 s, exec 10 s default). Errors wrapped with `%w`. `log/slog` JSON logs, never log secrets.
 - **os/exec only inside `internal/safeexec`**. `safeexec.Run(ctx, bin, args...)` resolves `bin` against an allowlist of absolute paths, validates each arg with a per-command validator, never uses a shell. A lint rule forbids importing `os/exec` elsewhere.
-- **API**: REST under `/api/v1`, JSON. Live data over one WebSocket `/api/v1/ws` with topic subscriptions (`metrics`, `procs`, `docker.events`, `alerts`, `logs:<id>`, `term:<id>`). Server sends only deltas.
+- **API**: REST under `/api/v1`, JSON. Live data over one WebSocket `/api/v1/ws` with topic subscriptions (`metrics`, `procs`, `docker` (snapshots + events), `alerts`, `logs:<id>`, `term:<id>`). Server sends only deltas.
 - **Actions endpoint**: `POST /api/v1/actions/{kind}/{action}` body `{ "target": "...", "params": {...}, "preview": true|false, "confirm": "<name>" }`. `preview: true` returns what would happen without doing it. Destructive actions without a prior preview token are rejected.
 - **Database**: migrations in `internal/store/migrations/NNNN_*.sql`, applied at start. Tables: `items_override`, `homepage_tiles`, `alert_rules`, `alert_events`, `metrics_1m`, `metrics_1h`, `audit_log`, `jobs`, `profiles`, `devices` (phone), `settings`.
 - **Sampling**: 1 s while a UI client subscribes to live metrics; 15 s otherwise (alerts only). Process sampling only while the processes page is open (or for alert rules that need it).
 - **Discovery**: full scan at start, then incremental via fsnotify / D-Bus signals / Docker `/events`. Debounce bursts (500 ms).
 - **Frontend**: Svelte 5 runes, TypeScript strict. No `{@html}`. All data rendered as text. Route-level code splitting; xterm.js and uPlot lazy-loaded. CSS tokens in `styles/tokens.css`, light/dark via `prefers-color-scheme`.
-- **i18n**: English only (`en.json`); structure allows adding more locales later. Numbers use tabular figures.
+- **i18n**: English only (`en.json`); structure allows adding more locales later. Numbers use tabular figures. For an Arabic (RTL) translation: set `lang` and `dir` on `<html>` (the layout already mirrors; CSS uses logical properties, enforced by `check-forbidden.sh`); wrap numbers with their units in `<bdi>` (`formatted` sizes such as `1.4 MiB` reorder otherwise); replace the fixed `en-GB`/`en-US` date formats in `journal.ts`, Alerts, Scheduler and JobDialog; check strings that join words, such as `→` in `eventDetail`.
 
 ## Design direction
 - Calm dashboard, not a crowded admin panel. One accent color (warm amber), status colors only for status.

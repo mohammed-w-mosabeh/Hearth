@@ -1,0 +1,16 @@
+[Unit]
+Description=Hearth privileged helper socket
+Documentation=https://github.com/mohammed-w-mosabeh/hearth
+
+[Socket]
+# SECURITY S11: only root and members of group hearth can connect; the
+# broker checks every caller again with SO_PEERCRED.
+ListenStream=/run/hearth/broker.sock
+SocketUser=root
+SocketGroup=hearth
+SocketMode=0660
+DirectoryMode=0755
+Accept=no
+
+[Install]
+WantedBy=sockets.target

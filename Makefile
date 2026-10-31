@@ -71,8 +71,9 @@ dev: web ## Run hearthd (isolated .dev/ config) + Vite dev server, both on 127.0
 		cd web && HEARTH_PORT=$(DEV_PORT) npx vite --port 5173
 
 .PHONY: build
-build: web ## Build web + binaries into bin/ (hearth-broker arrives in ROADMAP 2.1)
+build: web ## Build web + binaries into bin/
 	$(GO) build $(GO_BUILD_FLAGS) -o bin/hearthd ./cmd/hearthd
+	$(GO) build $(GO_BUILD_FLAGS) -o bin/hearth-broker ./cmd/hearth-broker
 
 .PHONY: test
 test: web ## go test + vitest
@@ -109,7 +110,10 @@ check: lint test vuln ## lint + test + vuln
 
 .PHONY: itest
 itest: deb ## Install/uninstall the .deb in a Debian 13 container with systemd
-	./test/itest/run.sh $(DEB)
+	CGO_ENABLED=0 $(GO) build $(GO_BUILD_FLAGS) -o dist/itest-fakedocker ./test/itest/fakedocker
+	CGO_ENABLED=0 $(GO) build $(GO_BUILD_FLAGS) -o dist/brokerprobe ./test/pentest/brokerprobe
+	CGO_ENABLED=0 $(GO) build $(GO_BUILD_FLAGS) -o dist/itest-termprobe ./test/itest/termprobe
+	./test/itest/run.sh $(DEB) dist/itest-fakedocker dist/brokerprobe dist/itest-termprobe
 
 .PHONY: bench
 bench: build ## Measure hearthd idle RSS/CPU over BENCH_SECONDS (default 60) against the budget

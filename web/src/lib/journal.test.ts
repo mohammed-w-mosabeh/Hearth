@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_ENTRIES, appendEntries, entryTime, journalQuery, matches, type JournalEntry } from './journal';
+import { MAX_ENTRIES, appendEntries, entryTime, journalQuery, matches, type JournalEntry, journalPageQuery, prioClass, type JournalFilter } from './journal';
 
 const e = (cursor: string, prio = 6, msg = 'hello', ident = 'cupsd'): JournalEntry => ({ cursor, t: 0, prio, msg, ident });
 
@@ -27,5 +27,19 @@ describe('journal', () => {
   it('builds the query', () => {
     expect(journalQuery('system/cups.service', 300, '')).toBe('unit=system%2Fcups.service&lines=300');
     expect(journalQuery('user/a.service', 5, 's=1;i=2')).toBe('unit=user%2Fa.service&lines=5&after=s%3D1%3Bi%3D2');
+  });
+});
+
+describe('journal page', () => {
+  const f: JournalFilter = { text: '', unit: '', scope: 'system', priority: '', hours: 0, boot: '' };
+  it('asks only for what is set', () => {
+    expect(journalPageQuery(f, 0)).toBe('lines=300');
+  });
+  it('builds a full query', () => {
+    const q = new URLSearchParams(journalPageQuery({ text: ' a b ', unit: 'x.service', scope: 'user', priority: '3', hours: 1, boot: 'c' }, 7_200_000, 's=1'));
+    expect(Object.fromEntries(q)).toEqual({ lines: '300', text: 'a b', unit: 'user/x.service', priority: '3', since: '3600', boot: 'c', after: 's=1' });
+  });
+  it('colours by severity', () => {
+    expect([0, 3, 4, 6].map(prioClass)).toEqual(['crit', 'crit', 'warn', '']);
   });
 });

@@ -58,6 +58,18 @@ func Literal(want string) Validator {
 	}
 }
 
+// OneOf returns a validator that accepts exactly one of wants.
+func OneOf(wants ...string) Validator {
+	return func(s string) error {
+		for _, w := range wants {
+			if s == w {
+				return nil
+			}
+		}
+		return invalid("want one of %q, got %q", wants, s)
+	}
+}
+
 var debPackageRe = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]+$`)
 
 // DebPackage validates a Debian package name (Debian Policy 5.6.1).
@@ -67,6 +79,62 @@ func DebPackage(s string) error {
 	}
 	if !debPackageRe.MatchString(s) {
 		return invalid("%q is not a Debian package name", s)
+	}
+	return nil
+}
+
+var debArchRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
+
+// DebPackageArch validates a Debian package name, optionally with
+// ":arch", as dpkg and apt name an installed package.
+func DebPackageArch(s string) error {
+	name, arch, ok := strings.Cut(s, ":")
+	if err := DebPackage(name); err != nil {
+		return err
+	}
+	if ok && !debArchRe.MatchString(arch) {
+		return invalid("%q is not a Debian architecture", arch)
+	}
+	return nil
+}
+
+var programNameRe = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.+-]{0,127}$`)
+
+// ProgramName validates the file name of a program in PATH.
+func ProgramName(s string) error {
+	if err := baseCheck(s); err != nil {
+		return err
+	}
+	if !programNameRe.MatchString(s) {
+		return invalid("%q is not a program name", s)
+	}
+	return nil
+}
+
+var (
+	calendarRe = regexp.MustCompile(`^[A-Za-z0-9*][A-Za-z0-9 ,:.*/~+_-]{0,199}$`)
+	spanRe     = regexp.MustCompile(`^(?:[0-9]{1,9} ?(?:usec|us|msec|ms|seconds|second|sec|s|minutes|minute|min|m|hours|hour|hr|h|days|day|d|weeks|week|w|months|month|M|years|year|y) ?){1,6}$`)
+)
+
+// CalendarExpr checks the characters of a systemd OnCalendar expression
+// (systemd.time(7)); systemd-analyze calendar decides what it means.
+func CalendarExpr(s string) error {
+	if err := baseCheck(s); err != nil {
+		return err
+	}
+	if !calendarRe.MatchString(s) || strings.Contains(s, "  ") || strings.TrimSpace(s) != s {
+		return invalid("%q is not a calendar expression", s)
+	}
+	return nil
+}
+
+// TimeSpan checks a systemd time span ("5min", "1h 30min").
+func TimeSpan(s string) error {
+	if err := baseCheck(s); err != nil {
+		return err
+	}
+	if !spanRe.MatchString(s) || strings.TrimSpace(s) != s {
+		return invalid("%q is not a time span", s)
 	}
 	return nil
 }

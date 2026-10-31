@@ -77,10 +77,15 @@ func TestEveryRouteIsGuarded(t *testing.T) {
 	}
 
 	param := regexp.MustCompile(`\{[^}]+\}`)
+	upgrade := false
 	do := func(method, path, host, origin, bearer string) int {
 		t.Helper()
 		req, _ := http.NewRequestWithContext(context.Background(), method, base+path, strings.NewReader("{}"))
 		req.Header.Set("Content-Type", "application/json")
+		if upgrade {
+			req.Header.Set("Connection", "Upgrade")
+			req.Header.Set("Upgrade", "websocket")
+		}
 		if host != "" {
 			req.Host = host
 		}
@@ -128,6 +133,22 @@ func TestEveryRouteIsGuarded(t *testing.T) {
 			}
 		}
 	}
+	// Any GET route can be asked to upgrade, whether or not it speaks
+	// WebSocket; a foreign or missing Origin never reaches the handler.
+	upgrade = true
+	for _, pat := range append(srv.API.Patterns(), "GET /api/v1/ws") {
+		method, path, _ := strings.Cut(pat, " ")
+		if method != http.MethodGet {
+			continue
+		}
+		path = param.ReplaceAllString(path, "1")
+		for _, origin := range []string{"http://evil.test", ""} {
+			if code := do(method, path, "", origin, key); code != http.StatusForbidden {
+				t.Errorf("%s upgrade with Origin %q: %d, want 403", pat, origin, code)
+			}
+		}
+	}
+	upgrade = false
 	// All typed actions share POST /api/v1/actions/{kind}/{action}.
 	if changing < 6 {
 		t.Fatalf("only %d state-changing routes found: %v", changing, srv.API.Patterns())

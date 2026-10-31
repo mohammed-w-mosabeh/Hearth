@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!-- Privileged actions of hearth-broker (SECURITY S11). Every privileged
+     broker method asks polkit for one of these for the calling process.
+     Docker control and remove are separate so an administrator can relax
+     one with a polkit rule and keep the other. -->
+<policyconfig>
+  <vendor>Hearth</vendor>
+  <vendor_url>https://github.com/mohammed-w-mosabeh/hearth</vendor_url>
+  <action id="org.hearth.broker.manage">
+    <description>Make changes to the system through Hearth</description>
+    <message>Authentication is required to let Hearth change the system</message>
+    <icon_name>preferences-system</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.hearth.docker.control">
+    <description>Start, stop and pause Docker containers, tag and pull images through Hearth</description>
+    <message>Authentication is required to let Hearth control Docker</message>
+    <icon_name>preferences-system</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.hearth.docker.remove">
+    <description>Remove Docker containers, images, networks and volumes through Hearth</description>
+    <message>Authentication is required to let Hearth remove Docker data</message>
+    <icon_name>preferences-system</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.hearth.packages.hold">
+    <description>Hold or unhold Debian packages through Hearth</description>
+    <message>Authentication is required to let Hearth hold or unhold a package</message>
+    <icon_name>system-software-install</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <!-- Root scheduled jobs (SECURITY S13): a job's script runs as root. -->
+  <action id="org.hearth.space.clean">
+    <description>Free disk space through Hearth</description>
+    <message>Authentication is required to let Hearth clean the package cache or the system journal</message>
+    <icon_name>drive-harddisk</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.hearth.jobs.manage">
+    <description>Create, change, run or remove scheduled jobs that run as root through Hearth</description>
+    <message>Authentication is required to manage a scheduled job that runs as root</message>
+    <icon_name>preferences-system</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <!-- A shell inside a container (SECURITY S12a): the password every
+       time, never kept. -->
+  <action id="org.hearth.docker.exec">
+    <description>Open a shell inside a Docker container through Hearth</description>
+    <message>Authentication is required to open a shell inside a container</message>
+    <icon_name>utilities-terminal</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+</policyconfig>

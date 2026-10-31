@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -97,9 +98,26 @@ func (h *Hub) Subscribers(topic string) int {
 	return n
 }
 
+// Topics reports how many clients follow each topic starting with
+// prefix (e.g. "docker.logs:"), for collectors with one topic per object.
+func (h *Hub) Topics(prefix string) map[string]int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := map[string]int{}
+	for c := range h.clients {
+		for t := range c.topics {
+			if strings.HasPrefix(t, prefix) {
+				out[t]++
+			}
+		}
+	}
+	return out
+}
+
 // Watch returns a channel that receives a value whenever the number of
 // subscribers to topic changes, so a collector can switch sampling rate
 // without polling. Sends never block; a pending signal is coalesced.
+// A topic ending in ":" watches every topic with that prefix.
 func (h *Hub) Watch(topic string) <-chan struct{} {
 	ch := make(chan struct{}, 1)
 	h.mu.Lock()
@@ -110,11 +128,17 @@ func (h *Hub) Watch(topic string) <-chan struct{} {
 
 // notifyLocked signals watchers of topic; h.mu must be held.
 func (h *Hub) notifyLocked(topic string) {
-	for _, ch := range h.watchers[topic] {
-		select {
-		case ch <- struct{}{}:
-		default:
+	signal := func(chs []chan struct{}) {
+		for _, ch := range chs {
+			select {
+			case ch <- struct{}{}:
+			default:
+			}
 		}
+	}
+	signal(h.watchers[topic])
+	if i := strings.IndexByte(topic, ':'); i >= 0 {
+		signal(h.watchers[topic[:i+1]])
 	}
 }
 

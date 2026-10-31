@@ -5,6 +5,7 @@ export interface JournalEntry {
   t: number; // Unix ms
   prio: number; // 0 emerg .. 7 debug
   ident?: string;
+  unit?: string;
   pid?: number;
   msg: string;
 }
@@ -46,4 +47,49 @@ export function journalQuery(target: string, lines: number, cursor: string): str
   const q = new URLSearchParams({ unit: target, lines: String(lines) });
   if (cursor) q.set('after', cursor);
   return q.toString();
+}
+
+// --- the whole journal (GET /api/v1/journal) ---
+
+export interface JournalPage {
+  entries: JournalEntry[];
+  next?: string;
+  limited?: boolean;
+}
+
+export interface Boot {
+  id: string;
+  first: number;
+  last: number;
+}
+
+export interface JournalFilter {
+  text: string;
+  unit: string;
+  scope: 'system' | 'user';
+  priority: string;
+  hours: number; // 0 is any time
+  boot: string;
+}
+
+export const PAGE_LINES = 300;
+
+/** Query string for GET /journal; only what is set, so it stays readable. */
+export function journalPageQuery(f: JournalFilter, now: number, after = ''): string {
+  const q = new URLSearchParams({ lines: String(PAGE_LINES) });
+  const text = f.text.trim();
+  const unit = f.unit.trim();
+  if (text) q.set('text', text);
+  if (unit) q.set('unit', `${f.scope}/${unit}`);
+  if (f.priority) q.set('priority', f.priority);
+  if (f.hours > 0) q.set('since', String(Math.floor(now / 1000) - f.hours * 3600));
+  if (f.boot) q.set('boot', f.boot);
+  if (after) q.set('after', after);
+  return q.toString();
+}
+
+/** The severity class of an entry: crit, warn or none. */
+export function prioClass(prio: number): string {
+  if (prio <= 3) return 'crit';
+  return prio === 4 ? 'warn' : '';
 }

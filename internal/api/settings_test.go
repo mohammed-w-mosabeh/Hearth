@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unicode"
 )
 
 type memSettings struct {
@@ -81,4 +82,32 @@ func TestSettings(t *testing.T) {
 	if len(st.m) != 2 {
 		t.Fatalf("store %v", st.m)
 	}
+}
+
+func FuzzSettingValidators(f *testing.F) {
+	for _, s := range []string{`{"order":["cpu","tile:12"],"hidden":[]}`, `null`, `{"ids":["firefox.desktop"]}`, `{"ids":["a/b"]}`, `{"order":["x\n"]}`, `{"x":1}`} {
+		f.Add([]byte(s))
+	}
+	bad := func(ids []string, max int) bool {
+		for _, id := range ids {
+			if id == "" || len(id) > max || strings.ContainsFunc(id, unicode.IsControl) || strings.ContainsRune(id, 0) {
+				return true
+			}
+		}
+		return false
+	}
+	f.Fuzz(func(t *testing.T, b []byte) {
+		if validateHomeLayout(b) == nil {
+			var l struct{ Order, Hidden []string }
+			if json.Unmarshal(b, &l) != nil || len(l.Order) > 256 || len(l.Hidden) > 256 || bad(append(l.Order, l.Hidden...), 200) {
+				t.Fatalf("layout accepted %q", b)
+			}
+		}
+		if validateFavorites(b) == nil {
+			var v struct{ IDs []string }
+			if json.Unmarshal(b, &v) != nil || len(v.IDs) > 500 || bad(v.IDs, 255) || strings.Contains(strings.Join(v.IDs, ""), "/") {
+				t.Fatalf("favorites accepted %q", b)
+			}
+		}
+	})
 }

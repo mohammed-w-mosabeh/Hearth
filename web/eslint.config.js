@@ -21,9 +21,9 @@ export default ts.config(
         localStorage: 'readonly', fetch: 'readonly', WebSocket: 'readonly', URL: 'readonly',
         setTimeout: 'readonly', clearTimeout: 'readonly', console: 'readonly',
         Storage: 'readonly', Location: 'readonly', History: 'readonly',
-        URLSearchParams: 'readonly', ResizeObserver: 'readonly', matchMedia: 'readonly', getComputedStyle: 'readonly',
+        URLSearchParams: 'readonly', Blob: 'readonly', ResizeObserver: 'readonly', matchMedia: 'readonly', getComputedStyle: 'readonly',
         HTMLDivElement: 'readonly', HTMLElement: 'readonly', HTMLDialogElement: 'readonly', HTMLInputElement: 'readonly', MouseEvent: 'readonly', KeyboardEvent: 'readonly',
-        innerHeight: 'readonly', innerWidth: 'readonly', setInterval: 'readonly', clearInterval: 'readonly',
+        innerHeight: 'readonly', innerWidth: 'readonly', setInterval: 'readonly', clearInterval: 'readonly', navigator: 'readonly', TextEncoder: 'readonly', SubmitEvent: 'readonly', Event: 'readonly',
       },
     },
     rules: {

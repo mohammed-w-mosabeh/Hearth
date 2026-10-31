@@ -2,7 +2,10 @@ package safeexec
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode"
@@ -285,6 +288,28 @@ func TestJournalShape(t *testing.T) {
 	}
 }
 
+func FuzzJournalQueryArgs(f *testing.F) {
+	f.Add("--grep=failed", "--unit=cups.service", "--after-cursor=s=8a1b;i=2f")
+	f.Add("--since=@1", "--boot=0123456789abcdef0123456789abcdef", "--priority=3")
+	f.Add("--file=/etc/passwd", "--root=/", "--directory=/tmp")
+	f.Fuzz(func(t *testing.T, a, b, c string) {
+		fixed := append(append([]string{}, JournalQueryFixedArgs...), "--lines=10")
+		args := append(fixed, a, b, c)
+		if journalQueryArgs(args) != nil {
+			return
+		}
+		allowed := []string{"--priority=", "--since=@", "--until=@", "--boot=", "--unit=", "--user-unit=", "--after-cursor=", "--grep="}
+		for _, x := range args[len(fixed):] {
+			if !slices.ContainsFunc(allowed, func(p string) bool { return strings.HasPrefix(x, p) }) {
+				t.Fatalf("accepted %q", x)
+			}
+			if strings.ContainsAny(x, "\x00\n\r") {
+				t.Fatalf("accepted a control character in %q", x)
+			}
+		}
+	})
+}
+
 func FuzzJournalArgs(f *testing.F) {
 	f.Add("200", "cups.service", "s=8a1b;i=2f")
 	f.Fuzz(func(t *testing.T, lines, unit, cursor string) {
@@ -297,6 +322,255 @@ func FuzzJournalArgs(f *testing.F) {
 			if strings.HasPrefix(v, "-") || strings.ContainsAny(v, " \t\n/") {
 				t.Fatalf("accepted %q", a)
 			}
+		}
+	})
+}
+
+func TestDebianSuite(t *testing.T) {
+	runCases(t, DebianSuite, []vcase{
+		{"trixie", true}, {"sid", true},
+		{"", false}, {"-x", false}, {"Trixie", false}, {"trixie-security", false}, {"../x", false}, {"a", false},
+	})
+}
+
+func TestImageRef(t *testing.T) {
+	runCases(t, ImageRef, []vcase{
+		{"nginx", true}, {"nginx:1.27-alpine", true}, {"ghcr.io/photos-app/photos-server:v3", true},
+		{"localhost:5000/app:dev", true}, {"sha256:" + strings.Repeat("a", 64), true},
+		{"", false}, {"-q", false}, {"--input=/etc/shadow", false}, {"Nginx", false}, {"nginx:", false},
+		{"a/../b", false}, {"nginx latest", false}, {"nginx\n", false}, {"nginx@sha256:abc", false},
+		{"/abs", false}, {"a:b:c", false},
+	})
+}
+
+func TestTrivyCacheDir(t *testing.T) {
+	runCases(t, TrivyCacheDir, []vcase{
+		{"--cache-dir=/home/me/.local/share/hearth/trivy", true},
+		{"--cache-dir=relative/hearth/trivy", false}, {"--cache-dir=/home/me/../x/hearth/trivy", false},
+		{"--cache-dir=/tmp", false}, {"/home/me/.local/share/hearth/trivy", false}, {"--cache-dir=", false},
+	})
+}
+
+func TestTrivyArgs(t *testing.T) {
+	ok := []string{"image", "--quiet", "--scanners=vuln", "--timeout=9m", "--format=template",
+		"--template=" + TrivyTemplate, "--cache-dir=/h/.local/share/hearth/trivy", "nginx:latest"}
+	if err := allowlist["trivy-image"].Validate(ok); err != nil {
+		t.Fatal(err)
+	}
+	for i, bad := range [][]string{
+		append(append([]string{}, ok[:7]...), "--server=http://x"),
+		append([]string{"image", "--quiet", "--scanners=vuln,secret"}, ok[3:]...),
+		append(append([]string{}, ok...), "extra"),
+		append(append([]string{}, ok[:5]...), "--template=@/etc/passwd", ok[6], ok[7]),
+	} {
+		if allowlist["trivy-image"].Validate(bad) == nil {
+			t.Errorf("case %d accepted", i)
+		}
+	}
+}
+
+func FuzzImageRef(f *testing.F) {
+	for _, s := range []string{"nginx:1", "ghcr.io/a/b:v", "-q", "a/../b", "x\x00"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		if ImageRef(s) != nil {
+			return
+		}
+		checkAccepted(t, s)
+		if strings.ContainsAny(s, " =@\\") || strings.Contains(s, "..") {
+			t.Fatalf("accepted %q", s)
+		}
+	})
+}
+
+func TestDebPackageArchAndOneOf(t *testing.T) {
+	for _, ok := range []string{"vim", "libc6:amd64", "g++", "libstdc++6:i386"} {
+		if err := DebPackageArch(ok); err != nil {
+			t.Errorf("%q: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"", "-vim", "vim:", "vim:AMD64", "vim:amd64:x", "a b", "vim\x00", ":amd64"} {
+		if err := DebPackageArch(bad); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+	v := OneOf("hold", "unhold")
+	if v("hold") != nil || v("unhold") != nil || v("purge") == nil || v("") == nil {
+		t.Error("OneOf")
+	}
+	if Check("apt-mark-hold", "hold", "vim") != nil || Check("apt-mark-hold", "purge", "vim") == nil ||
+		Check("apt-mark-hold", "hold", "--option=x") == nil || Check("apt-mark-hold", "hold", "vim", "bash") == nil {
+		t.Error("apt-mark-hold spec")
+	}
+}
+
+func TestToolCommands(t *testing.T) {
+	if Check("apropos-all", "-s", "1:8:6", "-l", ".") != nil || Check("apropos-all", "-s", "1:8:6", "-l", "-e") == nil {
+		t.Error("apropos-all")
+	}
+	for _, ok := range []string{"ls", "g++", "python3.13", "x86_64-linux-gnu-gcc"} {
+		if err := Check("man-page", "-P", "cat", "--", ok); err != nil {
+			t.Errorf("man %q: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"-H", "--html=x", "a b", "../x", "/etc/passwd", "x;y", "", "ls\n"} {
+		if Check("man-page", "-P", "cat", "--", bad) == nil {
+			t.Errorf("man %q accepted", bad)
+		}
+	}
+	if Check("man-page", "-P", "sh", "--", "ls") == nil || Check("man-page", "-P", "cat", "ls") == nil {
+		t.Error("man pager or -- not fixed")
+	}
+}
+
+func TestSchedulerCommands(t *testing.T) {
+	if Check("calendar-check", "calendar", "--iterations=5", "--", "Mon..Fri 09:30") != nil ||
+		Check("calendar-check", "calendar", "--iterations=5", "--", "--help") == nil ||
+		Check("calendar-check", "calendar", "--iterations=5", "--", "daily\nx") == nil {
+		t.Error("calendar-check")
+	}
+	if Check("timespan-check", "timespan", "--", "1h 30min") != nil || Check("timespan-check", "timespan", "--", "1h;x") == nil {
+		t.Error("timespan-check")
+	}
+	job := func(args ...string) error {
+		return Check("journalctl-job", append(append([]string{}, JobJournalFixedArgs...), args...)...)
+	}
+	for _, user := range []bool{true, false} {
+		if err := job(JobJournalMatches("hearth-job-0a1b2c3d", user)...); err != nil {
+			t.Errorf("user %v: %v", user, err)
+		}
+	}
+	uid := "_UID=" + strconv.Itoa(os.Getuid())
+	for _, bad := range [][]string{
+		{},
+		{"--unit=hearth-job-0a1b2c3d.service"},
+		{"--user-unit=hearth-job-0a1b2c3d.service"},
+		JobJournalMatches("ssh", false),
+		JobJournalMatches("hearth-job-0A1B2C3D", true),
+		JobJournalMatches("hearth-job-0a1b2c3d", true)[:5],
+		append(JobJournalMatches("hearth-job-0a1b2c3d", true), "+", "_UID=0"),
+		// Another user's entries, or the system's, as a user job's.
+		{"_SYSTEMD_USER_UNIT=hearth-job-0a1b2c3d.service", "_UID=0", "+", "USER_UNIT=hearth-job-0a1b2c3d.service", "_UID=0", "+", "SYSLOG_IDENTIFIER=hearth-job-0a1b2c3d", "_UID=0"},
+		// A root job's output without its _UID pin.
+		{"_SYSTEMD_UNIT=hearth-job-0a1b2c3d.service", "_UID=0", "+", "UNIT=hearth-job-0a1b2c3d.service", "_PID=1", "+", "SYSLOG_IDENTIFIER=hearth-job-0a1b2c3d"},
+		{"_SYSTEMD_USER_UNIT=hearth-job-0a1b2c3d.service", uid, "+", "--directory=/"},
+	} {
+		if job(bad...) == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+	if Check("journalctl-job", append([]string{"--quiet", "--no-pager", "--output=json", "--output-fields=MESSAGE", "--lines=1000"}, JobJournalMatches("hearth-job-0a1b2c3d", true)...)...) == nil {
+		t.Error("other fields accepted")
+	}
+}
+
+func FuzzCalendarExpr(f *testing.F) {
+	for _, s := range []string{"daily", "Mon..Fri 09:30", "-x", "a\nb", "*:0/15"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		if CalendarExpr(s) != nil {
+			return
+		}
+		if strings.ContainsAny(s, "\n\r\x00%$\"'\\;=[]") || strings.HasPrefix(s, "-") || len(s) > 200 {
+			t.Fatalf("accepted %q", s)
+		}
+	})
+}
+
+func FuzzTimeSpan(f *testing.F) {
+	for _, s := range []string{"5min", "1h 30min", "x", "-5min"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		if TimeSpan(s) != nil {
+			return
+		}
+		if strings.ContainsAny(s, "\n\r\x00%$\"'\\;=[]-") || len(s) > 80 {
+			t.Fatalf("accepted %q", s)
+		}
+	})
+}
+
+func FuzzProgramName(f *testing.F) {
+	for _, s := range []string{"ls", "g++", "python3.13", "-H", "../x", "a b", ""} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		if ProgramName(s) != nil {
+			return
+		}
+		if s == "" || len(s) > 128 || strings.HasPrefix(s, "-") || strings.HasPrefix(s, ".") || strings.ContainsAny(s, "/ \t\n\r\x00;$`'\"\\*?") {
+			t.Fatalf("accepted %q", s)
+		}
+	})
+}
+
+func FuzzDebPackageArch(f *testing.F) {
+	for _, s := range []string{"curl", "libc6:amd64", "a:", ":amd64", "-x", "x:y:z", "x:-y"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		if DebPackageArch(s) != nil {
+			return
+		}
+		name, arch, _ := strings.Cut(s, ":")
+		if DebPackage(name) != nil || strings.Count(s, ":") > 1 || strings.HasPrefix(arch, "-") || strings.ContainsAny(s, " /\x00\n=") {
+			t.Fatalf("accepted %q", s)
+		}
+	})
+}
+
+func TestPipeWire(t *testing.T) {
+	for _, ok := range []string{"0.00", "0.75", "1.00", "1.50"} {
+		if Volume(ok) != nil {
+			t.Errorf("volume %q refused", ok)
+		}
+	}
+	for _, bad := range []string{"1.51", "2.00", "-0.10", "0.5", "1", ".50", "0.500", "1e0"} {
+		if Volume(bad) == nil {
+			t.Errorf("volume %q accepted", bad)
+		}
+	}
+	for _, bad := range []string{"", "-1", "@DEFAULT_AUDIO_SINK@", "1234567890", "1 2"} {
+		if PWNodeID(bad) == nil {
+			t.Errorf("node %q accepted", bad)
+		}
+	}
+	if Check("wpctl-set-volume", "set-volume", "59", "0.40") != nil || Check("wpctl-set-volume", "set-volume", "59", "0.40", "--limit") == nil ||
+		Check("pw-dump", "--no-colors") != nil || Check("pw-dump") == nil || Check("wpctl-set-mute", "set-mute", "59", "toggle") == nil {
+		t.Error("wpctl shapes")
+	}
+}
+
+func FuzzVolume(f *testing.F) {
+	f.Add("0.40")
+	f.Fuzz(func(t *testing.T, s string) {
+		if Volume(s) == nil {
+			v, err := strconv.ParseFloat(s, 64)
+			if err != nil || v < 0 || v > 1.5 || len(s) != 4 {
+				t.Fatalf("accepted %q", s)
+			}
+		}
+	})
+}
+
+func FuzzDebianSuite(f *testing.F) {
+	for _, s := range []string{"trixie", "sid", "-x", "a/b", "", "Trixie"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		if DebianSuite(s) != nil {
+			return
+		}
+		for _, r := range s {
+			if r < 'a' || r > 'z' {
+				t.Fatalf("accepted %q", s)
+			}
+		}
+		if len(s) < 2 || len(s) > 16 {
+			t.Fatalf("accepted %q", s)
 		}
 	})
 }

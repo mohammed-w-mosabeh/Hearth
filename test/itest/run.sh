@@ -3,12 +3,16 @@
 # install the .deb, run the checks, purge. The container is --rm.
 set -euo pipefail
 
-deb=${1:?usage: run.sh path/to/hearth.deb}
+usage="usage: run.sh path/to/hearth.deb path/to/fakedocker path/to/brokerprobe path/to/termprobe"
+deb=${1:?$usage}
+fakedocker=${2:?$usage}
+probe=${3:?$usage}
+termprobe=${4:?$usage}
 here=$(cd "$(dirname "$0")" && pwd)
 image=hearth-itest:debian13
 name=hearth-itest-$$
 
-docker build --quiet --tag "$image" "$here" >/dev/null
+docker build --quiet --tag "$image" --file "$here/Dockerfile" "$here/.." >/dev/null
 
 # systemd needs its own cgroup namespace, tmpfs /run, and to mount
 # namespaces for the unit sandbox. No host paths are mounted.
@@ -34,4 +38,7 @@ case $state in running | degraded) ;; *)
 esac
 
 docker cp "$deb" "$name:/root/hearth.deb"
+docker cp "$fakedocker" "$name:/root/fakedocker"
+docker cp "$probe" "$name:/usr/local/bin/hearth-brokerprobe" # run by the test user
+docker cp "$termprobe" "$name:/usr/local/bin/hearth-termprobe"
 docker exec "$name" hearth-itest-check /root/hearth.deb

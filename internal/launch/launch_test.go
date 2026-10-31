@@ -138,7 +138,7 @@ func TestCommand(t *testing.T) {
 	home := filepath.Join(fx.root, "home")
 	cmd := func(id string) (command, error) {
 		a, _ := fx.l.cfg.Apps.App(id)
-		return fx.l.command(a)
+		return fx.l.command(a, "")
 	}
 	c, err := cmd("editor")
 	if err != nil || c.prog != bin+"/editor" || !slices.Equal(c.argv, []string{"editor", "--new"}) || c.dir != fx.root+"/work" || c.name != "Editor" {
@@ -266,4 +266,67 @@ func TestRegister(t *testing.T) {
 		}
 	}()
 	Register(reg, Config{Apps: apps{}})
+}
+
+type games map[string][3]string // id -> name, app ID, URL
+
+func (g games) LaunchTarget(id string) (string, string, string, bool) {
+	v, ok := g[id]
+	return v[0], v[1], v[2], ok
+}
+
+func TestLaunchGame(t *testing.T) {
+	fx := newFixture(t)
+	fx.l.cfg.Games = games{
+		"steam.220":    {"Half-Life 2", "editor", "steam://rungameid/220"},
+		"steam.10":     {"Counter-Strike", "", ""},
+		"steam.20":     {"Gone", "not-an-app", "steam://rungameid/20"},
+		"desktop.mine": {"Mine", "mine", ""},
+		"steam.30":     {"Tool", "appimage.tool", "steam://rungameid/30"},
+	}
+	bus := &fakeBus{result: "done", sigs: make(chan *dbus.Signal, 4)}
+	fx.l.cfg.Bus = func(context.Context) (Bus, error) { return bus, nil }
+	req := actions.Request{Target: "steam.220"}
+	p, err := fx.l.planGame(context.Background(), req)
+	// %U becomes the URL Hearth built, once.
+	if err != nil || p.Items[0].Detail != "editor --new steam://rungameid/220" || p.Summary != "launch Half-Life 2" {
+		t.Fatalf("plan %+v %v", p, err)
+	}
+	if _, err := fx.l.run(context.Background(), req, p); err != nil {
+		t.Fatal(err)
+	}
+	// The unit is the launcher's, so the process view shows it as that app.
+	if !strings.HasPrefix(bus.unit, "app-hearth-editor@") {
+		t.Errorf("unit %s", bus.unit)
+	}
+	if p, err := fx.l.planGame(context.Background(), actions.Request{Target: "steam.30"}); err != nil ||
+		p.Items[0].Detail != fx.root+"/home/Apps/Tool 1.0.AppImage steam://rungameid/30" {
+		t.Errorf("appimage launcher: %+v %v", p, err)
+	}
+	if p, err := fx.l.planGame(context.Background(), actions.Request{Target: "desktop.mine"}); err != nil || p.Items[0].Detail != "mine" {
+		t.Errorf("desktop game: %+v %v", p, err)
+	}
+	for id, want := range map[string]string{"steam.10": "launcher is not installed", "steam.20": "launcher is not installed", "steam.99": "unknown game"} {
+		if _, err := fx.l.planGame(context.Background(), actions.Request{Target: id}); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: %v, want %q", id, err, want)
+		}
+	}
+
+	reg := actions.NewRegistry(nil)
+	Register(reg, Config{Apps: apps{}, Games: games{}})
+}
+
+func TestExecURL(t *testing.T) {
+	for raw, want := range map[string][]string{
+		"steam %U":     {"steam", "steam://rungameid/1"},
+		"lutris %u %U": {"lutris", "steam://rungameid/1"},
+		"flatpak run --file-forwarding x @@u %U @@": {"flatpak", "run", "--file-forwarding", "x", "@@u", "steam://rungameid/1", "@@"},
+		"app %f":   {"app"},
+		`app "%U"`: {"app", "%U"},
+	} {
+		got, err := parseExec(raw, fields{URL: "steam://rungameid/1"})
+		if err != nil || !slices.Equal(got, want) {
+			t.Errorf("%q: %q %v, want %q", raw, got, err, want)
+		}
+	}
 }

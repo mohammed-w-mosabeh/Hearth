@@ -50,9 +50,17 @@ type Apps interface {
 	App(id string) (discovery.App, bool)
 }
 
+// Games says how a game starts (discovery.Games in production): through
+// the desktop app appID, with url for its %u/%U ("" for none).
+type Games interface {
+	LaunchTarget(id string) (name, appID, url string, ok bool)
+}
+
 // Config configures the launcher.
 type Config struct {
 	Apps Apps
+	// Games enables game/launch when set.
+	Games Games
 	// Bus connects to the user's session bus; one connection per launch.
 	Bus  func(ctx context.Context) (Bus, error)
 	Home string
@@ -78,6 +86,8 @@ type command struct {
 	argv []string // argv[0] as the entry wrote it
 	dir  string
 	name string
+	// unitID names the unit; the app's ID ("" means the request target).
+	unitID string
 }
 
 // Register adds app/launch to reg.
@@ -97,6 +107,44 @@ func Register(reg *actions.Registry, cfg Config) {
 			return nil
 		},
 		Plan: l.plan, Run: l.run})
+	if cfg.Games != nil {
+		reg.Register(actions.Action{Kind: "game", Name: "launch", Risk: actions.Safe,
+			Validate: func(r actions.Request) error {
+				if !discovery.ValidGameID(r.Target) || len(r.Params) != 0 {
+					return errors.New(`target must be a game ID and params empty`)
+				}
+				return nil
+			},
+			Plan: l.planGame, Run: l.run})
+	}
+}
+
+// planGame resolves a game to the app it starts through. Steam, Lutris
+// and Heroic games start through their launcher with a URL naming the
+// game; the unit is named after that app, so it shows as the launcher.
+func (l *launcher) planGame(_ context.Context, r actions.Request) (actions.Plan, error) {
+	name, appID, url, ok := l.cfg.Games.LaunchTarget(r.Target)
+	if !ok {
+		return actions.Plan{}, actions.Errorf(http.StatusNotFound, "unknown game")
+	}
+	if appID == "" {
+		return actions.Plan{}, actions.Errorf(http.StatusUnprocessableEntity, "%s cannot be started: its launcher is not installed", name)
+	}
+	a, ok := l.cfg.Apps.App(appID)
+	if !ok {
+		return actions.Plan{}, actions.Errorf(http.StatusUnprocessableEntity, "%s cannot be started: its launcher is not installed", name)
+	}
+	cmd, err := l.command(a, url)
+	if err != nil {
+		return actions.Plan{}, actions.Errorf(http.StatusUnprocessableEntity, "%s cannot be started: %v", name, err)
+	}
+	cmd.name, cmd.unitID = name, a.ID
+	return actions.Plan{
+		Summary: "launch " + name,
+		Items:   []actions.Item{{ID: r.Target, Name: name, Detail: strings.Join(cmd.argv, " ")}},
+		Blocked: []actions.Blocked{},
+		State:   cmd,
+	}, nil
 }
 
 func (l *launcher) plan(_ context.Context, r actions.Request) (actions.Plan, error) {
@@ -104,7 +152,7 @@ func (l *launcher) plan(_ context.Context, r actions.Request) (actions.Plan, err
 	if !ok {
 		return actions.Plan{}, actions.Errorf(http.StatusNotFound, "unknown application")
 	}
-	cmd, err := l.command(a)
+	cmd, err := l.command(a, "")
 	if err != nil {
 		return actions.Plan{}, actions.Errorf(http.StatusUnprocessableEntity, "%s cannot be started: %v", a.Name, err)
 	}
@@ -116,14 +164,17 @@ func (l *launcher) plan(_ context.Context, r actions.Request) (actions.Plan, err
 	}, nil
 }
 
-// command resolves what launching a runs.
-func (l *launcher) command(a discovery.App) (command, error) {
+// command resolves what launching a runs, passing url ("" for none).
+func (l *launcher) command(a discovery.App, url string) (command, error) {
 	var argv []string
 	if a.Source == discovery.SourceAppImage {
 		argv = []string{a.Path} // the file itself; its name is not an Exec line
+		if url != "" {
+			argv = append(argv, url)
+		}
 	} else {
 		var err error
-		if argv, err = parseExec(a.Exec, fields{Name: a.Name, Icon: a.IconName, Path: a.Path}); err != nil {
+		if argv, err = parseExec(a.Exec, fields{Name: a.Name, Icon: a.IconName, Path: a.Path, URL: url}); err != nil {
 			return command{}, err
 		}
 	}
@@ -256,7 +307,11 @@ func (l *launcher) run(ctx context.Context, r actions.Request, p actions.Plan) (
 	if !ok {
 		return actions.Result{}, errors.New("launch: missing plan")
 	}
-	unit, err := unitName(r.Target)
+	id := cmd.unitID
+	if id == "" {
+		id = r.Target
+	}
+	unit, err := unitName(id)
 	if err != nil {
 		return actions.Result{}, actions.Errorf(http.StatusUnprocessableEntity, "%v", err)
 	}

@@ -382,3 +382,15 @@ func TestRealJournal(t *testing.T) {
 	HandleJournal(safeexec.Run, CanReadSystemJournal)(rec, httptest.NewRequest("GET", "/api/v1/services/journal?unit=user/pipewire.service&lines=5", nil))
 	t.Logf("%d %.300s", rec.Code, rec.Body.String())
 }
+
+func TestUnitFilesLeavesOutRuntimeUnits(t *testing.T) {
+	bus := &fakeBus{calls: map[string]int{}, files: []unitFile{
+		{Path: "/usr/lib/systemd/system/cups.service", State: "enabled"},
+		{Path: "/run/systemd/transient/run-1.service", State: "transient"},
+		{Path: "/run/systemd/generator/home.mount", State: "generated"},
+	}}
+	got, err := UnitFiles(context.Background(), bus)
+	if err != nil || len(got) != 1 || got["cups.service"] != "enabled" {
+		t.Fatalf("%v %+v", err, got)
+	}
+}
