@@ -346,3 +346,47 @@ func TestHandlers(t *testing.T) {
 		}
 	}
 }
+
+// Whatever the path, nothing outside what the advisor offers passes.
+func FuzzCheck(f *testing.F) {
+	f.Add("cache", "/home/x/.cache/a")
+	f.Add("large", "/home/x/Videos/a.mkv")
+	f.Add("large", "/home/x/.ssh/id_ed25519")
+	f.Add("large", "/home/x/Videos/../../../etc/passwd")
+	home := f.TempDir()
+	write2 := func(p string) {
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			f.Fatal(err)
+		}
+		if err := os.WriteFile(p, nil, 0o600); err != nil {
+			f.Fatal(err)
+		}
+	}
+	real, err := filepath.EvalSymlinks(home)
+	if err != nil {
+		f.Fatal(err)
+	}
+	write2(filepath.Join(real, ".cache/a/b"))
+	write2(filepath.Join(real, "Videos/a.mkv"))
+	write2(filepath.Join(real, ".ssh/key"))
+	a := New(Config{Home: real})
+	f.Fuzz(func(t *testing.T, target, path string) {
+		// Relative names reach the fixture, so paths exist often.
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(real, path)
+		}
+		if _, _, err := a.check(target, path); err != nil {
+			return
+		}
+		rel, err := filepath.Rel(real, path)
+		if err != nil || rel == "." || strings.HasPrefix(rel, "..") || filepath.Clean(path) != path {
+			t.Fatalf("%q outside the home", path)
+		}
+		if target == "large" && strings.HasPrefix(rel, ".") {
+			t.Fatalf("%q in a hidden folder", path)
+		}
+		if target == "cache" && filepath.Dir(rel) != ".cache" {
+			t.Fatalf("%q not a direct child of the cache", path)
+		}
+	})
+}

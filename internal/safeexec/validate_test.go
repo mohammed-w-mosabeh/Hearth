@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -285,6 +286,28 @@ func TestJournalShape(t *testing.T) {
 			t.Errorf("accepted %q", a)
 		}
 	}
+}
+
+func FuzzJournalQueryArgs(f *testing.F) {
+	f.Add("--grep=failed", "--unit=cups.service", "--after-cursor=s=8a1b;i=2f")
+	f.Add("--since=@1", "--boot=0123456789abcdef0123456789abcdef", "--priority=3")
+	f.Add("--file=/etc/passwd", "--root=/", "--directory=/tmp")
+	f.Fuzz(func(t *testing.T, a, b, c string) {
+		fixed := append(append([]string{}, JournalQueryFixedArgs...), "--lines=10")
+		args := append(fixed, a, b, c)
+		if journalQueryArgs(args) != nil {
+			return
+		}
+		allowed := []string{"--priority=", "--since=@", "--until=@", "--boot=", "--unit=", "--user-unit=", "--after-cursor=", "--grep="}
+		for _, x := range args[len(fixed):] {
+			if !slices.ContainsFunc(allowed, func(p string) bool { return strings.HasPrefix(x, p) }) {
+				t.Fatalf("accepted %q", x)
+			}
+			if strings.ContainsAny(x, "\x00\n\r") {
+				t.Fatalf("accepted a control character in %q", x)
+			}
+		}
+	})
 }
 
 func FuzzJournalArgs(f *testing.F) {

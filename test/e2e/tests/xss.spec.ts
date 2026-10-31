@@ -53,6 +53,10 @@ test.beforeAll(async ({ browser }) => {
   await expect
     .poll(async () => (await page.request.get(`${origin}/api/v1/jobs/user/${id}/history`, { headers: { Authorization: `Bearer ${key}` } })).text(), { timeout: 20_000 })
     .toContain('onerror');
+  const snap = await post('changes/snapshots', { label: PAYLOAD });
+  expect(snap.ok(), await snap.text()).toBeTruthy();
+  const profile = await post('profiles', { name: PAYLOAD, items: [{ kind: 'app', target: 'org.example.Probe', do: 'start' }] });
+  expect(profile.ok(), await profile.text()).toBeTruthy();
   await page.close();
 });
 
@@ -77,6 +81,8 @@ const pages: { name: string; hash: string; text: string }[] = [
   { name: 'Network process name', hash: '#/network?q=7778', text: COMM },
   { name: 'Games name', hash: '#/games', text: PAYLOAD },
   { name: 'Settings autostart entry', hash: '#/settings', text: PAYLOAD },
+  { name: 'Profiles name', hash: '#/profiles', text: PAYLOAD },
+  { name: 'Space advisor cache folder', hash: '#/space', text: PAYLOAD },
 ];
 
 for (const p of pages) {
@@ -94,5 +100,24 @@ test('the job history shows script output as text', async ({ page }) => {
   await page.reload();
   await page.getByRole('button', { name: PAYLOAD, exact: true }).click();
   await expect(page.getByRole('dialog').getByText(PAYLOAD).first()).toBeVisible({ timeout: 15_000 });
+  await noScriptRan(page);
+});
+
+test('the journal shows messages as text', async ({ page }) => {
+  await page.goto(`${origin}/#/journal`);
+  await page.reload();
+  await page.locator('label:has-text("Severity") select').selectOption({ label: 'Everything' });
+  await page.locator('label:has-text("When") select').selectOption({ label: 'Any time' });
+  await page.getByLabel('Search').fill('onerror');
+  await page.getByRole('button', { name: 'Show', exact: true }).click();
+  await expect(page.locator('.entries').getByText(PAYLOAD).first()).toBeVisible();
+  await noScriptRan(page);
+});
+
+test('a snapshot label shows as text', async ({ page }) => {
+  await page.goto(`${origin}/#/changes`);
+  await page.reload();
+  await page.getByRole('radio', { name: 'Snapshots' }).click();
+  await expect(page.locator('.kept').getByText(PAYLOAD)).toBeVisible();
   await noScriptRan(page);
 });

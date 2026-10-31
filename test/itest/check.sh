@@ -512,6 +512,8 @@ check "named after its process" grep -q '"group_name":"\\u003csvg onload\\u003e"
 # An autostart entry named with the payload (Settings page).
 mkdir -p /etc/xdg/autostart
 printf '[Desktop Entry]\nType=Application\nName=%s\nComment=%s\nExec=/bin/true\n' "$xss" "$xss" >/etc/xdg/autostart/hearth-xss.desktop
+# A cache folder named with the payload (Space advisor).
+asuser mkdir -p "/home/$user/.cache/$xss"
 # A Steam game whose name is the payload (VDF escapes its quotes).
 steamapps=/home/$user/.local/share/Steam/steamapps
 asuser mkdir -p "$steamapps"
