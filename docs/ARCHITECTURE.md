@@ -4,14 +4,13 @@
 
 ```
 Browser (PWA) ──127.0.0.1 + session token──┐
-Phone (opt-in, LAN, TLS + paired key) ─────┤
                                            ▼
               hearthd  (user service, systemd --user, runs as the logged-in user)
               ├─ api/        HTTP + WebSocket, auth, CSRF/Origin/Host checks
               ├─ collect/    metrics samplers (cpu, mem, disk, gpu, sensors, net, battery)
               ├─ discovery/  apps, tools, packages, games, docker, services, ports
               ├─ actions/    typed actions with risk levels
-              ├─ alerts/  scheduler/  reports/  terminal/  phone/
+              ├─ alerts/  scheduler/  reports/  terminal/
               └─ store/      SQLite (WAL) + in-memory ring buffers
 - - - - - - - - - - - privilege boundary - - - - - - - - - - -
    kernel (/proc, /sys, hwmon, NVML)   D-Bus system services          hearth-broker (root)
@@ -37,7 +36,7 @@ hearth/
     hearth-broker/main.go
   internal/
     api/          # router, middleware (auth, origin, host, csp, ratelimit), ws hub
-    auth/         # launch token file, bearer session keys, pairing (phone)
+    auth/         # launch token file, bearer session keys
     store/        # sqlite open/migrate, ringbuf, downsampler, audit log
     model/        # Item, Action, Risk, Metric types shared by modules
     collect/      # cpu.go mem.go disk.go gpu_nvml.go gpu_sysfs.go sensors.go net.go battery.go proc.go
@@ -53,7 +52,6 @@ hearth/
     scheduler/    # systemd timer generator, history from journal
     terminal/     # pty sessions
     reports/      # html/md renderers
-    phone/        # kdeconnect protocol (phase 5)
     broker/       # client (hearthd side) + server (broker side) + allowlist
     dbusx/        # small helpers over godbus
     safeexec/     # the ONLY place allowed to call os/exec; validates args
@@ -82,7 +80,7 @@ hearth/
 - **os/exec only inside `internal/safeexec`**. `safeexec.Run(ctx, bin, args...)` resolves `bin` against an allowlist of absolute paths, validates each arg with a per-command validator, never uses a shell. A lint rule forbids importing `os/exec` elsewhere.
 - **API**: REST under `/api/v1`, JSON. Live data over one WebSocket `/api/v1/ws` with topic subscriptions (`metrics`, `procs`, `docker` (snapshots + events), `alerts`, `logs:<id>`, `term:<id>`). Server sends only deltas.
 - **Actions endpoint**: `POST /api/v1/actions/{kind}/{action}` body `{ "target": "...", "params": {...}, "preview": true|false, "confirm": "<name>" }`. `preview: true` returns what would happen without doing it. Destructive actions without a prior preview token are rejected.
-- **Database**: migrations in `internal/store/migrations/NNNN_*.sql`, applied at start. Tables: `items_override`, `homepage_tiles`, `alert_rules`, `alert_events`, `metrics_1m`, `metrics_1h`, `audit_log`, `jobs`, `profiles`, `devices` (phone), `settings`.
+- **Database**: migrations in `internal/store/migrations/NNNN_*.sql`, applied at start. Tables: `items_override`, `homepage_tiles`, `alert_rules`, `alert_events`, `metrics_1m`, `metrics_1h`, `audit_log`, `jobs`, `profiles`, `settings`.
 - **Sampling**: 1 s while a UI client subscribes to live metrics; 15 s otherwise (alerts only). Process sampling only while the processes page is open (or for alert rules that need it).
 - **Discovery**: full scan at start, then incremental via fsnotify / D-Bus signals / Docker `/events`. Debounce bursts (500 ms).
 - **Frontend**: Svelte 5 runes, TypeScript strict. No `{@html}`. All data rendered as text. Route-level code splitting; xterm.js and uPlot lazy-loaded. CSS tokens in `styles/tokens.css`, light/dark via `prefers-color-scheme`.
