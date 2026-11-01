@@ -2,7 +2,7 @@
 
 Single-machine (this Debian laptop) manager + monitor. Everything is auto-discovered on install; nothing has to be added by hand except Homepage entries (entered through a form, with auto-suggestions).
 
-Priority: **P1** = v0.x MVP, **P2** = v1.0, **P3** = after v1.0.
+Priority: **P1** = v0.x MVP, **P2** = v1.0, **P3** = after v1.0. Tags like **(P2, v1.2)** mark features planned for that release (`docs/plan/phases-6-8.md`).
 
 ## Shared concepts
 - **Item**: anything discovered (app, tool, package, container, image, game, service, port...). Has a stable ID (`<kind>:<source>:<native-id>`), so user overrides (rename, description, hide, favorite, tags) survive rescans.
@@ -18,6 +18,8 @@ Priority: **P1** = v0.x MVP, **P2** = v1.0, **P3** = after v1.0.
 ### 1. Home & Quick Views (P1)
 - Draggable card grid: CPU, RAM/swap, each disk, GPU, temperatures, battery, network throughput, latest alerts, Homepage tiles.
 - Cards are hideable/reorderable; layout saved per user.
+- **Health ring** (P2, v1.4): 0–100 from documented deductions (failed units, firing alerts by severity, pending security updates, exposed listeners, disk forecast < 7 days, restart needed, SMART warnings, hardening index drop); clicking it lists exactly which apply, no hidden weighting.
+- **Needs attention** (P2, v1.4): a queue from the same sources, one row per item with its primary action through the existing actions, previews and confirmations; snooze for 24 h.
 
 ### 2. Applications (P1)
 - Sources: `.desktop` files (`/usr/share/applications`, `~/.local/share/applications`, Flatpak exports, `/var/lib/snapd/desktop/applications`), AppImages in `~/Applications`, `~/Downloads`, `~/.local/bin`.
@@ -40,6 +42,7 @@ Priority: **P1** = v0.x MVP, **P2** = v1.0, **P3** = after v1.0.
 - **Images (detailed)**: repo:tag, ID, digest, size (unique vs shared), created, architecture/OS, default user, exposed ports, entrypoint/cmd, env, labels, full layer history with the command per layer, containers using it, "update available" (compare local digest with registry, on demand), optional Trivy vuln scan if installed. Actions: remove (blocked if in use unless forced with confirm), tag, pull latest.
 - **Networks and volumes**: driver, project, used by, volume size; remove an orphan after a preview (the name is typed for a volume).
 - **Compose projects**: grouped by `com.docker.compose.project` label; start/stop/restart whole project; show compose file path.
+- **Compose update** (P2, v1.3): for an existing project, pull and recreate after the image update check; the config is rendered first and anything with an S12 risk refused; the preview shows which services change image digest.
 - **Networks & volumes**: list, size, used-by, remove orphans.
 - **Cleanup**: dangling images, stopped containers, orphan volumes, build cache — show reclaimable size before acting.
 
@@ -48,6 +51,7 @@ Priority: **P1** = v0.x MVP, **P2** = v1.0, **P3** = after v1.0.
 - Each tile: status dot (up/down/unknown), latency, open link, start/stop linked container.
 - **Suggestions**: published container ports and local HTTP listeners appear as grey "Add?" tiles with the form pre-filled. Nothing is added without the user saving the form.
 - Health check: `GET`/`HEAD`, 5 s timeout, no cross-host redirects, every 60 s (only while enabled).
+- **Port and certificate checks** (P2, v1.2): TCP port checks and TLS certificate expiry for tiles, warning 14 days before.
 
 ### 7. Games (P2)
 - Steam (`libraryfolders.vdf`, `appmanifest_*.acf`), Lutris (`pga.db`), Heroic (JSON stores), `.desktop` with `Categories=Game`.
@@ -58,10 +62,14 @@ Priority: **P1** = v0.x MVP, **P2** = v1.0, **P3** = after v1.0.
 - **Processes grouped by application** (by cgroup/systemd scope or desktop app, fallback by executable): CPU, RAM, disk R/W, network, GPU, estimated power.
 - Actions: terminate (SIGTERM), kill (SIGKILL, confirm), freeze/resume (SIGSTOP/SIGCONT), renice/ionice, set memory/CPU cap via cgroup.
 - History retention: 1 s resolution in-memory for 10 min; 1 min for 7 days; 1 h for 1 year (SQLite, downsampled).
+- **Event markers** (P2, v1.2): boots, package upgrades, alerts, profile switches and container restarts on every chart, from the change timeline.
+- **Crashes and OOM** (P2, v1.2): app crashes from systemd-coredump journal entries and kernel OOM kills from the journal, linked to the app, unit or container, with counts over time. Read-only.
 
 ### 9. Disks & battery (P1)
 - Disks: usage per mount, I/O speed, SMART (temp, reallocated sectors, power-on hours, SSD life %, short/long self-test and its result) via broker, folder size explorer.
 - Battery (UPower): %, state, health (full vs design capacity), cycles, discharge rate W, time remaining, 7-day chart, power profile switch (power-profiles-daemon).
+- **Forecasts** (P2, v1.2): "disk full in N days" per mount from the 1 h history (linear fit over 7 and 30 days, shown only when the fit is meaningful); battery wear trend (full vs design capacity over time).
+- **Sleep and power** (P2, v1.2): current logind inhibitors, suspend/resume history from the journal, battery charge threshold (50–100) where the kernel exposes `charge_control_end_threshold`.
 
 ### 10. Services (P1)
 - All systemd units (system + user): state, sub-state, enabled, memory/CPU from cgroup, description.
@@ -74,6 +82,8 @@ Priority: **P1** = v0.x MVP, **P2** = v1.0, **P3** = after v1.0.
 - Active connections, per-interface and per-app throughput, IPs, DNS, gateway, Wi-Fi SSID/signal, VPN state, firewall status (nftables/ufw).
 - Actions: stop owning process/service/container, open in browser if HTTP.
 - **Lineage view ("What is this?")**: port → process → systemd unit → package → container.
+- **Connectivity** (P2, v1.2): periodic checks of gateway, DNS resolution and user-chosen targets (TCP connect, or unprivileged ICMP where `ping_group_range` allows), latency charts, outage log. Data usage per interface per day and month, optional monthly cap for metered connections.
+- **Firewall rules** (P2, v1.3): when ufw is active, list rules and allow/deny/delete a port rule (proto, port, optional source CIDR) with preview; enabling allowed, disabling needs typed confirmation. nftables rule sets stay read-only.
 
 ### 12. Settings (P2)
 - Only via D-Bus: NetworkManager (Wi-Fi, connections), brightness, power profile, audio (PipeWire via `wpctl`), date/time zone (timedated), hostname (hostnamed), autostart apps, reboot/shutdown/suspend (logind).
@@ -91,6 +101,7 @@ Priority: **P1** = v0.x MVP, **P2** = v1.0, **P3** = after v1.0.
 - Defaults: disk > 90%, RAM > 90% for 5 min, CPU > 95% for 3 min, CPU/GPU temp > 90°C for 1 min, battery < 15% discharging, SMART failing, container exited unexpectedly, unit failed, scheduled job failed, new listener on 0.0.0.0.
 - Also: container unhealthy, out-of-memory kill in a container, log line matching a pattern (RE2).
 - Channels: desktop notification (`org.freedesktop.Notifications`), optional ntfy URL, optional SMTP.
+- More rules (P2, v1.2): disk forecast full within 7 days, internet down/back, monthly data cap, new USB device. (P2, v1.3): hardening index drop, integrity watch change.
 
 ### 16. Reports (P2)
 - Machine report (period): resource summary, top consumers, alerts, change timeline, disk/battery health, security posture.
@@ -108,3 +119,20 @@ Priority: **P1** = v0.x MVP, **P2** = v1.0, **P3** = after v1.0.
 - **Sandbox run** (P3): run an unknown script/tool in a throwaway container with no network and a read-only bind of one folder.
 - **Boot analysis**: `systemd-analyze blame` / critical-chain.
 - **Journal viewer** with filters (unit, priority, time, text).
+- **Log explorer** (P2, v1.2): containers and units, RE2 search, level colouring, split view of 2–4 sources, repeated lines grouped with a count. Bounded memory, no persistent log copy.
+- **Lynis** (P2, v1.3): only if installed, on request or a schedule the user sets; warnings and suggestions linked to the affected Hearth page where one exists; hardening index over time.
+- **Integrity watch** (P2, v1.3): baseline hashes of sensitive files the user owns (`~/.ssh/authorized_keys`, `~/.ssh/config`, shell rc files, `~/.config/autostart`, `~/.config/systemd/user`, `~/.local/bin`) and a read-only list of `/etc/sudoers.d` and `/etc/cron.*` names; alert on change, diff for text files the user can read, accept as new baseline.
+- **Access** (P2, v1.3): SSH login successes and failures from the journal (by source and day), active logind sessions, read-only users & groups view flagging members of `sudo` and `docker` (docker group = root).
+
+### 19. Hardware (P2, v1.2)
+- Inventory from sysfs and DMI: CPU, memory, board/BIOS, PCI and USB devices, disks.
+- Firmware devices and available updates via fwupd's D-Bus API; applying an update goes through fwupd's own polkit.
+
+### 20. Local API and CLI (P2, v1.3)
+- `hearth` CLI (`status`, `ports`, `alerts`, `units`, `containers`, `--json`) talking to hearthd on 127.0.0.1 with a separate read-only token.
+- Tokens page: create and revoke read-only tokens. Optional OpenMetrics `/metrics` on the same listener, read-only token required.
+
+### 21. Ember interface (P2, v1.4)
+- Visual and navigation redesign only (`docs/design/ember.md`): warm dark-first tokens, status as colour plus shape, IBM Plex Sans, IBM Plex Sans Arabic and JetBrains Mono.
+- Grouped collapsible rail: Overview, Workloads, System, Automation, Insight & security. Every existing route URL keeps working.
+- Pulse strip on every page; inspector drawer for every list, linkable with `?inspect=<item id>`; inline sparklines; WCAG AA contrast and axe-checked accessibility in LTR and RTL.
