@@ -19,10 +19,11 @@ type Tile struct {
 	Group       string `json:"group"` // "" for none
 	Container   string `json:"container"`
 	HealthCheck bool   `json:"health_check"`
+	CheckPort   int    `json:"check_port"` // 1–65535: connect to this port of the URL's host; 0: check the URL itself
 	Position    int64  `json:"position"`
 }
 
-const tileCols = `id, name, url, description, icon, grp, container, health_check, position`
+const tileCols = `id, name, url, description, icon, grp, container, health_check, check_port, position`
 
 // Tiles returns all tiles in page order.
 func (db *DB) Tiles(ctx context.Context) ([]Tile, error) {
@@ -34,7 +35,7 @@ func (db *DB) Tiles(ctx context.Context) ([]Tile, error) {
 	out := []Tile{}
 	for rows.Next() {
 		var t Tile
-		if err := rows.Scan(&t.ID, &t.Name, &t.URL, &t.Description, &t.Icon, &t.Group, &t.Container, &t.HealthCheck, &t.Position); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.URL, &t.Description, &t.Icon, &t.Group, &t.Container, &t.HealthCheck, &t.CheckPort, &t.Position); err != nil {
 			return nil, fmt.Errorf("store: tiles: %w", err)
 		}
 		out = append(out, t)
@@ -45,9 +46,9 @@ func (db *DB) Tiles(ctx context.Context) ([]Tile, error) {
 // CreateTile inserts t at the end of the page and returns its ID.
 func (db *DB) CreateTile(ctx context.Context, t Tile) (int64, error) {
 	res, err := db.ExecContext(ctx,
-		`INSERT INTO homepage_tiles (name, url, description, icon, grp, container, health_check, position, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM homepage_tiles), ?)`,
-		t.Name, t.URL, t.Description, t.Icon, t.Group, t.Container, t.HealthCheck, time.Now().UnixMilli())
+		`INSERT INTO homepage_tiles (name, url, description, icon, grp, container, health_check, check_port, position, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM homepage_tiles), ?)`,
+		t.Name, t.URL, t.Description, t.Icon, t.Group, t.Container, t.HealthCheck, t.CheckPort, time.Now().UnixMilli())
 	if err != nil {
 		return 0, fmt.Errorf("store: create tile: %w", err)
 	}
@@ -65,9 +66,9 @@ func (db *DB) UpdateTile(ctx context.Context, t Tile) error {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx,
-			`UPDATE homepage_tiles SET name = ?, url = ?, description = ?, icon = ?, grp = ?, container = ?, health_check = ?, updated_at = ?
+			`UPDATE homepage_tiles SET name = ?, url = ?, description = ?, icon = ?, grp = ?, container = ?, health_check = ?, check_port = ?, updated_at = ?
 			 WHERE id = ?`,
-			t.Name, t.URL, t.Description, t.Icon, t.Group, t.Container, t.HealthCheck, time.Now().UnixMilli(), t.ID); err != nil {
+			t.Name, t.URL, t.Description, t.Icon, t.Group, t.Container, t.HealthCheck, t.CheckPort, time.Now().UnixMilli(), t.ID); err != nil {
 			return err
 		}
 		return dropUnusedIcon(ctx, tx, old)

@@ -167,6 +167,9 @@ func TestAPIAndChecker(t *testing.T) {
 		t.Fatalf("bad upload %d", rec.Code)
 	}
 
+	if rec := do("POST", "/api/v1/homepage/tiles", `{"name":"P","url":"http://a/","check_port":70000}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("a bad port: %d", rec.Code)
+	}
 	rec = do("POST", "/api/v1/homepage/tiles", `{"name":" NAS ","url":"`+target.URL+`/","icon":"`+up.Icon+`","group":"Home","health_check":true}`)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create %d %s", rec.Code, rec.Body.String())

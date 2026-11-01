@@ -5,7 +5,7 @@
   import { api, ApiError } from '../lib/api';
   import type { Container, Snapshot } from '../lib/docker';
   import { builtinName, emptyForm, formOf, groupTiles, hostOf, moved, suggestionForm, type HomepageMsg, type Status, type Suggestion, type Tile, type TileForm as Form } from '../lib/homepage';
-  import { t } from '../lib/i18n';
+  import { locale, t } from '../lib/i18n';
   import { toast } from '../lib/toast.svelte';
   import type { Live } from '../lib/ws';
 
@@ -138,8 +138,8 @@
     }
   }
 
-  const stateText = (s: Status | undefined): string =>
-    !s ? t('tile.unknown') : s.state === 'up' ? t('tile.up', { ms: s.latency_ms }) : s.state === 'warn' ? t('tile.warn', { error: s.error ?? '' }) : t('tile.down', { error: s.error ?? '' });
+  const stateText = (s: Status | undefined, port: number): string =>
+    !s ? t('tile.unknown') : s.state === 'up' ? (port > 0 ? t('tile.portUp', { port, ms: s.latency_ms }) : t('tile.up', { ms: s.latency_ms })) : s.state === 'warn' ? t('tile.warn', { error: s.error ?? '' }) : t('tile.down', { error: s.error ?? '' });
 </script>
 
 <section aria-labelledby="tiles-title">
@@ -182,7 +182,7 @@
           </a>
           <div class="foot">
             {#if x.health_check}
-              <span class="dot {s?.state ?? 'unknown'}" aria-hidden="true"></span><span class="muted" role="status">{stateText(s)}</span>
+              <span class="dot {s?.state ?? 'unknown'}" aria-hidden="true"></span><span class="muted" role="status">{stateText(s, x.check_port)}</span>
             {/if}
             {#if c}
               <span class="spacer"></span>
@@ -194,6 +194,9 @@
               {/if}
             {/if}
           </div>
+          {#if s?.cert_expires}
+            <p class="cert muted">{t('tile.certUntil', { date: new Date(s.cert_expires).toLocaleDateString(locale()) })}</p>
+          {/if}
           {#if editing}
             <div class="edit">
               <button type="button" class="mini" aria-label={t('tile.earlier', { name: x.name })} onclick={() => move(x, -1)}>{t('arrow.earlier')}</button>
@@ -365,6 +368,10 @@
   .edit {
     border-top: 1px solid var(--border);
     padding-top: var(--space-2);
+  }
+  .cert {
+    font-size: 12px;
+    margin: 0;
   }
   .dot {
     width: 8px;

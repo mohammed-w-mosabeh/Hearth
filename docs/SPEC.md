@@ -51,7 +51,7 @@ Priority: **P1** = v0.x MVP, **P2** = v1.0, **P3** = after v1.0. Tags like **(P2
 - Each tile: status dot (up/down/unknown), latency, open link, start/stop linked container.
 - **Suggestions**: published container ports and local HTTP listeners appear as grey "Add?" tiles with the form pre-filled. Nothing is added without the user saving the form.
 - Health check: `GET`/`HEAD`, 5 s timeout, no cross-host redirects, every 60 s (only while enabled).
-- **Port and certificate checks** (P2, v1.2): TCP port checks and TLS certificate expiry for tiles, warning 14 days before.
+- **Port and certificate checks** (P2, v1.2): a tile may check a TCP port of its host instead of the page; an https check reports when the certificate ends and warns 14 days before.
 
 ### 7. Games (P2)
 - Steam (`libraryfolders.vdf`, `appmanifest_*.acf`), Lutris (`pga.db`), Heroic (JSON stores), `.desktop` with `Categories=Game`.

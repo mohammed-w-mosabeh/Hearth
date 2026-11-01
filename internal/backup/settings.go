@@ -69,6 +69,7 @@ type Tile struct {
 	Group       string `json:"group"`
 	Container   string `json:"container"`
 	HealthCheck bool   `json:"health_check"`
+	CheckPort   int    `json:"check_port,omitempty"`
 }
 
 // Profile is a profile; profiles match by name. Its game trigger is left
@@ -130,7 +131,7 @@ func fileRule(r store.AlertRule) Rule {
 }
 
 func fileTile(t store.Tile) Tile {
-	return Tile{t.Name, cleanURL(t.URL), t.Description, exportIcon(t.Icon), t.Group, t.Container, t.HealthCheck}
+	return Tile{t.Name, cleanURL(t.URL), t.Description, exportIcon(t.Icon), t.Group, t.Container, t.HealthCheck, t.CheckPort}
 }
 
 // Export builds the settings file.
@@ -324,7 +325,7 @@ func (m *Manager) planTiles(ctx context.Context, f File, c *collector) error {
 	seen := map[string]bool{}
 	for _, t := range f.Tiles {
 		id := "tile:" + t.Name
-		s := store.Tile{Name: t.Name, URL: t.URL, Description: t.Description, Icon: t.Icon, Group: t.Group, Container: t.Container, HealthCheck: t.HealthCheck}
+		s := store.Tile{Name: t.Name, URL: t.URL, Description: t.Description, Icon: t.Icon, Group: t.Group, Container: t.Container, HealthCheck: t.HealthCheck, CheckPort: t.CheckPort}
 		if err := homepage.Validate(ctx, m.cfg.DB, &s); err != nil {
 			c.block(id, t.Name, "invalid", err.Error())
 			continue
@@ -337,6 +338,9 @@ func (m *Manager) planTiles(ctx context.Context, f File, c *collector) error {
 		// A tile opens this address and may be health-checked, so the preview
 		// shows where it leads, not just what it is called.
 		label := s.Name + " (" + cleanURL(s.URL) + ")"
+		if s.CheckPort > 0 {
+			label = s.Name + " (" + cleanURL(s.URL) + ", TCP port " + strconv.Itoa(s.CheckPort) + ")"
+		}
 		i := indexBy(cur, func(x store.Tile) string { return x.Name }, s.Name)
 		if i < 0 {
 			c.add(id, label, "add", func(ctx context.Context) error {

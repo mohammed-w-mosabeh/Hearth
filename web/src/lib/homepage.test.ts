@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { builtinName, groupTiles, hostOf, moved, suggestionForm, urlProblem, type Tile } from './homepage';
+import { builtinName, formOf, groupTiles, hostOf, moved, portOf, suggestionForm, urlProblem, validPort, type Tile } from './homepage';
 
 const tile = (id: number, group: string, position: number): Tile => ({
-  id, name: `t${id}`, url: 'http://x/', description: '', icon: '', group, container: '', health_check: false, position,
+  id, name: `t${id}`, url: 'http://x/', description: '', icon: '', group, container: '', health_check: false, check_port: 0, position,
 });
 
 describe('homepage', () => {
@@ -15,6 +15,19 @@ describe('homepage', () => {
     expect(urlProblem('http://a b/')).toBe('scheme');
     expect(urlProblem('http://me:pw@nas/')).toBe('credentials');
     expect(hostOf('http://nas.local:5000/x')).toBe('nas.local:5000');
+  });
+  it('finds the port a TCP check starts from', () => {
+    expect(portOf('http://nas:8080/x')).toBe(8080);
+    expect(portOf('https://nas/')).toBe(443);
+    expect(portOf('http://nas/')).toBe(80);
+    expect(portOf('nope')).toBe(0);
+  });
+  it('checks ports like the server', () => {
+    for (const n of [1, 22, 65535]) expect(validPort(n)).toBe(true);
+    for (const n of [0, -1, 65536, 1.5, null, undefined]) expect(validPort(n)).toBe(false);
+  });
+  it('keeps the check port in the form', () => {
+    expect(formOf({ ...tile(1, '', 1), check_port: 22 }).check_port).toBe(22);
   });
   it('knows built-in icons only', () => {
     expect(builtinName('builtin:globe')).toBe('globe');
@@ -33,7 +46,7 @@ describe('homepage', () => {
   });
   it('pre-fills the form from a suggestion', () => {
     expect(suggestionForm({ name: 'filestore', url: 'http://127.0.0.1:9000/', source: 'container', container: 'filestore', title: 'Files Console' })).toEqual({
-      name: 'filestore', url: 'http://127.0.0.1:9000/', description: 'Files Console', icon: '', group: '', container: 'filestore', health_check: true,
+      name: 'filestore', url: 'http://127.0.0.1:9000/', description: 'Files Console', icon: '', group: '', container: 'filestore', health_check: true, check_port: 0,
     });
     const f = suggestionForm({ name: 'Jellyfin', url: 'http://127.0.0.1:8096/', source: 'listener', process: 'jellyfin', title: 'Jellyfin' });
     expect(f.description).toBe('');
