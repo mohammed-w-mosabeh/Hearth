@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SleepPower from '../components/SleepPower.svelte';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import { preview, reasonKey, run, type Blocked, type Plan, type Result } from '../lib/actions';
   import { api, ApiError } from '../lib/api';
@@ -448,6 +449,7 @@
         {/each}
       </div>
     {/if}
+    <SleepPower />
   </section>
 
   <!-- Date & time -->

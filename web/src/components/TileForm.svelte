@@ -1,7 +1,7 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
   import { api, ApiError } from '../lib/api';
-  import { BUILTIN_ICONS, builtinName, urlProblem, type TileForm } from '../lib/homepage';
+  import { BUILTIN_ICONS, builtinName, portOf, urlProblem, validPort, type TileForm } from '../lib/homepage';
   import { t } from '../lib/i18n';
 
   // The tile form (SPEC 6): nothing is added or changed until it is saved.
@@ -25,7 +25,9 @@
   } = $props();
 
   let dialog: HTMLDialogElement;
-  let f = $state<TileForm>({ name: '', url: '', description: '', icon: '', group: '', container: '', health_check: true });
+  let f = $state<TileForm>({ name: '', url: '', description: '', icon: '', group: '', container: '', health_check: true, check_port: 0 });
+  let tcp = $state(false); // check a TCP port, not the page
+  let port = $state<number | null>(null);
   let uploaded = $state(''); // data: URI to show
   let uploadedIcon = $state(''); // its "upload:<sha>"
   let error = $state('');
@@ -35,6 +37,8 @@
   $effect(() => {
     if (form && !dialog.open) {
       f = { ...form };
+      tcp = form.check_port > 0;
+      port = form.check_port || null;
       uploaded = iconData ?? '';
       uploadedIcon = form.icon.startsWith('upload:') ? form.icon : '';
       error = '';
@@ -50,7 +54,13 @@
   const problemText = $derived(
     problem === 'credentials' ? t('tile.err.credentials') : problem === 'scheme' ? t('tile.err.scheme') : problem === 'empty' ? t('tile.err.empty') : '',
   );
-  const ready = $derived(f.name.trim() !== '' && problem === null && !busy);
+  const portBad = $derived(f.health_check && tcp && !validPort(port));
+  const ready = $derived(f.name.trim() !== '' && problem === null && !portBad && !busy);
+
+  function chooseTCP(on: boolean): void {
+    tcp = on;
+    if (on && port === null) port = portOf(f.url) || null;
+  }
 
   async function upload(e: Event): Promise<void> {
     const input = e.currentTarget as HTMLInputElement;
@@ -77,7 +87,7 @@
     touchedURL = true;
     if (!ready) return;
     busy = true;
-    const msg = await onsave({ ...f });
+    const msg = await onsave({ ...f, check_port: tcp && validPort(port) ? port : 0 });
     busy = false;
     if (msg) error = msg;
   }
@@ -153,7 +163,19 @@
         <input type="checkbox" bind:checked={f.health_check} />
         {t('tile.health')}
       </label>
-      <p class="hint">{t('tile.healthHint')}</p>
+      {#if f.health_check}
+        <div class="how" role="radiogroup" aria-label={t('tile.checkHow')}>
+          <label class="check"><input type="radio" name="tile-check" checked={!tcp} onchange={() => chooseTCP(false)} /> {t('tile.checkWeb')}</label>
+          <label class="check"><input type="radio" name="tile-check" checked={tcp} onchange={() => chooseTCP(true)} /> {t('tile.checkTCP')}</label>
+          {#if tcp}
+            <label class="port">
+              {t('tile.checkPort')}
+              <input type="number" min="1" max="65535" step="1" bind:value={port} aria-invalid={portBad} />
+            </label>
+          {/if}
+        </div>
+      {/if}
+      <p class="hint">{tcp && f.health_check ? t('tile.tcpHint') : t('tile.healthHint')}</p>
 
       {#if error}<p class="err" role="alert">{error}</p>{/if}
       <div class="buttons">
@@ -194,6 +216,7 @@
   }
   input[type='text'],
   input[type='url'],
+  input[type='number'],
   select {
     font: inherit;
     font-size: 13px;
@@ -248,6 +271,18 @@
     align-items: center;
     gap: var(--space-2);
     margin-bottom: var(--space-1);
+  }
+  .how {
+    margin-block-end: var(--space-1);
+  }
+  .port {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-1);
+  }
+  .port input {
+    width: 7em;
   }
   .hint {
     color: var(--text-muted);

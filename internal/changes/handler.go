@@ -30,13 +30,14 @@ const (
 // Register adds the change timeline routes.
 func (t *Tracker) Register(mux Mux) {
 	mux.HandleFunc("GET /api/v1/changes", t.handleTimeline)
+	mux.HandleFunc("GET /api/v1/markers", t.handleMarkers)
 	mux.HandleFunc("GET /api/v1/changes/snapshots", t.handleSnapshots)
 	mux.HandleFunc("POST /api/v1/changes/snapshots", t.handleTake)
 	mux.HandleFunc("DELETE /api/v1/changes/snapshots/{id}", t.handleDelete)
 	mux.HandleFunc("GET /api/v1/changes/diff", t.handleDiff)
 }
 
-var validSource = map[string]bool{SourcePackages: true, SourceUnits: true, SourceContainers: true, SourceListeners: true, SourceHearth: true}
+var validSource = map[string]bool{SourcePackages: true, SourceUnits: true, SourceContainers: true, SourceListeners: true, SourceHearth: true, SourceSystem: true}
 
 // handleTimeline serves GET /api/v1/changes?before=<ms>&source=a,b&limit=n.
 func (t *Tracker) handleTimeline(w http.ResponseWriter, r *http.Request) {

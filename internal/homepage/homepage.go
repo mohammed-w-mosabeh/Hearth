@@ -1,6 +1,7 @@
 // Package homepage is the Homepage (SPEC 6, ROADMAP 2.9): tiles the user
 // enters through a form, uploaded icons, and a health check of each
-// tile's URL (SECURITY S21) while the page is open.
+// tile's URL or TCP port (SECURITY S21) while the page is open, with the
+// expiry of the certificate an https check meets on its way.
 package homepage
 
 import (
@@ -11,6 +12,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -98,6 +100,11 @@ func validate(ctx context.Context, db Store, t *store.Tile) error {
 	if err := ValidURL(t.URL); err != nil {
 		return err
 	}
+	if t.CheckPort != 0 {
+		if _, err := tcpTarget(t.URL, t.CheckPort); err != nil {
+			return err
+		}
+	}
 	switch {
 	case t.Icon == "" || builtinRe.MatchString(t.Icon):
 	case uploadRe.MatchString(t.Icon):
@@ -110,6 +117,26 @@ func validate(ctx context.Context, db Store, t *store.Tile) error {
 	return nil
 }
 
+// tcpTarget is the host:port a TCP check connects to: the host of a valid
+// tile URL, and a port the user chose.
+func tcpTarget(raw string, port int) (string, error) {
+	if port < 1 || port > 65535 {
+		return "", errors.New("the port to check must be 1–65535")
+	}
+	if err := ValidURL(raw); err != nil {
+		return "", err
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", errors.New("not an address")
+	}
+	target := net.JoinHostPort(u.Hostname(), strconv.Itoa(port))
+	if _, _, err := net.SplitHostPort(target); err != nil { // "http://]" parses as a URL
+		return "", errors.New("the address does not name a host")
+	}
+	return target, nil
+}
+
 // Validate checks a tile as the form does (an imported one, for instance).
 func Validate(ctx context.Context, db Store, t *store.Tile) error {
 	return validate(ctx, db, t)
@@ -119,11 +146,31 @@ func Validate(ctx context.Context, db Store, t *store.Tile) error {
 
 // Status is a tile's last health check.
 type Status struct {
-	State     string `json:"state"` // "up", "down" or "warn" (answers, but its certificate is not trusted)
-	Code      int    `json:"code,omitempty"`
-	LatencyMs int64  `json:"latency_ms"`
-	Error     string `json:"error,omitempty"`
-	Time      int64  `json:"time"` // Unix ms
+	State       string `json:"state"` // "up", "down" or "warn" (answers, but its certificate is untrusted, expired or soon to expire)
+	Code        int    `json:"code,omitempty"`
+	LatencyMs   int64  `json:"latency_ms"`
+	Error       string `json:"error,omitempty"`
+	CertExpires int64  `json:"cert_expires,omitempty"` // Unix ms; the server certificate's end, for https
+	Time        int64  `json:"time"`                   // Unix ms
+}
+
+// certWarn is how long before a certificate ends its tile warns.
+const certWarn = 14 * 24 * time.Hour
+
+// certNote says what is wrong with a certificate ending at end, or "".
+func certNote(end, now time.Time) string {
+	left := end.Sub(now)
+	switch {
+	case left <= 0:
+		return "its certificate has expired"
+	case left >= certWarn:
+		return ""
+	case left < 24*time.Hour:
+		return "its certificate expires within a day"
+	case left < 48*time.Hour:
+		return "its certificate expires in 1 day"
+	}
+	return "its certificate expires in " + strconv.Itoa(int(left/(24*time.Hour))) + " days"
 }
 
 // Checker checks the URLs of tiles with health_check on, every Interval
@@ -206,6 +253,16 @@ func (c *Checker) Check(ctx context.Context, raw string) Status {
 		var cert *tls.CertificateVerificationError
 		if errors.As(err, &cert) {
 			st.State, st.Error = "warn", "its certificate is not trusted"
+			if len(cert.UnverifiedCertificates) > 0 {
+				end := cert.UnverifiedCertificates[0].NotAfter
+				st.CertExpires = end.UnixMilli()
+				switch note := certNote(end, start); {
+				case !end.After(start):
+					st.Error = note
+				case note != "":
+					st.Error = "its certificate is not trusted and " + strings.TrimPrefix(note, "its certificate ")
+				}
+			}
 			return st
 		}
 		st.Error = shortError(err)
@@ -214,11 +271,42 @@ func (c *Checker) Check(ctx context.Context, raw string) Status {
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxHealthBody))
 	_ = resp.Body.Close()
 	st.Code = resp.StatusCode
+	var note string
+	if resp.TLS != nil && len(resp.TLS.PeerCertificates) > 0 {
+		end := resp.TLS.PeerCertificates[0].NotAfter
+		st.CertExpires = end.UnixMilli()
+		note = certNote(end, start)
+	}
 	if resp.StatusCode >= 500 {
 		st.Error = resp.Status
 		return st
 	}
 	st.State = "up" // anything below 500 answers, including a login page (401, 403)
+	if note != "" {
+		st.State, st.Error = "warn", note
+	}
+	return st
+}
+
+// CheckPort checks that port of a tile URL's host takes a TCP connection.
+// It connects and closes, sending nothing (SECURITY S21h).
+func (c *Checker) CheckPort(ctx context.Context, raw string, port int) Status {
+	start := time.Now()
+	st := Status{State: "down", Time: start.UnixMilli()}
+	target, err := tcpTarget(raw, port)
+	if err != nil {
+		st.Error = "invalid address"
+		return st
+	}
+	d := net.Dialer{Timeout: 5 * time.Second}
+	conn, err := d.DialContext(ctx, "tcp", target)
+	st.LatencyMs = time.Since(start).Milliseconds()
+	if err != nil {
+		st.Error = shortError(err)
+		return st
+	}
+	_ = conn.Close()
+	st.State = "up"
 	return st
 }
 
@@ -229,7 +317,7 @@ func shortError(err error) string {
 		return "connection refused"
 	case strings.Contains(s, "no such host"):
 		return "unknown host"
-	case strings.Contains(s, "Client.Timeout") || strings.Contains(s, "deadline exceeded"):
+	case strings.Contains(s, "Client.Timeout") || strings.Contains(s, "deadline exceeded") || strings.Contains(s, "i/o timeout"):
 		return "no answer within 5 s"
 	case strings.Contains(s, "redirect"):
 		return "redirects elsewhere"
@@ -326,6 +414,10 @@ func (c *Checker) round(ctx context.Context) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
+			if t.CheckPort > 0 {
+				results <- result{t.ID, c.CheckPort(ctx, t.URL, t.CheckPort)}
+				return
+			}
 			results <- result{t.ID, c.Check(ctx, t.URL)}
 		}()
 	}

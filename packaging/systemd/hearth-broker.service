@@ -38,6 +38,11 @@ ReadWritePaths=-/var/cache/apt/archives -/var/log/journal
 # unit.override: <unit>.service.d/hearth.conf (S16d). The broker writes no
 # other name there; root owns the directory, so no capability is needed.
 ReadWritePaths=/etc/systemd/system
+# battery.threshold (S16h): charge_control_end_threshold lives under the
+# battery's device in /sys/devices, whose path differs per machine, and
+# ProtectKernelTunables makes /sys read-only. No capability is needed (root
+# owns the file); the method writes that one file, from a validated name.
+ReadWritePaths=-/sys/devices
 ProtectHome=yes
 PrivateTmp=yes
 # Not PrivateDevices=yes: it hides the disks and drops CAP_SYS_RAWIO. The

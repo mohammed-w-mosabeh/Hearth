@@ -156,7 +156,7 @@ func seed(t *testing.T, db *store.DB) {
 	if err := db.PutIcon(ctx, sha, "image/png", []byte("x")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.CreateTile(ctx, store.Tile{Name: "Grafana", URL: "http://g.lan/?token=hunter2&view=2", Icon: "upload:" + sha, HealthCheck: true}); err != nil {
+	if _, err := db.CreateTile(ctx, store.Tile{Name: "Grafana", URL: "http://g.lan/?token=hunter2&view=2", Icon: "upload:" + sha, HealthCheck: true, CheckPort: 3000}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.AddProfile(ctx, store.Profile{Name: "Work", Items: `[{"kind":"unit","target":"user/a.service","do":"start"}]`, AutoGame: true}); err != nil {

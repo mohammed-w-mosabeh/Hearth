@@ -569,6 +569,24 @@ check "named after its process" grep -q '"group_name":"\\u003csvg onload\\u003e"
 # An autostart entry named with the payload (Settings page).
 mkdir -p /etc/xdg/autostart
 printf '[Desktop Entry]\nType=Application\nName=%s\nComment=%s\nExec=/bin/true\n' "$xss" "$xss" >/etc/xdg/autostart/hearth-xss.desktop
+# A crash whose process name is the payload (Journal page), logged the way
+# systemd-coredump does, into the user's own journal.
+printf 'MESSAGE_ID=fc2e22bc6ee647b6b90729ab34a250b1\nMESSAGE=itest crash\nCOREDUMP_COMM=%s\nCOREDUMP_EXE=/tmp/%s\nCOREDUMP_SIGNAL_NAME=SIGSEGV\n' "$xss" "$xss" | asuser logger --journald
+check "the crash report lists it" grep -q 'SIGSEGV' <<<"$(pkgs_api crashes)"
+# Something holding sleep back, named with the payload (Settings page).
+systemd-run --quiet --unit=itest-inhibit /usr/bin/systemd-inhibit --what=sleep --who="$xss" --why="$xss" /bin/sleep 600
+sleep 1
+check "the inhibitor is listed" grep -q 'onerror' <<<"$(pkgs_api power/sleep)"
+# A PCI device named with the payload, through the id file (Hardware page).
+pcidev=$(ls /sys/bus/pci/devices | head -1)
+if [ -n "$pcidev" ]; then
+	v=$(sed 's/^0x//' "/sys/bus/pci/devices/$pcidev/vendor")
+	d=$(sed 's/^0x//' "/sys/bus/pci/devices/$pcidev/device")
+	mkdir -p /usr/share/misc
+	printf '%s  %s\n\t%s  %s\n' "$v" "$xss" "$d" "$xss" >/usr/share/misc/pci.ids
+fi
+check "a PCI device is listed" test -n "$pcidev"
+check "no serial field in the inventory" not grep -qiE '"[a-z_]*(serial|uuid)[a-z_]*":' <<<"$(pkgs_api hardware)"
 # A cache folder named with the payload (Space advisor).
 asuser mkdir -p "/home/$user/.cache/$xss"
 # A Steam game whose name is the payload (VDF escapes its quotes).
@@ -649,6 +667,23 @@ for bad in '{"device":"sda1","kind":"short"}' '{"device":"sda","kind":"offline"}
 done
 check "self-test policy is present" grep -q 'org.hearth.disk.selftest' "$policy"
 check "the health route answers" grep -q '"status":' <<<"$(pkgs_api disks/health)"
+check "charge limit policy is present" grep -q 'org.hearth.battery.threshold' "$policy"
+for bad in '{"battery":"BAT0","end":49}' '{"battery":"BAT0","end":101}' '{"battery":"../../x","end":80}' '{"battery":"NOPE","end":80}' '{"battery":"BAT0","end":80,"x":1}'; do
+	check "battery.threshold refused before polkit: $bad" call_says "bad params\|must be\|no such battery\|not a battery" battery.threshold "$bad"
+done
+check "the sleep route answers" grep -q '"inhibitors":' <<<"$(pkgs_api power/sleep)"
+conn_put() { curl -s -o /dev/null -w '%{http_code}' -X PUT -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$port" -H 'Content-Type: application/json' -d "$1" "http://127.0.0.1:$port/api/v1/connectivity/config"; }
+check "connectivity is off by default" grep -q '"enabled":false' <<<"$(pkgs_api connectivity)"
+check "no check ran before it was turned on" grep -q '"checks":\[\]' <<<"$(pkgs_api connectivity)"
+check "a URL is no connectivity target" test "$(conn_put '{"enabled":true,"targets":[{"host":"http://evil.test"}]}')" = 400
+check "turning it on names a target" test "$(conn_put '{"enabled":true,"targets":[]}')" = 400
+check "connectivity needs the session key" test "$(curl -s -o /dev/null -w '%{http_code}' -X PUT -H "Origin: http://127.0.0.1:$port" -d '{}' "http://127.0.0.1:$port/api/v1/connectivity/config")" = 401
+check "connectivity saves" test "$(conn_put '{"enabled":false,"targets":[{"host":"127.0.0.1","port":'"$port"'}]}')" = 200
+check "the save is audited" grep -q 'connectivity.configure' <<<"$(pkgs_api changes)"
+check "the hardware route answers" grep -q '"pci":' <<<"$(pkgs_api hardware)"
+check "the firmware route says what it found" grep -q '"available":' <<<"$(pkgs_api hardware/firmware)"
+check "the forecast alert exists" grep -q '"metric":"disk.forecast_full"' <<<"$(pkgs_api alerts/rules)"
+check "the forecast route answers" grep -q '"disks":' <<<"$(pkgs_api forecasts)"
 if [ -n "$disk" ]; then
 	check "disk.selftest refused without polkit authorization" call_says "not authorized" disk.selftest "{\"device\":\"$disk\",\"kind\":\"short\"}"
 	# A stand-in smartctl: this container has no disk the broker may open.

@@ -61,6 +61,9 @@ type Monitor struct {
 	// "container.oom". Both come from what is read anyway, not from
 	// Docker's event stream, which would keep the broker from exiting.
 	Report func(ctx context.Context, now time.Time, metric string, values map[string]float64)
+	// Restarted is told of a container whose cgroup was replaced between
+	// two readings, whoever restarted it.
+	Restarted func(ctx context.Context, now time.Time, name string)
 
 	mu      sync.Mutex
 	last    UsageMsg
@@ -141,10 +144,14 @@ func (m *Monitor) sample(ctx context.Context, now time.Time) {
 	}
 	m.mu.Lock()
 	changed := len(found) != len(m.scopes) || now.Sub(m.read) >= refresh
+	var restarted []string
 	for id, s := range found {
 		if old, ok := m.scopes[id]; !ok || old.ino != s.ino {
 			changed = true
 			s.counted = ok // a restart starts a new cgroup from zero
+			if name := m.names[id]; ok && name != "" {
+				restarted = append(restarted, name)
+			}
 		} else {
 			s.usec, s.taken = old.usec, old.taken // keep the previous reading for the rate
 			s.oom, s.counted = old.oom, old.counted
@@ -155,6 +162,11 @@ func (m *Monitor) sample(ctx context.Context, now time.Time) {
 	// than wake the broker on every reading.
 	retry := m.known || m.read.IsZero()
 	m.mu.Unlock()
+	if m.Restarted != nil {
+		for _, name := range restarted {
+			m.Restarted(ctx, now, name)
+		}
+	}
 	if changed && (retry || now.Sub(m.read) >= refresh) {
 		ok := m.refresh(ctx)
 		m.mu.Lock()

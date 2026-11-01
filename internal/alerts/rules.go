@@ -29,6 +29,8 @@ type Metric struct {
 	Hysteresis float64 `json:"hysteresis"`
 	Min        float64 `json:"min"`
 	Max        float64 `json:"max"`
+	// NotifyEnd also notifies when an incident ends.
+	NotifyEnd bool `json:"-"`
 }
 
 // Metrics is the catalog, in the order the UI lists it.
@@ -48,6 +50,10 @@ var Metrics = []Metric{
 	{ID: "container.oom", Label: "Out-of-memory kill in a container", Instance: "container", Max: 1},
 	{ID: LogMetric, Label: "Log line matches a pattern", Instance: "pattern", Max: 1},
 	{ID: "disk.smart_failing", Label: "Disk reports it is failing (SMART)", Instance: "disk", Max: 1},
+	{ID: "disk.forecast_full", Label: "Disk forecast to fill within 7 days", Instance: "mount", Max: 1},
+	{ID: "usb.new_device", Label: "New USB device connected", Instance: "device", Max: 1},
+	{ID: "net.internet_down", Label: "Internet down", Max: 1, NotifyEnd: true},
+	{ID: "net.data_cap", Label: "Monthly data cap reached", Instance: "interface", Max: 1},
 }
 
 func metric(id string) (Metric, bool) {
@@ -142,6 +148,14 @@ func quiet(r store.AlertRule, t time.Time) bool {
 	return now >= from || now < to
 }
 
+// DescribeEnd is the notification text for an incident that ended.
+func DescribeEnd(e store.AlertEvent) (summary, body string) {
+	if e.Metric == "net.internet_down" {
+		return e.RuleName, "The internet is back."
+	}
+	return e.RuleName, "This has ended."
+}
+
 // Describe is the notification text for an incident.
 func Describe(e store.AlertEvent) (summary, body string) {
 	m, _ := metric(e.Metric)
@@ -168,6 +182,18 @@ func Describe(e store.AlertEvent) (summary, body string) {
 	}
 	if e.Metric == "disk.smart_failing" {
 		return e.RuleName, "Disk " + e.Instance + " reports it is failing. Back up what is on it now."
+	}
+	if e.Metric == "usb.new_device" {
+		return e.RuleName, e.Instance + " was connected for the first time."
+	}
+	if e.Metric == "net.internet_down" {
+		return e.RuleName, "The internet cannot be reached from this computer."
+	}
+	if e.Metric == "net.data_cap" {
+		return e.RuleName, e.Instance + " has used its monthly data cap."
+	}
+	if e.Metric == "disk.forecast_full" {
+		return e.RuleName, e.Instance + " is forecast to run out of space within 7 days."
 	}
 	val := func(v float64) string {
 		if m.Unit == "%" {

@@ -4,7 +4,7 @@
 import { bytes, celsius, mhz, pct, rate, rpm, watts } from './format';
 import { t, type MessageKey } from './i18n';
 
-export type Unit = 'pct' | 'bytes' | 'rate' | 'c' | 'mhz' | 'w' | 'rpm' | 'load';
+export type Unit = 'pct' | 'bytes' | 'rate' | 'c' | 'mhz' | 'w' | 'rpm' | 'load' | 'ms';
 
 export interface ChartSpec {
   id: string;
@@ -53,6 +53,8 @@ export function format(unit: Unit, v: number): string {
   switch (unit) {
     case 'pct':
       return pct(v);
+    case 'ms':
+      return `${v.toFixed(1)} ms`;
     case 'bytes':
       return bytes(v);
     case 'rate':

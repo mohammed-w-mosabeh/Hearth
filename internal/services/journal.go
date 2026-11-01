@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"strconv"
@@ -36,6 +37,24 @@ type Journal struct {
 
 // Runner runs an allowlisted command (safeexec.Run in production).
 type Runner func(ctx context.Context, name string, args ...string) (safeexec.Result, error)
+
+// ReadUnit returns the newest entries of "<scope>/<unit>", oldest first.
+func ReadUnit(ctx context.Context, run Runner, target string, lines int) (entries []Entry, truncated bool, err error) {
+	scope, unit, ok := strings.Cut(target, "/")
+	if !ok || (scope != ScopeSystem && scope != ScopeUser) {
+		return nil, false, errors.New("not a unit")
+	}
+	flag := "--unit="
+	if scope == ScopeUser {
+		flag = "--user-unit="
+	}
+	args := append(append([]string{}, safeexec.JournalFixedArgs...), "--lines="+strconv.Itoa(lines), flag+unit)
+	res, err := run(ctx, "journalctl-unit", args...)
+	if err != nil {
+		return nil, false, err
+	}
+	return parseJournal(res.Stdout, res.Truncated), res.Truncated, nil
+}
 
 // HandleJournal serves GET /api/v1/services/journal?unit=<scope>/<unit>
 // [&lines=N][&after=<cursor>]: the unit's newest entries, oldest first.

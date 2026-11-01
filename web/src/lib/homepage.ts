@@ -9,6 +9,7 @@ export interface Tile {
   group: string;
   container: string;
   health_check: boolean;
+  check_port: number; // 1–65535: TCP connect to the URL's host; 0: web check of the URL
   position: number;
   icon_data?: string; // data: URI of an uploaded icon
 }
@@ -18,6 +19,7 @@ export interface Status {
   code?: number;
   latency_ms: number;
   error?: string;
+  cert_expires?: number; // Unix ms, for https
   time: number;
 }
 
@@ -32,15 +34,16 @@ export interface TileForm {
   group: string;
   container: string;
   health_check: boolean;
+  check_port: number;
 }
 
 export function emptyForm(): TileForm {
-  return { name: '', url: '', description: '', icon: '', group: '', container: '', health_check: true };
+  return { name: '', url: '', description: '', icon: '', group: '', container: '', health_check: true, check_port: 0 };
 }
 
 export function formOf(t: Tile): TileForm {
-  const { name, url, description, icon, group, container, health_check } = t;
-  return { name, url, description, icon, group, container, health_check };
+  const { name, url, description, icon, group, container, health_check, check_port } = t;
+  return { name, url, description, icon, group, container, health_check, check_port };
 }
 
 /** A service hearthd found (GET /homepage/suggestions); never saved by itself. */
@@ -85,6 +88,21 @@ export function urlProblem(s: string): 'empty' | 'scheme' | 'credentials' | null
   if ((u.protocol !== 'http:' && u.protocol !== 'https:') || u.hostname === '') return 'scheme';
   if (u.username !== '' || u.password !== '') return 'credentials';
   return null;
+}
+
+/** The port a URL leads to, to start the TCP check's field from; 0 if it is not a URL. */
+export function portOf(s: string): number {
+  try {
+    const u = new URL(s.trim());
+    return Number(u.port) || (u.protocol === 'https:' ? 443 : 80);
+  } catch {
+    return 0;
+  }
+}
+
+/** A TCP check's port (mirrors internal/homepage tcpTarget). */
+export function validPort(n: number | null | undefined): n is number {
+  return typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= 65535;
 }
 
 /** "nas.local:5000" from a URL, for a tile's subtitle. */

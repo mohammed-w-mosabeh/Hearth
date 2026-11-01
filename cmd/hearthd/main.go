@@ -39,15 +39,20 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/broker"
 	"github.com/mohammed-w-mosabeh/hearth/internal/changes"
 	"github.com/mohammed-w-mosabeh/hearth/internal/collect"
+	"github.com/mohammed-w-mosabeh/hearth/internal/connectivity"
+	"github.com/mohammed-w-mosabeh/hearth/internal/crashes"
 	"github.com/mohammed-w-mosabeh/hearth/internal/dbusx"
 	"github.com/mohammed-w-mosabeh/hearth/internal/discovery"
 	"github.com/mohammed-w-mosabeh/hearth/internal/diskusage"
 	"github.com/mohammed-w-mosabeh/hearth/internal/docker"
 	"github.com/mohammed-w-mosabeh/hearth/internal/dropin"
+	"github.com/mohammed-w-mosabeh/hearth/internal/forecast"
+	"github.com/mohammed-w-mosabeh/hearth/internal/hardware"
 	"github.com/mohammed-w-mosabeh/hearth/internal/homepage"
 	"github.com/mohammed-w-mosabeh/hearth/internal/insight"
 	"github.com/mohammed-w-mosabeh/hearth/internal/launch"
 	"github.com/mohammed-w-mosabeh/hearth/internal/launcher"
+	"github.com/mohammed-w-mosabeh/hearth/internal/logview"
 	"github.com/mohammed-w-mosabeh/hearth/internal/netinfo"
 	"github.com/mohammed-w-mosabeh/hearth/internal/pkgs"
 	"github.com/mohammed-w-mosabeh/hearth/internal/posture"
@@ -194,6 +199,19 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	go func() { failed.Run(failedCtx); close(failedDone) }()
 	defer func() { stopFailed(); <-failedDone }()
 
+	connWatch := connectivity.New(connectivity.Options{Store: db, Log: log, Observe: engine.Observe,
+		Gateways: func() []string {
+			var out []string
+			for _, r := range netinfo.ReadAddressing(netinfo.Paths{}).Gateways {
+				out = append(out, r.Gateway)
+			}
+			return out
+		}})
+	connWatch.Register(srv.API)
+	connCtx, stopConn := context.WithCancel(ctx)
+	connDone := make(chan struct{})
+	go func() { connWatch.Run(connCtx); close(connDone) }()
+	defer func() { stopConn(); <-connDone }()
 	ds, err := store.NewDownsampler(ctx, db, log, nil)
 	if err != nil {
 		return err
@@ -204,7 +222,12 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		Power: pw.Snapshot,
 		// The sampler goroutine owns ds; it is flushed after the sampler stops.
 		OnSample: func(s collect.Sample) {
-			ds.Add(ctx, s.Time, s.Points())
+			for _, n := range s.Net {
+				if !n.Virtual {
+					connWatch.Count(s.Time, n.Name, n.RxBytes, n.TxBytes)
+				}
+			}
+			ds.Add(ctx, s.Time, append(s.Points(), connWatch.Points()...))
 			for metric, values := range alerts.FromSample(s) {
 				engine.Observe(ctx, s.Time, metric, values)
 			}
@@ -400,12 +423,55 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	}
 	defer func() { stopDocker(); dockerWG.Wait() }()
 	srv.API.HandleFunc("GET /api/v1/docker", dockerObjs.HandleSnapshot)
+	srv.API.HandleFunc("GET /api/v1/hardware", hardware.HandleInventory(hardware.Paths{}))
+	// A USB device never seen here raises "usb.new_device" once.
+	const knownUSB = "usb.known_devices"
+	usbWatch := &hardware.Watcher{Log: log, Now: time.Now,
+		Load: func(ctx context.Context) ([]string, bool, error) {
+			raw, ok, err := db.Setting(ctx, knownUSB)
+			if err != nil || !ok {
+				return nil, ok, err
+			}
+			var list []string
+			return list, true, json.Unmarshal(raw, &list)
+		},
+		Save: func(ctx context.Context, known []string) error {
+			b, err := json.Marshal(known)
+			if err != nil {
+				return err
+			}
+			return db.SetSetting(ctx, knownUSB, b)
+		},
+		Observe: func(ctx context.Context, now time.Time, v map[string]float64) {
+			engine.Observe(ctx, now, hardware.Metric, v)
+		}}
+	dockerWG.Add(1)
+	go func() { defer dockerWG.Done(); usbWatch.Run(dockerCtx) }()
+	srv.API.HandleFunc("GET /api/v1/logs", logview.New(brokerClient, safeexec.Run).Handle)
 	diskHealth := smart.New(smart.Config{Broker: brokerClient, Log: log,
 		Observe: func(ctx context.Context, now time.Time, v map[string]float64) {
 			engine.Observe(ctx, now, smart.Metric, v)
 		}})
 	diskHealth.Register(reg)
 	srv.API.HandleFunc("GET /api/v1/disks/health", diskHealth.Handle)
+	forecasts := forecast.New(forecast.Config{DB: db, Log: log,
+		Mounts: func() []forecast.Mount {
+			s, ok := sampler.Ring().Last()
+			if !ok {
+				return nil
+			}
+			out := make([]forecast.Mount, 0, len(s.Disks))
+			for _, d := range s.Disks {
+				out = append(out, forecast.Mount{Mount: d.Mount, Total: d.Total, Avail: d.Avail})
+			}
+			return out
+		},
+		Observe: func(ctx context.Context, now time.Time, v map[string]float64) {
+			engine.Observe(ctx, now, forecast.Metric, v)
+		}})
+	srv.API.HandleFunc("GET /api/v1/forecasts", forecasts.Handle)
+	dockerWG.Add(1)
+	go func() { defer dockerWG.Done(); forecasts.Run(dockerCtx) }()
 	dockerWG.Add(1)
 	go func() { defer dockerWG.Done(); diskHealth.Run(dockerCtx) }()
 	// Container usage for Home and the "container exited" alert, from the
@@ -414,10 +480,21 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		Observe: func(ctx context.Context, now time.Time, v map[string]float64) {
 			engine.Observe(ctx, now, "container.exited", v)
 		},
-		Report: engine.Observe}
+		Report: engine.Observe,
+		Restarted: func(ctx context.Context, now time.Time, name string) {
+			if err := db.AddChange(ctx, store.Change{Time: now, Source: changes.SourceContainers, Kind: changes.KindRestarted, Subject: name}); err != nil {
+				log.Warn("record container restart", "err", err)
+			}
+		}}
 	dockerWG.Add(1)
 	go func() { defer dockerWG.Done(); dockerMon.Run(dockerCtx) }()
 	srv.API.HandleFunc("GET /api/v1/docker/usage", dockerMon.HandleUsage)
+	sleepAPI := power.NewSleep(power.SleepConfig{W: pw, Run: safeexec.Run, Broker: brokerClient, CanReadSystem: services.CanReadSystemJournal})
+	sleepAPI.Register(reg)
+	srv.API.HandleFunc("GET /api/v1/power/sleep", sleepAPI.Handle)
+	srv.API.HandleFunc("GET /api/v1/crashes", crashes.New(crashes.Config{Run: safeexec.Run,
+		CanReadSystem: services.CanReadSystemJournal,
+		ContainerName: func(id string) string { name, _ := dockerMon.Name(id); return name }}).Handle)
 	srv.API.HandleFunc("GET /api/v1/docker/containers/{id}", docker.HandleInspect(brokerClient))
 	srv.API.HandleFunc("GET /api/v1/docker/volumes/sizes", docker.HandleVolumeSizes(brokerClient))
 	images := &docker.Images{B: brokerClient, Registry: docker.NewRegistry(), Run: safeexec.Run, CacheDir: filepath.Join(paths.DataDir, "trivy")}
@@ -530,6 +607,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		defer func() { _ = bus.Close() }()
 		f(bus)
 	}
+	srv.API.HandleFunc("GET /api/v1/hardware/firmware", hardware.HandleFirmware(withSystemBus))
 	security := posture.New(posture.Config{
 		UID: os.Getuid(), Path: append(filepath.SplitList(os.Getenv("PATH")), filepath.Join(appsCfg.Home, ".local/bin")),
 		Sockets: func() (netinfo.Sockets, error) { return netAPI.Resolver.Read(netinfo.Dump, collect.Users()) },
@@ -672,6 +750,16 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	}, Posture: security.Scan, Timeline: func(ctx context.Context, from, to time.Time, limit int) ([]changes.Event, error) {
 		events, _, err := tracker.Timeline(ctx, from, to, nil, limit)
 		return events, err
+	}, Markers: func(ctx context.Context, from, to time.Time) ([]int64, error) {
+		ms, err := tracker.Markers(ctx, from, to)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]int64, len(ms))
+		for i, m := range ms {
+			out[i] = m.Time
+		}
+		return out, nil
 	}})
 	weekly := &reports.Weekly{B: reportBuilder, Settings: db, Dir: filepath.Join(paths.DataDir, "reports"), Log: log}
 	weeklyCtx, stopWeekly := context.WithCancel(ctx)

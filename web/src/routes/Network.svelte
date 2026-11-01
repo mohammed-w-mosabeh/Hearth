@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Connectivity from '../components/Connectivity.svelte';
   import LineageDialog from '../components/LineageDialog.svelte';
   import { api, ApiError } from '../lib/api';
   import { bytes, rate } from '../lib/format';
@@ -191,6 +192,8 @@
     </div>
   </details>
 {/if}
+
+<Connectivity />
 
 <div class="bar">
   <div class="segmented" role="tablist" aria-label={t('net.view')}>

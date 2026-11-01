@@ -24,6 +24,9 @@ const (
 	KindAdded   = "added"
 	KindDeleted = "deleted"
 	KindChanged = "changed"
+
+	KindBoot      = "boot"      // SourceSystem
+	KindRestarted = "restarted" // SourceContainers
 	// Audit log entries.
 	KindAction = "action"
 )

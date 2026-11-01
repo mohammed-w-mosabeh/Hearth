@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { loadMarkers, type Marker } from '../lib/markers';
   import Chart from '../components/Chart.svelte';
   import { api, apiBlob, ApiError } from '../lib/api';
   import { eventDetail, eventKey } from '../lib/changes';
@@ -34,6 +35,22 @@
   let period = $state<Period>('week');
   let machine = $state.raw<MachineReport | null>(null);
   let item = $state.raw<ItemReport | null>(null);
+  // The events of the report's period, on its charts.
+  let markers = $state.raw<Marker[]>([]);
+  const shown = $derived(view === 'machine' ? machine : item);
+  $effect(() => {
+    const p = shown;
+    if (!p) return;
+    let stopped = false;
+    loadMarkers(Date.parse(p.from), Date.parse(p.to))
+      .then((m) => {
+        if (!stopped) markers = m;
+      })
+      .catch(() => {});
+    return () => {
+      stopped = true;
+    };
+  });
   let items = $state.raw<ItemTotal[] | null>(null);
   let itemId = $state('');
   let itemSearch = $state('');
@@ -291,7 +308,7 @@
         <div class="charts">
           {#each m.trends.filter(drawable) as tr (tr.metric)}
             <Chart title={tr.label} unit={chartUnit(tr.unit)} keys={[tr.metric]} labels={[tr.label]} cols={trendColumns(tr)}
-              xRange={xRange(m.from, m.to)} min={0} max={tr.unit === '%' ? 100 : undefined} height={140} />
+              xRange={xRange(m.from, m.to)} min={0} max={tr.unit === '%' ? 100 : undefined} height={140} {markers} />
           {/each}
         </div>
       {/if}
@@ -404,7 +421,7 @@
       <div class="charts">
         {#each it.trends.filter(drawable) as tr (tr.metric)}
           <Chart title={tr.label} unit={chartUnit(tr.unit)} keys={[tr.metric]} labels={[tr.label]} cols={trendColumns(tr)}
-            xRange={xRange(it.from, it.to)} min={0} height={140} />
+            xRange={xRange(it.from, it.to)} min={0} height={140} {markers} />
         {/each}
       </div>
     {/if}

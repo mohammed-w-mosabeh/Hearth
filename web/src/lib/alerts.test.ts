@@ -25,6 +25,8 @@ describe('alerts text', () => {
     expect(conditionText({ metric: 'unit.failed', target: '', op: '>', threshold: 0, for_s: 0 }, unit)).toBe('Any unit failed');
     expect(conditionText({ metric: 'disk.smart_failing', target: '', op: '>', threshold: 0, for_s: 0 }, unit)).toBe('Any disk reports it is failing');
     expect(conditionText({ metric: 'disk.smart_failing', target: 'sda', op: '>', threshold: 0, for_s: 0 }, unit)).toBe('Disk sda reports it is failing');
+    expect(conditionText({ metric: 'disk.forecast_full', target: '', op: '>', threshold: 0, for_s: 0 }, unit)).toBe('Any disk is forecast to fill within 7 days');
+    expect(conditionText({ metric: 'disk.forecast_full', target: '/home', op: '>', threshold: 0, for_s: 0 }, unit)).toBe('/home is forecast to fill within 7 days');
     expect(conditionText({ metric: 'log.match', target: 'panic', op: '>', threshold: 0, for_s: 0 }, unit)).toBe('A log line matches panic');
     expect(conditionText({ metric: 'container.oom', target: '', op: '>', threshold: 0, for_s: 0 }, unit)).toBe('A process in any container runs out of memory');
     const ctr: Metric = { ...unit, id: 'container.exited', instance: 'container' };

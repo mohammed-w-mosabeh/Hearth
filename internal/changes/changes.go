@@ -20,6 +20,8 @@ type Store interface {
 	DeleteSnapshot(ctx context.Context, id int64) error
 	PruneSnapshots(ctx context.Context, before time.Time) error
 	ChangesBetween(ctx context.Context, from, to time.Time, sources []string, limit int) ([]store.Change, error)
+	AddChange(ctx context.Context, c store.Change) error
+	AlertEventsBetween(ctx context.Context, from, to time.Time, limit int) ([]store.AlertEvent, error)
 	AuditBetween(ctx context.Context, from, to time.Time, limit int) ([]store.AuditRow, error)
 	Audit(ctx context.Context, e store.AuditEntry) error
 }
@@ -33,8 +35,10 @@ type Config struct {
 	Readers map[string]Reader // by source
 	// LogDir holds dpkg.log; default /var/log.
 	LogDir string
-	Log    *slog.Logger
-	Clock  func() time.Time
+	// ProcRoot holds stat, for the boot time; default /proc.
+	ProcRoot string
+	Log      *slog.Logger
+	Clock    func() time.Time
 }
 
 // keep is how long automatic snapshots and changes are kept.
@@ -60,6 +64,9 @@ func New(cfg Config) *Tracker {
 	}
 	if cfg.Clock == nil {
 		cfg.Clock = time.Now
+	}
+	if cfg.ProcRoot == "" {
+		cfg.ProcRoot = "/proc"
 	}
 	return &Tracker{cfg: cfg, dpkg: &dpkgLog{dir: cfg.LogDir}}
 }
@@ -158,6 +165,7 @@ func snapshotChanges(now time.Time, diff []SectionDiff) []store.Change {
 
 // Run takes an automatic snapshot now and every interval, pruning old ones.
 func (t *Tracker) Run(ctx context.Context, interval time.Duration) {
+	t.noteBoot(ctx)
 	tick := time.NewTicker(interval)
 	defer tick.Stop()
 	for {
@@ -208,7 +216,7 @@ func (t *Tracker) Timeline(ctx context.Context, from, to time.Time, sources []st
 			out = append(out, evs[j])
 		}
 	}
-	if all || want[SourceUnits] || want[SourceContainers] || want[SourceListeners] {
+	if all || want[SourceUnits] || want[SourceContainers] || want[SourceListeners] || want[SourceSystem] {
 		cs, err := t.cfg.Store.ChangesBetween(ctx, from, to, sources, limit+1)
 		if err != nil {
 			return nil, nil, err

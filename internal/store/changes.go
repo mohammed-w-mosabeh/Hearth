@@ -56,6 +56,15 @@ func (db *DB) AddSnapshot(ctx context.Context, s Snapshot, changes []Change) (in
 	return id, nil
 }
 
+// AddChange records one change that no snapshot found: a boot, a restart.
+func (db *DB) AddChange(ctx context.Context, c Change) error {
+	if _, err := db.ExecContext(ctx, `INSERT INTO changes (ts, source, kind, subject, before, after) VALUES (?, ?, ?, ?, ?, ?)`,
+		c.Time.UnixMilli(), c.Source, c.Kind, c.Subject, c.Before, c.After); err != nil {
+		return fmt.Errorf("store: add change: %w", err)
+	}
+	return nil
+}
+
 // Snapshots lists the snapshots, newest first, without their data.
 func (db *DB) Snapshots(ctx context.Context) ([]Snapshot, error) {
 	rows, err := db.QueryContext(ctx, `SELECT id, ts, label, auto, length(data) FROM snapshots ORDER BY ts DESC, id DESC`)

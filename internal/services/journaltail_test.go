@@ -27,3 +27,17 @@ func TestJournalTail(t *testing.T) {
 		t.Fatalf("%v %q %v %q", lines, next, err, got[1])
 	}
 }
+
+func TestReadUnitArgsPassTheAllowlist(t *testing.T) {
+	for _, target := range []string{"system/cups.service", "user/app.service"} {
+		run := func(_ context.Context, name string, args ...string) (safeexec.Result, error) {
+			return safeexec.Result{}, safeexec.Check(name, args...)
+		}
+		if _, _, err := ReadUnit(context.Background(), run, target, 1000); err != nil {
+			t.Fatalf("%s: %v", target, err)
+		}
+	}
+	if _, _, err := ReadUnit(context.Background(), nil, "nope", 1); err == nil {
+		t.Fatal("accepted a target with no scope")
+	}
+}
