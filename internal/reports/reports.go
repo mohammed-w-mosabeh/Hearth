@@ -69,6 +69,8 @@ type Config struct {
 	// Timeline, if set, is the change timeline (internal/changes); without
 	// it the machine report lists the audit log.
 	Timeline func(ctx context.Context, from, to time.Time, limit int) ([]changes.Event, error)
+	// Markers, if set, lists event times (unix ms) to mark on the charts.
+	Markers func(ctx context.Context, from, to time.Time) ([]int64, error)
 	// Posture, if set, checks the security posture now (it has no history).
 	Posture func(ctx context.Context) posture.Report
 	// Clock is replaced in tests.
@@ -111,6 +113,24 @@ type Trend struct {
 	Max    float64    `json:"max"`  // the scale: 100 for %, else Peak
 	T      []int64    `json:"t"`
 	V      []*float64 `json:"v"`
+	// Marks are the event times on this chart, unix ms; only exports draw
+	// them here, the page asks for the events themselves.
+	Marks []int64 `json:"-"`
+}
+
+// mark puts the period's events on the trends. A chart without them is
+// still a chart, so a failure here does not fail the report.
+func (b *Builder) mark(ctx context.Context, trends []Trend, from, to time.Time) {
+	if b.cfg.Markers == nil || len(trends) == 0 {
+		return
+	}
+	times, err := b.cfg.Markers(ctx, from, to)
+	if err != nil {
+		return
+	}
+	for i := range trends {
+		trends[i].Marks = times
+	}
 }
 
 // Machine is the machine report.
@@ -268,6 +288,7 @@ func (b *Builder) Machine(ctx context.Context, period string) (Machine, error) {
 		p := b.cfg.Posture(ctx)
 		m.Posture = &p
 	}
+	b.mark(ctx, m.Trends, from, to)
 	return m, nil
 }
 
@@ -332,6 +353,7 @@ func (b *Builder) Item(ctx context.Context, id, period string) (Item, error) {
 			it.Changes = append(it.Changes, c)
 		}
 	}
+	b.mark(ctx, it.Trends, from, to)
 	return it, nil
 }
 

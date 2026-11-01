@@ -1,9 +1,11 @@
 <script lang="ts">
+  import MarkerList from '../components/MarkerList.svelte';
   import AppsTable from '../components/AppsTable.svelte';
   import Chart from '../components/Chart.svelte';
   import { api } from '../lib/api';
   import { CHARTS, CORES, label, query } from '../lib/charts';
   import { append, pick, RANGES, type Columns, type Range } from '../lib/history';
+  import { loadMarkers, type Marker } from '../lib/markers';
   import { t } from '../lib/i18n';
   import type { Sample } from '../lib/types';
   import type { Live } from '../lib/ws';
@@ -91,6 +93,28 @@
     };
   });
 
+  // The events of the range, as often as the longer charts refresh.
+  let markers = $state.raw<Marker[]>([]);
+  $effect(() => {
+    if (viewMode !== 'charts') return;
+    const seconds = RANGES.find((x) => x.id === range)?.seconds ?? 600;
+    let stopped = false;
+    const load = () => {
+      const end = Date.now();
+      loadMarkers(end - seconds * 1000, end)
+        .then((m) => {
+          if (!stopped) markers = m;
+        })
+        .catch(() => {});
+    };
+    load();
+    const timer = setInterval(load, REFRESH_MS);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  });
+
   const span = $derived(RANGES.find((x) => x.id === range)?.seconds ?? 600);
   const xRange = $derived<[number, number]>([now / 1000 - span, now / 1000]);
   const charts = $derived(
@@ -145,6 +169,7 @@
   {:else if charts.length === 0}
     <p class="note">{t('resources.empty')}</p>
   {:else}
+    <MarkerList {markers} />
     <div class="grid">
       {#each charts as c (c.spec.id)}
         <Chart
@@ -156,6 +181,7 @@
           {xRange}
           min={c.spec.min}
           max={c.spec.max}
+          {markers}
         />
       {/each}
     </div>

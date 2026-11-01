@@ -3,6 +3,7 @@
   import { format, type Unit } from '../lib/charts';
   import type { Columns } from '../lib/history';
   import { t } from '../lib/i18n';
+  import { markerText, nearest, type Marker } from '../lib/markers';
 
   // A full time-series chart: axes, hover cursor, legend with live values.
   // Series colors are --series-N tokens; with a single series and bucket
@@ -17,6 +18,7 @@
     min,
     max,
     height = 180,
+    markers = [],
   }: {
     title: string;
     unit: Unit;
@@ -27,12 +29,16 @@
     min?: number | undefined;
     max?: number | undefined;
     height?: number;
+    markers?: Marker[];
   } = $props();
 
   let el: HTMLDivElement;
   let chart = $state.raw<uPlot | null>(null);
   // Read by the x scale's range function on every redraw.
   let xr: [number, number] = [0, 1];
+  // Read by the draw hook; events are lines, the text shows on hover.
+  let marks: Marker[] = [];
+  let hovered = $state.raw<Marker | null>(null);
 
   const peak = $derived(keys.length === 1 && cols.max !== undefined);
   const shape = $derived(`${keys.join('|')}#${peak}#${labels.join('|')}`);
@@ -75,7 +81,34 @@
           points: { show: false },
         });
       }
+      const line = css.getPropertyValue('--text-muted').trim();
+      const alarm = css.getPropertyValue('--warn').trim();
+      const drawMarks = (u: uPlot) => {
+        const c = u.ctx;
+        c.save();
+        c.beginPath();
+        c.rect(u.bbox.left, u.bbox.top, u.bbox.width, u.bbox.height);
+        c.clip();
+        c.setLineDash([2, 4]);
+        c.lineWidth = 1;
+        for (const m of marks) {
+          const x = u.valToPos(m.t / 1000, 'x', true);
+          c.strokeStyle = m.kind === 'alert' ? alarm : line;
+          c.beginPath();
+          c.moveTo(x, u.bbox.top);
+          c.lineTo(x, u.bbox.top + u.bbox.height);
+          c.stroke();
+        }
+        c.restore();
+      };
+      const hoverMarks = (u: uPlot) => {
+        const left = u.cursor.left ?? -1;
+        const items = marks.map((m) => ({ m, x: u.valToPos(m.t / 1000, 'x') }));
+        const near = left < 0 ? null : nearest(items, left, 6);
+        if ((near?.m ?? null) !== hovered) hovered = near?.m ?? null;
+      };
       const opts: uPlot.Options = {
+        plugins: [{ hooks: { draw: [drawMarks], setCursor: [hoverMarks] } }],
         width: Math.max(el.clientWidth, 1),
         height,
         series,
@@ -117,11 +150,19 @@
     xr = xRange;
     chart?.setData(data());
   });
+
+  $effect(() => {
+    marks = markers;
+    chart?.redraw(false, false);
+  });
 </script>
 
 <section class="chart">
   <h2>{title}</h2>
   <div bind:this={el} role="img" aria-label={title}></div>
+  {#if markers.length > 0}
+    <p class="marker">{hovered ? markerText(hovered) : ' '}</p>
+  {/if}
 </section>
 
 <style>
@@ -140,6 +181,13 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
     margin-bottom: var(--space-2);
+  }
+  .marker {
+    margin: var(--space-1) 0 0;
+    min-height: 1.4em;
+    font-size: 12px;
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
   }
   .chart :global(.u-legend) {
     font-size: 12px;

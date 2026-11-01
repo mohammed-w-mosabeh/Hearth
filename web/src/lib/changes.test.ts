@@ -12,13 +12,14 @@ describe('changes', () => {
     for (const [source, kinds] of [
       ['packages', ['installed', 'upgraded', 'removed', 'purged']],
       ['units', ['added', 'deleted', 'changed']],
-      ['containers', ['added', 'deleted', 'changed']],
+      ['containers', ['added', 'deleted', 'changed', 'restarted']],
       ['listeners', ['added', 'deleted', 'changed']],
+      ['system', ['boot']],
     ] as const) {
       for (const kind of kinds) keys.push(eventKey(ev({ source, kind })) ?? '');
     }
     for (const k of keys) expect(en).toHaveProperty([k]);
-    expect(KINDS).toHaveLength(7);
+    expect(KINDS).toHaveLength(9);
   });
   it('leaves Hearth actions and unknown events to their own names', () => {
     expect(eventKey(ev({ source: 'hearth', kind: 'action', action: 'unit.restart' }))).toBeNull();

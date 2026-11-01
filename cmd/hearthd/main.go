@@ -433,7 +433,12 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		Observe: func(ctx context.Context, now time.Time, v map[string]float64) {
 			engine.Observe(ctx, now, "container.exited", v)
 		},
-		Report: engine.Observe}
+		Report: engine.Observe,
+		Restarted: func(ctx context.Context, now time.Time, name string) {
+			if err := db.AddChange(ctx, store.Change{Time: now, Source: changes.SourceContainers, Kind: changes.KindRestarted, Subject: name}); err != nil {
+				log.Warn("record container restart", "err", err)
+			}
+		}}
 	dockerWG.Add(1)
 	go func() { defer dockerWG.Done(); dockerMon.Run(dockerCtx) }()
 	srv.API.HandleFunc("GET /api/v1/docker/usage", dockerMon.HandleUsage)
@@ -691,6 +696,16 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	}, Posture: security.Scan, Timeline: func(ctx context.Context, from, to time.Time, limit int) ([]changes.Event, error) {
 		events, _, err := tracker.Timeline(ctx, from, to, nil, limit)
 		return events, err
+	}, Markers: func(ctx context.Context, from, to time.Time) ([]int64, error) {
+		ms, err := tracker.Markers(ctx, from, to)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]int64, len(ms))
+		for i, m := range ms {
+			out[i] = m.Time
+		}
+		return out, nil
 	}})
 	weekly := &reports.Weekly{B: reportBuilder, Settings: db, Dir: filepath.Join(paths.DataDir, "reports"), Log: log}
 	weeklyCtx, stopWeekly := context.WithCancel(ctx)

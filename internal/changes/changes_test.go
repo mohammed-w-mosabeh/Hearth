@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -457,4 +458,104 @@ func TestHandlers(t *testing.T) {
 	if !actions["changes.snapshot"] || !actions["changes.delete_snapshot"] {
 		t.Errorf("%+v", rows)
 	}
+}
+
+func TestMarkers(t *testing.T) {
+	db := open(t)
+	ctx := context.Background()
+	at := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	tr := New(Config{Store: db, LogDir: t.TempDir(), Clock: func() time.Time { return at }})
+	for _, c := range []store.Change{
+		{Time: at.Add(-time.Hour), Source: SourceContainers, Kind: KindRestarted, Subject: "<b>web</b>"},
+		{Time: at.Add(-2 * time.Hour), Source: SourceContainers, Kind: KindAdded, Subject: "not a marker"},
+	} {
+		if err := db.AddChange(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tr.recordBoot(ctx, at.Add(-3*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := tr.recordBoot(ctx, at.Add(-3*time.Hour+time.Minute)); err != nil { // the same boot, read again
+		t.Fatal(err)
+	}
+	for _, e := range []store.AuditEntry{
+		{Origin: store.OriginLocal, Action: "profile.activate", Target: "Dev", Result: "ok"},
+		{Origin: store.OriginLocal, Action: "profile.activate", Target: "failed", Result: "error: no"},
+		{Origin: store.OriginLocal, Action: "unit.stop", Target: "not a marker", Result: "ok"},
+	} {
+		if err := db.Audit(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m, err := tr.Markers(ctx, at.Add(-24*time.Hour), at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m) != 2 || m[0].Kind != MarkContainer || m[0].Subject != "<b>web</b>" || m[1].Kind != MarkBoot {
+		t.Fatalf("%+v", m)
+	}
+	// Audit rows are stamped with the real clock.
+	m, err = tr.Markers(ctx, time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
+	if err != nil || len(m) != 1 || m[0].Kind != MarkProfile || m[0].Subject != "Dev" {
+		t.Fatalf("%+v %v", m, err)
+	}
+}
+
+func TestUpgradeRuns(t *testing.T) {
+	at := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	up := func(d time.Duration, s string) Event { return Event{Time: at.Add(d), Kind: KindUpgraded, Subject: s} }
+	evs := []Event{
+		up(-time.Hour, "old"), up(0, "a"), up(time.Minute, "b"), up(8*time.Minute, "c"),
+		{Time: at.Add(9 * time.Minute), Kind: KindInstalled, Subject: "new"},
+		up(time.Hour, "d"), up(3*time.Hour, "late"),
+	}
+	got := upgradeRuns(evs, at.Add(-time.Minute), at.Add(2*time.Hour))
+	if len(got) != 2 || got[0].Count != 3 || got[0].Subject != "" || got[1].Count != 1 || got[1].Subject != "d" {
+		t.Fatalf("%+v", got)
+	}
+}
+
+func TestParseBootTime(t *testing.T) {
+	if got, ok := parseBootTime([]byte("cpu 1 2\nbtime 1790000000\nprocesses 3\n")); !ok || got.Unix() != 1790000000 {
+		t.Fatalf("%v %v", got, ok)
+	}
+	for _, s := range []string{"", "btime\n", "btime x\n", "btime 0\n", "btime -5\n"} {
+		if _, ok := parseBootTime([]byte(s)); ok {
+			t.Errorf("accepted %q", s)
+		}
+	}
+}
+
+func TestMarkerRange(t *testing.T) {
+	good := url.Values{"from": {"1000"}, "to": {"2000"}}
+	if from, to, err := parseMarkerRange(good); err != nil || from.UnixMilli() != 1000 || to.UnixMilli() != 2000 {
+		t.Fatal(from, to, err)
+	}
+	for _, q := range []string{"", "from=1", "from=2&to=1", "from=1&to=1", "from=-1&to=5", "from=a&to=b", "from=1&to=99999999999999"} {
+		v, _ := url.ParseQuery(q)
+		if _, _, err := parseMarkerRange(v); err == nil {
+			t.Errorf("accepted %q", q)
+		}
+	}
+}
+
+func FuzzMarkerRange(f *testing.F) {
+	f.Add("1000", "2000")
+	f.Add("-1", "9223372036854775807")
+	f.Fuzz(func(t *testing.T, a, b string) {
+		from, to, err := parseMarkerRange(url.Values{"from": {a}, "to": {b}})
+		if err == nil && (!from.Before(to) || to.Sub(from) > maxMarkerSpan) {
+			t.Fatalf("%q %q", a, b)
+		}
+	})
+}
+
+func FuzzParseBootTime(f *testing.F) {
+	f.Add([]byte("btime 1790000000\n"))
+	f.Fuzz(func(t *testing.T, b []byte) {
+		if got, ok := parseBootTime(b); ok && got.Unix() <= 0 {
+			t.Fatalf("%q -> %v", b, got)
+		}
+	})
 }

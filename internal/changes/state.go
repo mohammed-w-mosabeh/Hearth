@@ -20,6 +20,7 @@ const (
 	SourceContainers = "containers"
 	SourceListeners  = "listeners"
 	SourceHearth     = "hearth" // the audit log: actions taken through Hearth
+	SourceSystem     = "system" // the machine itself: boots
 )
 
 // Snapshotted are the sources a snapshot holds.

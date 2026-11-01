@@ -122,6 +122,30 @@ test('a snapshot label shows as text', async ({ page }) => {
   await noScriptRan(page);
 });
 
+test('a chart event shows as text', async ({ page }) => {
+  // A rule that fires at once, so an alert named with the payload is a marker.
+  const made = await page.request.post(`${origin}/api/v1/alerts/rules`, {
+    headers: { Authorization: `Bearer ${key}`, Origin: origin, 'Content-Type': 'application/json' },
+    data: { name: PAYLOAD.slice(0, 80), metric: 'cpu.usage', target: '', op: '>', threshold: 0, for_s: 0, severity: 'info', enabled: true, quiet_from: '', quiet_to: '' },
+  });
+  expect(made.ok(), await made.text()).toBeTruthy();
+  await page.goto(`${origin}/#/resources`);
+  await page.reload();
+  await expect
+    .poll(
+      async () => {
+        const end = Date.now();
+        return (await page.request.get(`${origin}/api/v1/markers?from=${end - 3_600_000}&to=${end}`, { headers: { Authorization: `Bearer ${key}` } })).text();
+      },
+      { timeout: 20_000 },
+    )
+    .toContain('onerror');
+  await page.reload();
+  await page.locator('details.markers summary').click();
+  await expect(page.locator('details.markers').getByText(PAYLOAD).first()).toBeVisible();
+  await noScriptRan(page);
+});
+
 test('every sidebar page is its real page', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));

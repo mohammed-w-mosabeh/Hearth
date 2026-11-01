@@ -29,6 +29,7 @@ th{color:var(--muted);font-weight:600}td.n,th.n{text-align:right;white-space:now
 figure{margin:0}figcaption{color:var(--muted);font-size:12px}
 svg{width:100%;height:80px;display:block;border-bottom:1px solid var(--line)}
 svg polyline{fill:none;stroke:var(--accent);stroke-width:1.5}
+svg line{stroke:var(--line);stroke-dasharray:2 3}
 .critical{color:var(--crit)}.warning{color:var(--warn)}
 @media print{body{max-width:none;padding:0;color:#000;background:#fff}h2{break-after:avoid}tr,figure{break-inside:avoid}svg polyline{stroke:#000}}`
 
@@ -43,6 +44,7 @@ var CSP = "default-src 'none'; style-src " + cspStyle + "; img-src data:; base-u
 var funcs = template.FuncMap{
 	"t":        msg,
 	"kind":     kindLabel,
+	"marks":    markLines,
 	"bytes":    func(v any) string { return fmtBytes(toFloat(v)) },
 	"signed":   fmtSigned,
 	"num":      fmtNum,
@@ -115,6 +117,22 @@ func sparkline(tr Trend) []string {
 	return out
 }
 
+// markLines returns the x of each event in a trend's 600-wide box, in step
+// with sparkline: the first point is at 0, the last at 600.
+func markLines(tr Trend) []string {
+	if len(tr.T) < 2 {
+		return nil
+	}
+	first, last := tr.T[0], tr.T[len(tr.T)-1]
+	var out []string
+	for _, ms := range tr.Marks {
+		if ms >= first && ms <= last {
+			out = append(out, strconv.FormatFloat(600*float64(ms-first)/float64(last-first), 'f', 1, 64))
+		}
+	}
+	return out
+}
+
 const pageHead = `{{define "head"}}<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="{{csp}}">
@@ -124,7 +142,7 @@ const pageHead = `{{define "head"}}<!doctype html>
 <style>{{css}}</style></head><body>{{end}}`
 
 const trendsTmpl = `{{define "trends"}}{{if .}}<div class="trends">{{range .}}<figure>
-<svg viewBox="0 0 600 80" preserveAspectRatio="none" role="img" aria-label="{{.Label}}">{{range spark .}}<polyline points="{{.}}"/>{{end}}</svg>
+<svg viewBox="0 0 600 80" preserveAspectRatio="none" role="img" aria-label="{{.Label}}">{{range marks .}}<line x1="{{.}}" y1="0" x2="{{.}}" y2="80"/>{{end}}{{range spark .}}<polyline points="{{.}}"/>{{end}}</svg>
 <figcaption>{{.Label}} · {{t "peak"}} {{value .Peak .Unit}}</figcaption></figure>{{end}}</div>{{end}}{{end}}`
 
 const changesTmpl = `{{define "changes"}}<table><thead><tr><th>{{t "time"}}</th><th>{{t "action"}}</th><th>{{t "target"}}</th><th>{{t "result"}}</th><th>{{t "origin"}}</th></tr></thead><tbody>

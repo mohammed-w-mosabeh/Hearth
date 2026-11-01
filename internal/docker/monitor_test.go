@@ -153,3 +153,32 @@ func TestMonitorEventMetrics(t *testing.T) {
 		t.Fatalf("%v", got)
 	}
 }
+
+func TestMonitorSeesARestart(t *testing.T) {
+	root := t.TempDir()
+	sock := filepath.Join(root, "docker.sock")
+	_ = os.WriteFile(sock, nil, 0o600)
+	web := strings.Repeat("a", 64)
+	dir := cgroup(t, root, web, 1_000_000, 300<<20, 0)
+	fb := &fakeBroker{answers: map[string]string{
+		"docker.containers.list": `[{"Id":"` + web + `","Names":["/web"],"State":"running","Status":"Up 2 hours"}]`,
+	}}
+	var got []string
+	m := &Monitor{B: fb, Pub: newHub(), CgroupRoot: root, Socket: sock,
+		Restarted: func(_ context.Context, _ time.Time, name string) { got = append(got, name) }}
+	ctx := context.Background()
+	t0 := time.Unix(1000, 0)
+	m.sample(ctx, t0) // first seen: a start, not a restart
+	m.sample(ctx, t0.Add(time.Second))
+	if len(got) != 0 {
+		t.Fatalf("%v", got)
+	}
+	if err := os.Rename(dir, dir+".old"); err != nil { // a new directory, a new inode
+		t.Fatal(err)
+	}
+	cgroup(t, root, web, 10, 300<<20, 0)
+	m.sample(ctx, t0.Add(2*time.Second))
+	if len(got) != 1 || got[0] != "web" {
+		t.Fatalf("%v", got)
+	}
+}

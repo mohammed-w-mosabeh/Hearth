@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -205,7 +206,7 @@ func TestHTMLIsSelfContainedAndEscaped(t *testing.T) {
 		// The inline stylesheet is the one the CSP hash allows.
 		css := regexp.MustCompile(`(?s)<style>(.*?)</style>`).FindStringSubmatch(s)
 		sum := sha256.Sum256([]byte(css[1]))
-		if css == nil || !strings.Contains(s, "sha256-"+base64.StdEncoding.EncodeToString(sum[:])) || strings.Contains(s, "unsafe-inline") {
+		if css == nil || !strings.Contains(html.UnescapeString(s), "sha256-"+base64.StdEncoding.EncodeToString(sum[:])) || strings.Contains(s, "unsafe-inline") {
 			t.Errorf("%s: style not allowed by its CSP hash", name)
 		}
 	}
@@ -434,5 +435,16 @@ func TestMachineReportTimeline(t *testing.T) {
 	}
 	if scriptish.MatchString(string(html)) {
 		t.Error("the timeline is not escaped")
+	}
+}
+
+func TestMarkLines(t *testing.T) {
+	tr := Trend{T: []int64{1000, 2000, 3000}, Marks: []int64{500, 1000, 2000, 3000, 3500}}
+	got := markLines(tr)
+	if len(got) != 3 || got[0] != "0.0" || got[1] != "300.0" || got[2] != "600.0" {
+		t.Fatalf("%v", got)
+	}
+	if markLines(Trend{T: []int64{1000}, Marks: []int64{1000}}) != nil {
+		t.Fatal("one point has no width")
 	}
 }
