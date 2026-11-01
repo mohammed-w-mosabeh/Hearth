@@ -573,6 +573,10 @@ printf '[Desktop Entry]\nType=Application\nName=%s\nComment=%s\nExec=/bin/true\n
 # systemd-coredump does, into the user's own journal.
 printf 'MESSAGE_ID=fc2e22bc6ee647b6b90729ab34a250b1\nMESSAGE=itest crash\nCOREDUMP_COMM=%s\nCOREDUMP_EXE=/tmp/%s\nCOREDUMP_SIGNAL_NAME=SIGSEGV\n' "$xss" "$xss" | asuser logger --journald
 check "the crash report lists it" grep -q 'SIGSEGV' <<<"$(pkgs_api crashes)"
+# Something holding sleep back, named with the payload (Settings page).
+systemd-run --quiet --unit=itest-inhibit /usr/bin/systemd-inhibit --what=sleep --who="$xss" --why="$xss" /bin/sleep 600
+sleep 1
+check "the inhibitor is listed" grep -q 'onerror' <<<"$(pkgs_api power/sleep)"
 # A cache folder named with the payload (Space advisor).
 asuser mkdir -p "/home/$user/.cache/$xss"
 # A Steam game whose name is the payload (VDF escapes its quotes).
@@ -653,6 +657,11 @@ for bad in '{"device":"sda1","kind":"short"}' '{"device":"sda","kind":"offline"}
 done
 check "self-test policy is present" grep -q 'org.hearth.disk.selftest' "$policy"
 check "the health route answers" grep -q '"status":' <<<"$(pkgs_api disks/health)"
+check "charge limit policy is present" grep -q 'org.hearth.battery.threshold' "$policy"
+for bad in '{"battery":"BAT0","end":49}' '{"battery":"BAT0","end":101}' '{"battery":"../../x","end":80}' '{"battery":"NOPE","end":80}' '{"battery":"BAT0","end":80,"x":1}'; do
+	check "battery.threshold refused before polkit: $bad" call_says "bad params\|must be\|no such battery\|not a battery" battery.threshold "$bad"
+done
+check "the sleep route answers" grep -q '"inhibitors":' <<<"$(pkgs_api power/sleep)"
 check "the forecast alert exists" grep -q '"metric":"disk.forecast_full"' <<<"$(pkgs_api alerts/rules)"
 check "the forecast route answers" grep -q '"disks":' <<<"$(pkgs_api forecasts)"
 if [ -n "$disk" ]; then

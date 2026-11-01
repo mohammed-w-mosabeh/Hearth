@@ -168,6 +168,12 @@ var allowlist = map[string]Spec{
 		Validate: journalFixed(oomFlags, "_TRANSPORT=kernel"),
 		Timeout:  10 * time.Second,
 	},
+	// journalctl for the times the machine slept (Settings page).
+	"journalctl-sleep": {
+		Paths:    []string{"/usr/bin/journalctl", "/bin/journalctl"},
+		Validate: journalFixed(sleepFlags, "MESSAGE_ID="+SleepEnteredID, "MESSAGE_ID="+SleepLeftID),
+		Timeout:  10 * time.Second,
+	},
 	// journalctl listing the boots it has logs of (Journal page).
 	"journalctl-boots": {
 		Paths:    []string{"/usr/bin/journalctl", "/bin/journalctl"},
@@ -352,6 +358,19 @@ var (
 		"--output-fields=MESSAGE", "--grep=^oom-kill:constraint="}
 )
 
+// systemd's catalog IDs for a sleep state entered and left.
+const (
+	SleepEnteredID = "6bbd95ee977941e497c48be27c254128"
+	SleepLeftID    = "8811e6df2a8e40f58a94cea26f8ebf14"
+)
+
+var sleepFlags = []string{"--quiet", "--no-pager", "--output=json", "--reverse", "--lines=500", "--output-fields=MESSAGE_ID,SLEEP"}
+
+// SleepArgs is journalctl-sleep's command line from a unix time.
+func SleepArgs(since int64) []string {
+	return slices.Concat(sleepFlags, []string{"--since=@" + strconv.FormatInt(since, 10), "MESSAGE_ID=" + SleepEnteredID, "MESSAGE_ID=" + SleepLeftID})
+}
+
 // CrashArgs is journalctl-crashes' command line from a unix time.
 func CrashArgs(since int64) []string {
 	return slices.Concat(crashFlags, []string{"--since=@" + strconv.FormatInt(since, 10), "MESSAGE_ID=" + coredumpMessageID})
@@ -362,9 +381,9 @@ func OOMArgs(since int64) []string {
 	return slices.Concat(oomFlags, []string{"--since=@" + strconv.FormatInt(since, 10), "_TRANSPORT=kernel"})
 }
 
-// journalFixed accepts flags, --since=@<unix>, then match, and nothing else.
-func journalFixed(flags []string, match string) func([]string) error {
-	vs := make([]Validator, 0, len(flags)+2)
+// journalFixed accepts flags, --since=@<unix>, then the matches, and nothing else.
+func journalFixed(flags []string, matches ...string) func([]string) error {
+	vs := make([]Validator, 0, len(flags)+1+len(matches))
 	for _, f := range flags {
 		vs = append(vs, Literal(f))
 	}
@@ -374,7 +393,10 @@ func journalFixed(flags []string, match string) func([]string) error {
 			return invalid("not a start time: %q", s)
 		}
 		return nil
-	}, Literal(match))
+	})
+	for _, m := range matches {
+		vs = append(vs, Literal(m))
+	}
 	return exactly(vs...)
 }
 

@@ -49,6 +49,7 @@ func run(log *slog.Logger) error {
 	methods = append(methods, broker.PackageMethods(safeexec.Run)...)
 	methods = append(methods, broker.SpaceMethods(safeexec.Run, broker.AptArchives)...)
 	methods = append(methods, broker.SmartMethods(safeexec.Run, broker.SysRoot)...)
+	methods = append(methods, broker.BatteryMethods(broker.SysRoot)...)
 	methods = append(methods, broker.NeedrestartMethods(broker.NeedrestartConfig{Bus: func(ctx context.Context) (broker.SystemBus, error) {
 		c, err := dbusx.SystemBus(ctx)
 		if err != nil {

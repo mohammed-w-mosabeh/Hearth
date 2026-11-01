@@ -56,6 +56,11 @@ type Battery struct {
 	Cycles     int     `json:"cycles,omitempty"`     // 0 when unknown
 	ToEmptySec int64   `json:"to_empty_s,omitempty"` // 0 when unknown / not discharging
 	ToFullSec  int64   `json:"to_full_s,omitempty"`
+
+	// UPower's charge limit; not sent: GET /power/sleep reports limits.
+	limitSupported bool
+	limitEnabled   bool
+	limitEnd       int
 }
 
 // Profile is the power-profiles-daemon state.
@@ -75,6 +80,13 @@ type State struct {
 
 // Dialer opens a D-Bus connection (dbusx.SystemBus in production).
 type Dialer func(ctx context.Context) (dbusx.Bus, error)
+
+// readLimit fills in UPower's charge limit from a device's properties.
+func readLimit(b *Battery, props map[string]dbus.Variant) {
+	b.limitSupported = get[bool](props, "ChargeThresholdSupported")
+	b.limitEnabled = get[bool](props, "ChargeThresholdEnabled")
+	b.limitEnd = int(get[uint32](props, "ChargeEndThreshold"))
+}
 
 // Watcher keeps State current from D-Bus.
 type Watcher struct {
@@ -237,13 +249,26 @@ func (w *Watcher) loadDevice(ctx context.Context, bus dbusx.Bus, path dbus.Objec
 	switch get[uint32](props, "Type") {
 	case upowerTypeBattery:
 		if get[bool](props, "PowerSupply") && get[bool](props, "IsPresent") {
-			w.batteries[path] = parseBattery(props)
+			b := parseBattery(props)
+			readLimit(&b, props)
+			w.batteries[path] = b
 		} else {
 			delete(w.batteries, path) // peripheral (mouse) or removed
 		}
 	case upowerTypeLinePower:
 		w.lines[path] = get[bool](props, "Online")
 	}
+}
+
+// batteriesByPath returns the batteries by UPower object path.
+func (w *Watcher) batteriesByPath() map[dbus.ObjectPath]Battery {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	out := make(map[dbus.ObjectPath]Battery, len(w.batteries))
+	for p, b := range w.batteries {
+		out[p] = b
+	}
+	return out
 }
 
 // loadProfile reads the profile from the first ppd bus name that answers.

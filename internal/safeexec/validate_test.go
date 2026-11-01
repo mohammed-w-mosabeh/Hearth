@@ -635,6 +635,11 @@ func TestCoredumpMessageID(t *testing.T) {
 	if !strings.Contains(string(b), "-- "+coredumpMessageID+"\nSubject: Process @COREDUMP_PID@ (@COREDUMP_COMM@) dumped core") {
 		t.Fatal("not systemd's dumped core message ID")
 	}
+	for id, subject := range map[string]string{SleepEnteredID: "entered", SleepLeftID: "left"} {
+		if !strings.Contains(string(b), "-- "+id+"\nSubject: System sleep state @SLEEP@ "+subject) {
+			t.Fatalf("not systemd's sleep %s ID", subject)
+		}
+	}
 }
 
 func TestCrashArgs(t *testing.T) {
@@ -654,6 +659,9 @@ func TestCrashArgs(t *testing.T) {
 	}
 	if Check("journalctl-crashes", append(good, "--output-fields=COREDUMP_ENVIRON")...) == nil {
 		t.Error("accepted another field list")
+	}
+	if err := Check("journalctl-sleep", SleepArgs(1790000000)...); err != nil {
+		t.Fatal(err)
 	}
 	if Check("journalctl-oom", good...) == nil {
 		t.Error("the two commands are interchangeable")

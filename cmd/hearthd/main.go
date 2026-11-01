@@ -443,6 +443,9 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	dockerWG.Add(1)
 	go func() { defer dockerWG.Done(); dockerMon.Run(dockerCtx) }()
 	srv.API.HandleFunc("GET /api/v1/docker/usage", dockerMon.HandleUsage)
+	sleepAPI := power.NewSleep(power.SleepConfig{W: pw, Run: safeexec.Run, Broker: brokerClient, CanReadSystem: services.CanReadSystemJournal})
+	sleepAPI.Register(reg)
+	srv.API.HandleFunc("GET /api/v1/power/sleep", sleepAPI.Handle)
 	srv.API.HandleFunc("GET /api/v1/crashes", crashes.New(crashes.Config{Run: safeexec.Run,
 		CanReadSystem: services.CanReadSystemJournal,
 		ContainerName: func(id string) string { name, _ := dockerMon.Name(id); return name }}).Handle)

@@ -153,6 +153,13 @@ test('a crash shows as text', async ({ page }) => {
   await noScriptRan(page);
 });
 
+test('an inhibitor shows as text', async ({ page }) => {
+  await page.goto(`${origin}/#/settings`);
+  await page.reload();
+  await expect(page.locator('.sleep').getByText(PAYLOAD).first()).toBeVisible();
+  await noScriptRan(page);
+});
+
 test('every sidebar page is its real page', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
