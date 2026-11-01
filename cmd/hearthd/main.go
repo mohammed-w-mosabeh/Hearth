@@ -53,6 +53,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/launch"
 	"github.com/mohammed-w-mosabeh/hearth/internal/launcher"
 	"github.com/mohammed-w-mosabeh/hearth/internal/logview"
+	"github.com/mohammed-w-mosabeh/hearth/internal/lynis"
 	"github.com/mohammed-w-mosabeh/hearth/internal/netinfo"
 	"github.com/mohammed-w-mosabeh/hearth/internal/pkgs"
 	"github.com/mohammed-w-mosabeh/hearth/internal/posture"
@@ -642,6 +643,13 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		Run: posture.Runner(safeexec.Run), Settings: db, Log: log,
 	})
 	security.Register(srv.API, db)
+	lynisAudits := lynis.New(lynis.Config{Broker: brokerClient, Store: db, Audit: db, Log: log,
+		Observe: func(ctx context.Context, now time.Time, v map[string]float64) {
+			engine.Observe(ctx, now, lynis.Metric, v)
+		}})
+	lynisAudits.Register(srv.API)
+	dockerWG.Add(1)
+	go func() { defer dockerWG.Done(); lynisAudits.Run(dockerCtx) }()
 
 	// Change timeline: dpkg's log, hourly snapshots of units, containers,
 	// listeners and packages (stored only when something changed), and

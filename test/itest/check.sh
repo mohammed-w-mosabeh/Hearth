@@ -587,13 +587,47 @@ if [ -n "$pcidev" ]; then
 fi
 check "a PCI device is listed" test -n "$pcidev"
 check "no serial field in the inventory" not grep -qiE '"[a-z_]*(serial|uuid)[a-z_]*":' <<<"$(pkgs_api hardware)"
+# Real Lynis in its sandbox: a run, its report, then a finding with the payload.
+check "lynis.run asks polkit" call_says "not authorized" lynis.run
+cat >/etc/polkit-1/rules.d/52-hearth-itest-lynis.rules <<'RULES'
+polkit.addRule(function(action, subject) {
+	if (action.id == "org.hearth.lynis.run" && subject.user == "tester") {
+		return polkit.Result.YES;
+	}
+});
+RULES
+sleep 1
+check "lynis.run takes no params" call_says "takes no params" lynis.run '{"args":"--upload"}'
+check "lynis.schedule takes only the table" call_says "must be off, weekly or monthly" lynis.schedule '{"every":"hourly"}'
+ly=$(asuser timeout 900 /usr/bin/hearthd broker-call lynis.run 2>&1 || true)
+echo "  lynis: ${ly:0:200}"
+check "real Lynis ran in its sandbox" grep -q '"index":[0-9]' <<<"$ly"
+check "the report left only figures and findings" not grep -qE "$(hostname)|\"(hostname|real_user)" <<<"$ly"
+check "its unit denies every address" test "$(systemctl show -p IPAddressDeny --value hearth-lynis.service)" != ""
+check "its report is root's" test "$(stat -c '%U %a' /var/lib/hearth/lynis-report.dat)" = "root 600"
+check "the temporary report is gone" not test -e /var/lib/hearth/lynis-report.tmp
+check "the broker gained no capability for it" test "$(systemctl show -p CapabilityBoundingSet --value hearth-broker.service)" = "cap_sys_rawio cap_sys_admin"
+check "lynis.report starts nothing" test "$(systemctl show -p ActiveState --value hearth-lynis.service)" = inactive
+check "a schedule writes the timer" call_says '"schedule":"weekly"' lynis.schedule '{"every":"weekly"}'
+check "the timer is active" systemctl is-active hearth-lynis.timer
+check "the timer is enabled" systemctl is-enabled hearth-lynis.timer
+check "the page reads the schedule" call_says '"schedule":"weekly"' lynis.report
+check "off removes it" call_says '"schedule":"off"' lynis.schedule '{"every":"off"}'
+check "the timer is gone" not test -e /etc/systemd/system/hearth-lynis.timer
+check "a schedule left for purge to remove" call_says '"schedule":"monthly"' lynis.schedule '{"every":"monthly"}'
+rm -f /etc/polkit-1/rules.d/52-hearth-itest-lynis.rules
+sed -i "s|^hardening_index=.*|warning[]=AUTH-9999\|$xss\|$xss\|$xss\|\n&|" /var/lib/hearth/lynis-report.dat
+check "a hostile finding is listed" grep -q 'onerror' <<<"$(pkgs_api security/lynis)"
 # A cache folder named with the payload (Space advisor).
 asuser mkdir -p "/home/$user/.cache/$xss"
 # A Steam game whose name is the payload (VDF escapes its quotes).
 steamapps=/home/$user/.local/share/Steam/steamapps
 asuser mkdir -p "$steamapps"
 printf '"AppState"\n{\n\t"appid"\t"9"\n\t"name"\t"%s"\n\t"StateFlags"\t"4"\n}\n' "${xss//\"/\\\"}" | asuser tee "$steamapps/appmanifest_9.acf" >/dev/null
-check "hostile game listed" grep -q '"id":"steam.9"' <<<"$(pkgs_api games)"
+# The list is a scan kept for a while, so it shows up within that time.
+game_listed() { grep -q '"id":"steam.9"' <<<"$(pkgs_api games)"; }
+wait_until 90 game_listed || true
+check "hostile game listed" game_listed
 e2e=$(cd /opt/e2e && HEARTH_VERSION="$HEARTH_VERSION" HEARTH_URL="http://127.0.0.1:$port/auth?t=$(cat /home/$user/.config/hearth/token)" timeout 300 npx playwright test 2>&1) || true
 if grep -qE '[0-9]+ passed' <<<"$e2e" && ! grep -qE '[0-9]+ (failed|flaky)' <<<"$e2e"; then
 	echo "$e2e" | grep -E '✓|passed' | head -20 | sed 's/^/  | /'
@@ -861,6 +895,8 @@ pkill -f hearth-stub-browser || true
 
 echo "== purge"
 apt-get purge -y -qq hearth >/dev/null
+check "purge removes the Lynis schedule" not test -e /etc/systemd/system/hearth-lynis.timer
+check "and its enable link" not test -L /etc/systemd/system/timers.target.wants/hearth-lynis.timer
 check "package gone" not dpkg -s hearth
 for f in /usr/bin/hearthd /usr/lib/systemd/user/hearthd.service \
 	/etc/systemd/user/default.target.wants/hearthd.service /usr/share/applications/hearth.desktop; do

@@ -1,0 +1,68 @@
+[Unit]
+Description=Hearth: security audit (Lynis)
+Documentation=https://github.com/mohammed-w-mosabeh/hearth
+# Started only by hearth-broker's lynis.run or the timer the user set with
+# lynis.schedule (SECURITY S16h), and only when Lynis is installed.
+ConditionFileIsExecutable=/usr/sbin/lynis
+
+[Service]
+Type=oneshot
+# The whole argv is here; no method can add to it. --no-log: Lynis's log
+# would be a second copy of what it found.
+ExecStart=/usr/sbin/lynis audit system --cronjob --no-log --report-file /var/lib/hearth/lynis-report.tmp
+# Lynis sets its own umask 027, so UMask below does not reach the report.
+ExecStartPost=/usr/bin/chmod 600 /var/lib/hearth/lynis-report.tmp
+# Only a run that ended well replaces the report the page shows.
+ExecStartPost=/usr/bin/mv -f /var/lib/hearth/lynis-report.tmp /var/lib/hearth/lynis-report.dat
+# The state directory is 0700 root; the report names users and packages.
+StateDirectory=hearth
+StateDirectoryMode=0700
+StandardOutput=null
+StandardError=journal
+Environment=LC_ALL=C
+UMask=0077
+Nice=19
+IOSchedulingClass=idle
+TimeoutStartSec=15min
+
+# --- Hardening (SECURITY.md "systemd hardening") ---
+# An audit reads; nothing outside the state directory can be written, so
+# Lynis cannot change what it looks at. /run stays read-only too: Lynis then
+# leaves no PID file behind, and a killed run cannot block the next.
+# CAP_DAC_READ_SEARCH and CAP_SYS_PTRACE: file modes and /proc of other
+# users' processes. CAP_NET_ADMIN: the only way to list firewall rules;
+# without it Lynis reports a machine with a firewall as having none. No
+# address family below can reach a network, and no fixed argv changes a rule.
+# This is why it is a unit of its own: the broker stays without these.
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE CAP_NET_ADMIN
+AmbientCapabilities=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=no
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+KeyringMode=private
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+# Its own view of the host's network (not PrivateNetwork, which would audit
+# an empty one): AF_NETLINK and AF_UNIX list sockets and rules, and no
+# internet socket can be opened, so nothing leaves the machine (S21g).
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+IPAddressDeny=any
+MemoryMax=512M
+CPUQuota=50%
+TasksMax=256

@@ -57,6 +57,13 @@ func run(log *slog.Logger) error {
 		}
 		return c, nil
 	}})...)
+	methods = append(methods, broker.LynisMethods(broker.LynisConfig{Bus: func(ctx context.Context) (broker.SystemBus, error) {
+		c, err := dbusx.SystemBus(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return c, nil
+	}})...)
 	methods = append(methods, scheduler.BrokerMethods(scheduler.BrokerConfig{
 		UnitDir: scheduler.SystemUnitDir, JobsDir: scheduler.SystemJobsDir, Run: safeexec.Run,
 		Bus: func(ctx context.Context) (scheduler.Bus, error) {

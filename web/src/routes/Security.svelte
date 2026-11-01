@@ -1,4 +1,5 @@
 <script lang="ts">
+  import LynisCard from '../components/LynisCard.svelte';
   import { api, ApiError } from '../lib/api';
   import { locale, t } from '../lib/i18n';
   import {
@@ -191,6 +192,8 @@
     {/each}
   </div>
 {/if}
+
+<LynisCard />
 
 <style>
   header {

@@ -133,6 +133,7 @@
     if (e.metric === 'log.match') return t('alerts.event.log', { pattern: e.instance });
     if (e.metric === 'disk.smart_failing') return t('alerts.event.smart', { name: e.instance });
     if (e.metric === 'usb.new_device') return t('alerts.event.usb', { name: e.instance });
+    if (e.metric === 'lynis.index_drop') return t('alerts.event.lynis', { change: e.instance });
     if (e.metric === 'net.internet_down') return t('alerts.cond.internet');
     if (e.metric === 'net.data_cap') return t('alerts.cond.cap', { name: e.instance });
     if (e.metric === 'disk.forecast_full') return t('alerts.event.forecast', { name: e.instance });

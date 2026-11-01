@@ -39,6 +39,11 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends needrestart \
  && rm -rf /var/lib/apt/lists/*
 
+# Lynis, run for real by hearth-lynis.service (its own layer).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends lynis \
+ && rm -rf /var/lib/apt/lists/*
+
 # unattended-upgrades, read through the real apt-config (its own layer).
 RUN apt-get update \
  && apt-get install -y --no-install-recommends unattended-upgrades \

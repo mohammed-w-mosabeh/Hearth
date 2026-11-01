@@ -26,8 +26,10 @@ recommends:
 
 # Which services run old libraries. Only a suggestion: its apt hook changes
 # what an upgrade does.
+# Lynis: the audit on the Security page, which says how to install it.
 suggests:
   - needrestart
+  - lynis
 
 contents:
   - src: web/src/assets/fonts/LICENSE.txt
@@ -56,6 +58,10 @@ contents:
       mode: 0644
   - src: packaging/systemd/hearth-needrestart.service
     dst: /usr/lib/systemd/system/hearth-needrestart.service
+    file_info:
+      mode: 0644
+  - src: packaging/systemd/hearth-lynis.service
+    dst: /usr/lib/systemd/system/hearth-lynis.service
     file_info:
       mode: 0644
   - src: packaging/polkit/org.hearth.policy

@@ -173,6 +173,15 @@ test('the log explorer shows lines as text', async ({ page }) => {
   await noScriptRan(page);
 });
 
+test('a Lynis finding shows as text', async ({ page }) => {
+  await page.goto(`${origin}/#/security`);
+  await page.reload();
+  const card = page.locator('section[aria-labelledby="lynis-title"]');
+  await expect(card.getByText(PAYLOAD).first()).toBeVisible({ timeout: 15_000 });
+  await expect(card.getByRole('link', { name: 'Open in Hearth' })).toHaveCount(0); // AUTH has no page
+  await noScriptRan(page);
+});
+
 test('every sidebar page is its real page', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
