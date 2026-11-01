@@ -1,4 +1,5 @@
 <script lang="ts">
+  import LogExplorer from '../components/LogExplorer.svelte';
   import Crashes from '../components/Crashes.svelte';
   import { api, ApiError } from '../lib/api';
   import { phaseKey, slowLink, spanText, type BootReport } from '../lib/boot';
@@ -6,7 +7,7 @@
   import { entryTime, journalPageQuery, prioClass, type Boot, type JournalEntry, type JournalFilter, type JournalPage } from '../lib/journal';
   import { href } from '../lib/router.svelte';
 
-  type View = 'logs' | 'boot';
+  type View = 'logs' | 'boot' | 'explorer';
 
   const PRIORITIES = ['', '3', '4', '6'] as const;
   const WHEN = [
@@ -80,9 +81,9 @@
 <Crashes />
 
 <div class="segmented" role="radiogroup" aria-label={t('journal.title')}>
-  {#each ['logs', 'boot'] as const as v (v)}
+  {#each ['logs', 'explorer', 'boot'] as const as v (v)}
     <button type="button" role="radio" aria-checked={view === v} class:on={view === v} onclick={() => (view = v)}>
-      {t(v === 'logs' ? 'journal.view.logs' : 'journal.view.boot')}
+      {t(v === 'logs' ? 'journal.view.logs' : v === 'explorer' ? 'journal.view.explorer' : 'journal.view.boot')}
     </button>
   {/each}
 </div>
@@ -134,6 +135,8 @@
     </ul>
     {#if next}<button type="button" class="btn more" onclick={() => load(next)} disabled={loading}>{t('journal.older')}</button>{/if}
   {/if}
+{:else if view === 'explorer'}
+  <LogExplorer />
 {:else if bootFailed}
   <p class="note error" role="status">{t('boot.error')}</p>
 {:else if boot === null}

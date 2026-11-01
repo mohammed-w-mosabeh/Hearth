@@ -51,6 +51,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/insight"
 	"github.com/mohammed-w-mosabeh/hearth/internal/launch"
 	"github.com/mohammed-w-mosabeh/hearth/internal/launcher"
+	"github.com/mohammed-w-mosabeh/hearth/internal/logview"
 	"github.com/mohammed-w-mosabeh/hearth/internal/netinfo"
 	"github.com/mohammed-w-mosabeh/hearth/internal/pkgs"
 	"github.com/mohammed-w-mosabeh/hearth/internal/posture"
@@ -421,6 +422,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	}
 	defer func() { stopDocker(); dockerWG.Wait() }()
 	srv.API.HandleFunc("GET /api/v1/docker", dockerObjs.HandleSnapshot)
+	srv.API.HandleFunc("GET /api/v1/logs", logview.New(brokerClient, safeexec.Run).Handle)
 	diskHealth := smart.New(smart.Config{Broker: brokerClient, Log: log,
 		Observe: func(ctx context.Context, now time.Time, v map[string]float64) {
 			engine.Observe(ctx, now, smart.Metric, v)

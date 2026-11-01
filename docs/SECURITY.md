@@ -58,7 +58,7 @@ Hearth is effectively a root-capable control panel. Assume any web page the user
 - S21e. Automatic updates (Security posture) are read, never changed: one fixed argv through safeexec, `apt-config shell` for the two `APT::Periodic` keys and nothing else, so proxy credentials in the APT configuration never reach Hearth; the last run is the mtime of apt's stamp file. No broker method, no polkit.
 - S21g. Outbound (v1.2): no new listener, and nothing leaves the machine except what the user configures (ntfy/SMTP, health-check URLs, connectivity targets). External tools (lynis, fwupd data, needrestart) are used only if installed, and only when the user asks or a schedule they set runs.
 - S21h. Connectivity checks (v1.2): TCP connect, or unprivileged ICMP if `ping_group_range` allows; never raw sockets. Off until the user turns them on and names a target; a target is a host and port, never a URL; a TCP check connects and closes, sending nothing; at most 8 targets, once a minute, 5 s timeout. Data usage comes from the kernel's counters and sends nothing. Homepage TCP port and TLS expiry checks stay within S21's limits.
-- S21i. Log explorer (v1.2): memory bounded by a line cap per source; no persistent copy of logs.
+- S21i. Log explorer (v1.2): memory bounded by a line cap per source (500 lines of 2 KiB each, 4 sources, read one after another, one request at a time); no persistent copy of logs. Patterns are RE2, run on the server, with the same limits as log alerts.
 
 ### Phone link (removed)
 - S22. Removed (Phase 5 cancelled).

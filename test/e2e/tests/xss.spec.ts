@@ -27,6 +27,7 @@ async function noScriptRan(page: Page): Promise<void> {
 test.describe.configure({ mode: 'serial' });
 
 let key = '';
+let jobUnit = '';
 
 test.beforeAll(async ({ browser }) => {
   const page = await browser.newPage();
@@ -47,6 +48,7 @@ test.beforeAll(async ({ browser }) => {
   const job = await post('jobs/user', { name: PAYLOAD, script: '#!/bin/sh\necho "' + PAYLOAD.replace(/"/g, '\\"') + '"\n', timeout: 60, notify: false, schedule: { kind: 'calendar', value: '*-*-* 04:00:00' } });
   expect(job.ok(), await job.text()).toBeTruthy();
   const { id } = (await job.json()) as { id: string };
+  jobUnit = `user/hearth-job-${id}.service`;
   const run = await post('actions/job/run', { target: `user/${id}` });
   expect(run.ok(), await run.text()).toBeTruthy();
   // Its output, the payload, lands in the journal for the history view.
@@ -157,6 +159,16 @@ test('an inhibitor shows as text', async ({ page }) => {
   await page.goto(`${origin}/#/settings`);
   await page.reload();
   await expect(page.locator('.sleep').getByText(PAYLOAD).first()).toBeVisible();
+  await noScriptRan(page);
+});
+
+test('the log explorer shows lines as text', async ({ page }) => {
+  await page.goto(`${origin}/#/journal`);
+  await page.reload();
+  await page.getByRole('radio', { name: 'Log explorer' }).click();
+  await page.getByLabel('Service, like system/cups.service').fill(jobUnit);
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(page.locator('.lines').getByText(PAYLOAD).first()).toBeVisible({ timeout: 15_000 });
   await noScriptRan(page);
 });
 
