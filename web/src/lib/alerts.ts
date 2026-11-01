@@ -60,6 +60,7 @@ const metricKeys: Record<string, MessageKey> = {
   'job.failed': 'metric.job.failed',
   'net.new_listener': 'metric.net.new_listener',
   'disk.smart_failing': 'metric.disk.smart_failing',
+  'disk.forecast_full': 'metric.disk.forecast_full',
   'container.unhealthy': 'metric.container.unhealthy',
   'container.oom': 'metric.container.oom',
   'log.match': 'metric.log.match',
@@ -183,6 +184,7 @@ export function conditionText(r: Pick<Rule, 'metric' | 'target' | 'op' | 'thresh
   if (r.metric === 'container.oom') return r.target ? t('alerts.cond.oom', { name: r.target }) : t('alerts.cond.anyOom');
   if (r.metric === 'log.match') return t('alerts.cond.log', { pattern: r.target });
   if (r.metric === 'disk.smart_failing') return r.target ? t('alerts.cond.smart', { name: r.target }) : t('alerts.cond.anySmart');
+  if (r.metric === 'disk.forecast_full') return r.target ? t('alerts.cond.forecast', { name: r.target }) : t('alerts.cond.anyForecast');
   const where = m?.instance ? ` (${r.target || t('alerts.cond.any', { what: instanceLabel(m) })})` : '';
   const when = r.for_s > 0 ? ` ${forText(r.for_s)}` : '';
   return `${metricLabel(m, r.metric)}${where} ${r.op} ${valueText(r.threshold, m)}${when}`;

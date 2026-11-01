@@ -108,7 +108,7 @@ Gate 5 result (2026-11-01): **passed.** Fuzzing: all 14 targets new in this phas
 Phases 6–8: plan approved by the owner 2026-11-01; `docs/plan/phases-6-8.md` is the source of truth, including the standing rules. Each phase branches off `main` only after the owner approves the previous gate and that phase is merged.
 
 ## Phase 6 — v1.2: insight
-- [ ] 6.1 Forecasts: "disk full in N days" per mount from the 1 h history (linear fit over 7 and 30 days, shown only when the fit is meaningful), battery wear trend, alert when a disk is forecast full within 7 days
+- [x] 6.1 Forecasts: "disk full in N days" per mount from the 1 h history (linear fit over 7 and 30 days, shown only when the fit is meaningful), battery wear trend, alert when a disk is forecast full within 7 days (a fit needs 3 or 10 days of data, R² ≥ 0.7, growth over 0.2% of the disk and no single step above half of it, and starts after the last freed space; the alert holds until 10 days out; wear from the new daily `battery.health` history, a rate after 30 days)
 - [ ] 6.2 Event markers on every chart: boots, package upgrades, alerts, profile switches and container restarts from the change timeline
 - [ ] 6.3 Crashes and OOM: app crashes from systemd-coredump journal entries and kernel OOM kills from the journal, linked to the app, unit or container, with counts over time; read-only
 - [ ] 6.4 Sleep and power: logind inhibitors, suspend/resume history from the journal, battery charge threshold where the kernel exposes `charge_control_end_threshold` (UPower if it supports it, otherwise a closed broker method accepting only 50–100)

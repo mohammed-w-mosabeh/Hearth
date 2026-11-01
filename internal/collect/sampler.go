@@ -104,6 +104,9 @@ func (s Sample) Points() []store.Point {
 		pts = append(pts,
 			store.Point{Metric: "battery.pct:" + b.ID, Value: b.Pct},
 			store.Point{Metric: "battery.rate:" + b.ID, Value: b.RateW})
+		if b.HealthPct > 0 {
+			pts = append(pts, store.Point{Metric: "battery.health:" + b.ID, Value: b.HealthPct})
+		}
 	}
 	return append(pts,
 		store.Point{Metric: "load1", Value: s.CPU.Load1},

@@ -649,6 +649,8 @@ for bad in '{"device":"sda1","kind":"short"}' '{"device":"sda","kind":"offline"}
 done
 check "self-test policy is present" grep -q 'org.hearth.disk.selftest' "$policy"
 check "the health route answers" grep -q '"status":' <<<"$(pkgs_api disks/health)"
+check "the forecast alert exists" grep -q '"metric":"disk.forecast_full"' <<<"$(pkgs_api alerts/rules)"
+check "the forecast route answers" grep -q '"disks":' <<<"$(pkgs_api forecasts)"
 if [ -n "$disk" ]; then
 	check "disk.selftest refused without polkit authorization" call_says "not authorized" disk.selftest "{\"device\":\"$disk\",\"kind\":\"short\"}"
 	# A stand-in smartctl: this container has no disk the broker may open.

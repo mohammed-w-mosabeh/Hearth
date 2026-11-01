@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { child, crumbs, exploreRoot, level, mountOf, usageQuery } from './disks';
+import { child, crumbs, daysLeft, exploreRoot, level, mountOf, usageQuery } from './disks';
 
 describe('disks', () => {
+  it('rounds days until full', () => {
+    expect(daysLeft({ days: 0.4 })).toBeNull();
+    expect(daysLeft({ days: 6.6 })).toBe(7);
+  });
+
   it('builds breadcrumbs', () => {
     expect(crumbs('/home/me', '/home/me')).toEqual([{ name: '/home/me', path: '/home/me' }]);
     expect(crumbs('/home/me/Videos/2024', '/home/me')).toEqual([

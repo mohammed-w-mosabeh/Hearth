@@ -2,6 +2,8 @@
   import Meter from '../Meter.svelte';
   import Sparkline from '../Sparkline.svelte';
   import Stat from './Stat.svelte';
+  import { api } from '../../lib/api';
+  import type { BatteryWear, Forecasts } from '../../lib/disks';
   import { duration, pct } from '../../lib/format';
   import { t, type MessageKey } from '../../lib/i18n';
   import type { LiveMetrics } from '../../lib/metrics.svelte';
@@ -9,6 +11,15 @@
 
   let { power, metrics }: { power: Power; metrics: LiveMetrics } = $props();
   const batteries = $derived(power.batteries ?? []);
+
+  // Wear moves by the day: read once on opening the page.
+  const DAY_S = 86400;
+  let wear = $state.raw<Record<string, BatteryWear>>({});
+  $effect(() => {
+    api<Forecasts>('/forecasts')
+      .then((r) => (wear = r.batteries))
+      .catch(() => {});
+  });
 
   const states: Record<string, MessageKey> = {
     charging: 'battery.charging',
@@ -32,6 +43,7 @@
 </script>
 
 {#each batteries as b, i (b.id)}
+  {@const w = wear[b.id]}
   <Stat value={pct(b.pct)}>
     {stateText(b.state)}
     {#if b.state === 'discharging' && b.to_empty_s}· {t('card.power.toEmpty', { time: duration(b.to_empty_s) })}{/if}
@@ -45,6 +57,14 @@
   {/if}
   {#if b.health_pct > 0}
     <p class="muted">{t('card.power.health', { id: b.id, health: pct(b.health_pct) })}</p>
+  {/if}
+  {#if w}
+    {#if w.loss_per_year !== undefined}
+      <p class="muted">{t('card.power.wear', { pct: pct(w.loss_per_year) })}</p>
+    {/if}
+    {#if w.t.length >= 2}
+      <Sparkline data={[w.t, w.pct]} max={100} colors={['--accent']} height={32} span={(w.t.length - 1) * DAY_S} label={t('card.power.wearChart', { n: w.t.length })} />
+    {/if}
   {/if}
 {/each}
 <ul>

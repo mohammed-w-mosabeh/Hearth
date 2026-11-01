@@ -48,6 +48,7 @@ var Metrics = []Metric{
 	{ID: "container.oom", Label: "Out-of-memory kill in a container", Instance: "container", Max: 1},
 	{ID: LogMetric, Label: "Log line matches a pattern", Instance: "pattern", Max: 1},
 	{ID: "disk.smart_failing", Label: "Disk reports it is failing (SMART)", Instance: "disk", Max: 1},
+	{ID: "disk.forecast_full", Label: "Disk forecast to fill within 7 days", Instance: "mount", Max: 1},
 }
 
 func metric(id string) (Metric, bool) {
@@ -168,6 +169,9 @@ func Describe(e store.AlertEvent) (summary, body string) {
 	}
 	if e.Metric == "disk.smart_failing" {
 		return e.RuleName, "Disk " + e.Instance + " reports it is failing. Back up what is on it now."
+	}
+	if e.Metric == "disk.forecast_full" {
+		return e.RuleName, e.Instance + " is forecast to run out of space within 7 days."
 	}
 	val := func(v float64) string {
 		if m.Unit == "%" {

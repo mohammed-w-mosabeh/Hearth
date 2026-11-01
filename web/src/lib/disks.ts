@@ -1,5 +1,30 @@
 // Disks page: the folder size explorer (internal/diskusage) and helpers.
 
+export interface DiskForecast {
+  mount: string;
+  days: number;
+  per_day: number;
+  window_days: number;
+}
+
+export interface BatteryWear {
+  loss_per_year?: number;
+  span_days: number;
+  t: number[];
+  pct: number[];
+}
+
+/** GET /api/v1/forecasts, internal/forecast: only what the data supports. */
+export interface Forecasts {
+  disks: DiskForecast[];
+  batteries: Record<string, BatteryWear>;
+}
+
+/** Whole days until full, or null for under a day. */
+export function daysLeft(f: Pick<DiskForecast, 'days'>): number | null {
+  return f.days < 1 ? null : Math.round(f.days);
+}
+
 export interface UsageEntry {
   name: string;
   size: number;

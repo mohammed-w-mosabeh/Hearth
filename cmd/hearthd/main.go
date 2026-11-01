@@ -44,6 +44,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/diskusage"
 	"github.com/mohammed-w-mosabeh/hearth/internal/docker"
 	"github.com/mohammed-w-mosabeh/hearth/internal/dropin"
+	"github.com/mohammed-w-mosabeh/hearth/internal/forecast"
 	"github.com/mohammed-w-mosabeh/hearth/internal/homepage"
 	"github.com/mohammed-w-mosabeh/hearth/internal/insight"
 	"github.com/mohammed-w-mosabeh/hearth/internal/launch"
@@ -406,6 +407,24 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		}})
 	diskHealth.Register(reg)
 	srv.API.HandleFunc("GET /api/v1/disks/health", diskHealth.Handle)
+	forecasts := forecast.New(forecast.Config{DB: db, Log: log,
+		Mounts: func() []forecast.Mount {
+			s, ok := sampler.Ring().Last()
+			if !ok {
+				return nil
+			}
+			out := make([]forecast.Mount, 0, len(s.Disks))
+			for _, d := range s.Disks {
+				out = append(out, forecast.Mount{Mount: d.Mount, Total: d.Total, Avail: d.Avail})
+			}
+			return out
+		},
+		Observe: func(ctx context.Context, now time.Time, v map[string]float64) {
+			engine.Observe(ctx, now, forecast.Metric, v)
+		}})
+	srv.API.HandleFunc("GET /api/v1/forecasts", forecasts.Handle)
+	dockerWG.Add(1)
+	go func() { defer dockerWG.Done(); forecasts.Run(dockerCtx) }()
 	dockerWG.Add(1)
 	go func() { defer dockerWG.Done(); diskHealth.Run(dockerCtx) }()
 	// Container usage for Home and the "container exited" alert, from the

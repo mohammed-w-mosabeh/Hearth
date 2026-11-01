@@ -1,7 +1,7 @@
 <script lang="ts">
   import { api, ApiError } from '../lib/api';
   import DiskHealth from '../components/DiskHealth.svelte';
-  import { child, crumbs, exploreRoot, level, usageQuery, type Usage } from '../lib/disks';
+  import { child, crumbs, daysLeft, exploreRoot, level, usageQuery, type DiskForecast, type Forecasts, type Usage } from '../lib/disks';
   import { bytes, pct, rate } from '../lib/format';
   import { locale, t } from '../lib/i18n';
   import { href } from '../lib/router.svelte';
@@ -33,6 +33,15 @@
       .then((r) => (roots = r.roots))
       .catch(() => {});
   });
+
+  // Only forecasts the data supports arrive here (internal/forecast).
+  let forecasts = $state.raw<DiskForecast[]>([]);
+  $effect(() => {
+    api<Forecasts>('/forecasts')
+      .then((r) => (forecasts = r.disks))
+      .catch(() => {});
+  });
+  const forecastOf = (mount: string) => forecasts.find((f) => f.mount === mount);
 
   const disks = $derived(sample?.disks ?? []);
   const mounts = $derived(disks.map((d) => d.mount));
@@ -84,6 +93,7 @@
   <ul class="mounts">
     {#each disks as d (d.mount)}
       {@const root = exploreRoot(d.mount, roots, mounts)}
+      {@const f = forecastOf(d.mount)}
       <li class="card">
         <div class="head">
           <strong class="mount" title={d.mount}>{d.mount}</strong>
@@ -96,6 +106,12 @@
           <span>{t('disks.usage', { used: bytes(d.used), total: bytes(d.total), pct: pct(d.pct) })}</span>
           <span class="muted">{t('disks.free', { free: bytes(d.avail) })}</span>
         </div>
+        {#if f}
+          {@const n = daysLeft(f)}
+          <p class="forecast" class:warn={f.days <= 7} title={t('disks.forecastTitle', { n: f.window_days })}>
+            {n === null ? t('disks.forecastSoon') : t('disks.forecast', { n, rate: bytes(f.per_day) })}
+          </p>
+        {/if}
         {#if root}
           <button type="button" class="explore" onclick={() => open(root)}>{t(root === d.mount ? 'disks.explore' : 'disks.exploreHome')}</button>
         {/if}
@@ -274,6 +290,10 @@
     gap: var(--space-2);
     font-size: 13px;
     font-variant-numeric: tabular-nums;
+  }
+  .forecast {
+    margin: 0;
+    font-size: 13px;
   }
   button {
     font: inherit;

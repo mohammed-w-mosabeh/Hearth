@@ -132,6 +132,7 @@
     if (e.metric === 'container.oom') return t('alerts.event.oom', { name: e.instance });
     if (e.metric === 'log.match') return t('alerts.event.log', { pattern: e.instance });
     if (e.metric === 'disk.smart_failing') return t('alerts.event.smart', { name: e.instance });
+    if (e.metric === 'disk.forecast_full') return t('alerts.event.forecast', { name: e.instance });
     const where = e.instance ? ` (${e.instance})` : '';
     return `${metricLabel(m, e.metric)}${where}: ${valueText(e.value, m)}, ${t('alerts.event.peak', { v: valueText(e.peak, m) })}`;
   };
