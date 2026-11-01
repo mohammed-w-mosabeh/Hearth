@@ -155,6 +155,19 @@ var allowlist = map[string]Spec{
 		Validate: journalQueryArgs,
 		Timeout:  10 * time.Second,
 	},
+	// journalctl for crashes and out-of-memory kills (Journal page). Fixed
+	// but for the start time; CrashArgs never asks for a crash's message,
+	// command line or environment, which can hold secrets (S19).
+	"journalctl-crashes": {
+		Paths:    []string{"/usr/bin/journalctl", "/bin/journalctl"},
+		Validate: journalFixed(crashFlags, "MESSAGE_ID="+coredumpMessageID),
+		Timeout:  10 * time.Second,
+	},
+	"journalctl-oom": {
+		Paths:    []string{"/usr/bin/journalctl", "/bin/journalctl"},
+		Validate: journalFixed(oomFlags, "_TRANSPORT=kernel"),
+		Timeout:  10 * time.Second,
+	},
 	// journalctl listing the boots it has logs of (Journal page).
 	"journalctl-boots": {
 		Paths:    []string{"/usr/bin/journalctl", "/bin/journalctl"},
@@ -325,6 +338,45 @@ var JournalFixedArgs = []string{"--quiet", "--no-pager", "--output=json", "--out
 // JournalQueryFixedArgs start every journalctl-query command line.
 var JournalQueryFixedArgs = []string{"--quiet", "--no-pager", "--output=json", "--reverse", "--case-sensitive=no",
 	"--output-fields=MESSAGE,PRIORITY,_PID,SYSLOG_IDENTIFIER,_SYSTEMD_UNIT,_SYSTEMD_USER_UNIT"}
+
+// MaxCrashLines bounds what one crash or out-of-memory query returns.
+const MaxCrashLines = 500
+
+// coredumpMessageID is systemd-coredump's catalog ID.
+const coredumpMessageID = "fc2e22bc6ee647b6b90729ab34a250b1"
+
+var (
+	crashFlags = []string{"--quiet", "--no-pager", "--output=json", "--reverse", "--lines=500",
+		"--output-fields=COREDUMP_COMM,COREDUMP_EXE,COREDUMP_SIGNAL_NAME,COREDUMP_UNIT,COREDUMP_USER_UNIT,COREDUMP_CGROUP"}
+	oomFlags = []string{"--quiet", "--no-pager", "--output=json", "--reverse", "--lines=500",
+		"--output-fields=MESSAGE", "--grep=^oom-kill:constraint="}
+)
+
+// CrashArgs is journalctl-crashes' command line from a unix time.
+func CrashArgs(since int64) []string {
+	return slices.Concat(crashFlags, []string{"--since=@" + strconv.FormatInt(since, 10), "MESSAGE_ID=" + coredumpMessageID})
+}
+
+// OOMArgs is journalctl-oom's command line from a unix time.
+func OOMArgs(since int64) []string {
+	return slices.Concat(oomFlags, []string{"--since=@" + strconv.FormatInt(since, 10), "_TRANSPORT=kernel"})
+}
+
+// journalFixed accepts flags, --since=@<unix>, then match, and nothing else.
+func journalFixed(flags []string, match string) func([]string) error {
+	vs := make([]Validator, 0, len(flags)+2)
+	for _, f := range flags {
+		vs = append(vs, Literal(f))
+	}
+	vs = append(vs, func(s string) error {
+		v, ok := strings.CutPrefix(s, "--since=")
+		if !ok || !journalTimeRe.MatchString(v) {
+			return invalid("not a start time: %q", s)
+		}
+		return nil
+	}, Literal(match))
+	return exactly(vs...)
+}
 
 // MaxJournalGrep bounds --grep= for journalctl-query.
 const MaxJournalGrep = 512

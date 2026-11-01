@@ -569,6 +569,10 @@ check "named after its process" grep -q '"group_name":"\\u003csvg onload\\u003e"
 # An autostart entry named with the payload (Settings page).
 mkdir -p /etc/xdg/autostart
 printf '[Desktop Entry]\nType=Application\nName=%s\nComment=%s\nExec=/bin/true\n' "$xss" "$xss" >/etc/xdg/autostart/hearth-xss.desktop
+# A crash whose process name is the payload (Journal page), logged the way
+# systemd-coredump does, into the user's own journal.
+printf 'MESSAGE_ID=fc2e22bc6ee647b6b90729ab34a250b1\nMESSAGE=itest crash\nCOREDUMP_COMM=%s\nCOREDUMP_EXE=/tmp/%s\nCOREDUMP_SIGNAL_NAME=SIGSEGV\n' "$xss" "$xss" | asuser logger --journald
+check "the crash report lists it" grep -q 'SIGSEGV' <<<"$(pkgs_api crashes)"
 # A cache folder named with the payload (Space advisor).
 asuser mkdir -p "/home/$user/.cache/$xss"
 # A Steam game whose name is the payload (VDF escapes its quotes).

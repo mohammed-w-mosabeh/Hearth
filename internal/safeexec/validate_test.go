@@ -626,6 +626,40 @@ func TestSmartctlShapes(t *testing.T) {
 	}
 }
 
+// A wrong ID would find nothing and look like a healthy machine.
+func TestCoredumpMessageID(t *testing.T) {
+	b, err := os.ReadFile("/usr/lib/systemd/catalog/systemd.catalog")
+	if err != nil {
+		t.Skip("no systemd catalog here")
+	}
+	if !strings.Contains(string(b), "-- "+coredumpMessageID+"\nSubject: Process @COREDUMP_PID@ (@COREDUMP_COMM@) dumped core") {
+		t.Fatal("not systemd's dumped core message ID")
+	}
+}
+
+func TestCrashArgs(t *testing.T) {
+	if err := Check("journalctl-crashes", CrashArgs(1790000000)...); err != nil {
+		t.Fatal(err)
+	}
+	if err := Check("journalctl-oom", OOMArgs(1790000000)...); err != nil {
+		t.Fatal(err)
+	}
+	good := CrashArgs(1)
+	for i, repl := range map[int]string{0: "--flag", len(good) - 2: "--since=yesterday", len(good) - 1: "_UID=0"} {
+		bad := append([]string{}, good...)
+		bad[i] = repl
+		if Check("journalctl-crashes", bad...) == nil {
+			t.Errorf("accepted %v", bad)
+		}
+	}
+	if Check("journalctl-crashes", append(good, "--output-fields=COREDUMP_ENVIRON")...) == nil {
+		t.Error("accepted another field list")
+	}
+	if Check("journalctl-oom", good...) == nil {
+		t.Error("the two commands are interchangeable")
+	}
+}
+
 func FuzzDiskName(f *testing.F) {
 	for _, s := range []string{"sda", "nvme0n1", "sda1", "../sda", "-a", "nvme0n1p1", "/dev/sda"} {
 		f.Add(s)

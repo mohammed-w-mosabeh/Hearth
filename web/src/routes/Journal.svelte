@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Crashes from '../components/Crashes.svelte';
   import { api, ApiError } from '../lib/api';
   import { phaseKey, slowLink, spanText, type BootReport } from '../lib/boot';
   import { locale, t } from '../lib/i18n';
@@ -75,6 +76,8 @@
   <h1>{t('journal.title')}</h1>
   <p>{t('journal.intro')}</p>
 </header>
+
+<Crashes />
 
 <div class="segmented" role="radiogroup" aria-label={t('journal.title')}>
   {#each ['logs', 'boot'] as const as v (v)}

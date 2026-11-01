@@ -146,6 +146,13 @@ test('a chart event shows as text', async ({ page }) => {
   await noScriptRan(page);
 });
 
+test('a crash shows as text', async ({ page }) => {
+  await page.goto(`${origin}/#/journal`);
+  await page.reload();
+  await expect(page.locator('.crashes').getByText(PAYLOAD).first()).toBeVisible();
+  await noScriptRan(page);
+});
+
 test('every sidebar page is its real page', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));

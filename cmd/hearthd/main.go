@@ -39,6 +39,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/broker"
 	"github.com/mohammed-w-mosabeh/hearth/internal/changes"
 	"github.com/mohammed-w-mosabeh/hearth/internal/collect"
+	"github.com/mohammed-w-mosabeh/hearth/internal/crashes"
 	"github.com/mohammed-w-mosabeh/hearth/internal/dbusx"
 	"github.com/mohammed-w-mosabeh/hearth/internal/discovery"
 	"github.com/mohammed-w-mosabeh/hearth/internal/diskusage"
@@ -442,6 +443,9 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	dockerWG.Add(1)
 	go func() { defer dockerWG.Done(); dockerMon.Run(dockerCtx) }()
 	srv.API.HandleFunc("GET /api/v1/docker/usage", dockerMon.HandleUsage)
+	srv.API.HandleFunc("GET /api/v1/crashes", crashes.New(crashes.Config{Run: safeexec.Run,
+		CanReadSystem: services.CanReadSystemJournal,
+		ContainerName: func(id string) string { name, _ := dockerMon.Name(id); return name }}).Handle)
 	srv.API.HandleFunc("GET /api/v1/docker/containers/{id}", docker.HandleInspect(brokerClient))
 	srv.API.HandleFunc("GET /api/v1/docker/volumes/sizes", docker.HandleVolumeSizes(brokerClient))
 	images := &docker.Images{B: brokerClient, Registry: docker.NewRegistry(), Run: safeexec.Run, CacheDir: filepath.Join(paths.DataDir, "trivy")}
