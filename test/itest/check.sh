@@ -662,6 +662,14 @@ for bad in '{"battery":"BAT0","end":49}' '{"battery":"BAT0","end":101}' '{"batte
 	check "battery.threshold refused before polkit: $bad" call_says "bad params\|must be\|no such battery\|not a battery" battery.threshold "$bad"
 done
 check "the sleep route answers" grep -q '"inhibitors":' <<<"$(pkgs_api power/sleep)"
+conn_put() { curl -s -o /dev/null -w '%{http_code}' -X PUT -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$port" -H 'Content-Type: application/json' -d "$1" "http://127.0.0.1:$port/api/v1/connectivity/config"; }
+check "connectivity is off by default" grep -q '"enabled":false' <<<"$(pkgs_api connectivity)"
+check "no check ran before it was turned on" grep -q '"checks":\[\]' <<<"$(pkgs_api connectivity)"
+check "a URL is no connectivity target" test "$(conn_put '{"enabled":true,"targets":[{"host":"http://evil.test"}]}')" = 400
+check "turning it on names a target" test "$(conn_put '{"enabled":true,"targets":[]}')" = 400
+check "connectivity needs the session key" test "$(curl -s -o /dev/null -w '%{http_code}' -X PUT -H "Origin: http://127.0.0.1:$port" -d '{}' "http://127.0.0.1:$port/api/v1/connectivity/config")" = 401
+check "connectivity saves" test "$(conn_put '{"enabled":false,"targets":[{"host":"127.0.0.1","port":'"$port"'}]}')" = 200
+check "the save is audited" grep -q 'connectivity.configure' <<<"$(pkgs_api changes)"
 check "the forecast alert exists" grep -q '"metric":"disk.forecast_full"' <<<"$(pkgs_api alerts/rules)"
 check "the forecast route answers" grep -q '"disks":' <<<"$(pkgs_api forecasts)"
 if [ -n "$disk" ]; then

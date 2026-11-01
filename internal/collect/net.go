@@ -19,6 +19,9 @@ type NetIf struct {
 	// Virtual interfaces (bridges, veth, docker0, tun) have no backing
 	// device; the UI hides them by default and history skips them.
 	Virtual bool `json:"virtual"`
+	// RxBytes and TxBytes are the kernel's counters.
+	RxBytes uint64 `json:"-"`
+	TxBytes uint64 `json:"-"`
 }
 
 type netCounters struct {
@@ -70,7 +73,7 @@ func readNetDev(r *fileReader, procRoot, sysRoot string, virtual map[string]bool
 func netRates(prev, cur map[string]netCounters, dt float64) []NetIf {
 	out := make([]NetIf, 0, len(cur))
 	for name, c := range cur {
-		n := NetIf{Name: name, Virtual: c.virtual}
+		n := NetIf{Name: name, Virtual: c.virtual, RxBytes: c.rx, TxBytes: c.tx}
 		if p, ok := prev[name]; ok {
 			n.RxBps = rate(p.rx, c.rx, dt)
 			n.TxBps = rate(p.tx, c.tx, dt)

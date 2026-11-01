@@ -39,6 +39,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/broker"
 	"github.com/mohammed-w-mosabeh/hearth/internal/changes"
 	"github.com/mohammed-w-mosabeh/hearth/internal/collect"
+	"github.com/mohammed-w-mosabeh/hearth/internal/connectivity"
 	"github.com/mohammed-w-mosabeh/hearth/internal/crashes"
 	"github.com/mohammed-w-mosabeh/hearth/internal/dbusx"
 	"github.com/mohammed-w-mosabeh/hearth/internal/discovery"
@@ -196,6 +197,19 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	go func() { failed.Run(failedCtx); close(failedDone) }()
 	defer func() { stopFailed(); <-failedDone }()
 
+	connWatch := connectivity.New(connectivity.Options{Store: db, Log: log, Observe: engine.Observe,
+		Gateways: func() []string {
+			var out []string
+			for _, r := range netinfo.ReadAddressing(netinfo.Paths{}).Gateways {
+				out = append(out, r.Gateway)
+			}
+			return out
+		}})
+	connWatch.Register(srv.API)
+	connCtx, stopConn := context.WithCancel(ctx)
+	connDone := make(chan struct{})
+	go func() { connWatch.Run(connCtx); close(connDone) }()
+	defer func() { stopConn(); <-connDone }()
 	ds, err := store.NewDownsampler(ctx, db, log, nil)
 	if err != nil {
 		return err
@@ -206,7 +220,12 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		Power: pw.Snapshot,
 		// The sampler goroutine owns ds; it is flushed after the sampler stops.
 		OnSample: func(s collect.Sample) {
-			ds.Add(ctx, s.Time, s.Points())
+			for _, n := range s.Net {
+				if !n.Virtual {
+					connWatch.Count(s.Time, n.Name, n.RxBytes, n.TxBytes)
+				}
+			}
+			ds.Add(ctx, s.Time, append(s.Points(), connWatch.Points()...))
 			for metric, values := range alerts.FromSample(s) {
 				engine.Observe(ctx, s.Time, metric, values)
 			}

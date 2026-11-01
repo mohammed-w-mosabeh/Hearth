@@ -205,19 +205,9 @@ func (e *Engine) step(ctx context.Context, r *store.AlertRule, instance string, 
 	ev.ID = id
 	st.event = &ev
 	e.publish("open", ev)
-	if ev.Notified && e.notify != nil {
+	if ev.Notified {
 		summary, body := Describe(ev)
-		e.wg.Add(1)
-		go func() {
-			defer e.wg.Done()
-			// Not cancelled with the observation: the notification is sent
-			// even if the sample's context ends meanwhile.
-			nctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-			defer cancel()
-			if err := e.notify.Notify(nctx, summary, body, ev.Severity); err != nil {
-				e.log.Warn("alerts: notify", "err", err)
-			}
-		}()
+		e.send(ctx, summary, body, ev.Severity)
 	}
 }
 
@@ -228,6 +218,27 @@ func (e *Engine) close(ctx context.Context, ev *store.AlertEvent, now time.Time)
 	}
 	ev.EndedAt = &ended
 	e.publish("close", *ev)
+	if m, ok := metric(ev.Metric); ok && m.NotifyEnd && ev.Notified {
+		summary, body := DescribeEnd(*ev)
+		e.send(ctx, summary, body, "info")
+	}
+}
+
+// send notifies in the background. It is not cancelled with the
+// observation: the notification goes out even if the sample's context ends.
+func (e *Engine) send(ctx context.Context, summary, body, severity string) {
+	if e.notify == nil {
+		return
+	}
+	e.wg.Add(1)
+	go func() {
+		defer e.wg.Done()
+		nctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		if err := e.notify.Notify(nctx, summary, body, severity); err != nil {
+			e.log.Warn("alerts: notify", "err", err)
+		}
+	}()
 }
 
 func (e *Engine) publish(kind string, ev store.AlertEvent) {
