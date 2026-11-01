@@ -47,6 +47,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/docker"
 	"github.com/mohammed-w-mosabeh/hearth/internal/dropin"
 	"github.com/mohammed-w-mosabeh/hearth/internal/forecast"
+	"github.com/mohammed-w-mosabeh/hearth/internal/hardware"
 	"github.com/mohammed-w-mosabeh/hearth/internal/homepage"
 	"github.com/mohammed-w-mosabeh/hearth/internal/insight"
 	"github.com/mohammed-w-mosabeh/hearth/internal/launch"
@@ -422,6 +423,30 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	}
 	defer func() { stopDocker(); dockerWG.Wait() }()
 	srv.API.HandleFunc("GET /api/v1/docker", dockerObjs.HandleSnapshot)
+	srv.API.HandleFunc("GET /api/v1/hardware", hardware.HandleInventory(hardware.Paths{}))
+	// A USB device never seen here raises "usb.new_device" once.
+	const knownUSB = "usb.known_devices"
+	usbWatch := &hardware.Watcher{Log: log, Now: time.Now,
+		Load: func(ctx context.Context) ([]string, bool, error) {
+			raw, ok, err := db.Setting(ctx, knownUSB)
+			if err != nil || !ok {
+				return nil, ok, err
+			}
+			var list []string
+			return list, true, json.Unmarshal(raw, &list)
+		},
+		Save: func(ctx context.Context, known []string) error {
+			b, err := json.Marshal(known)
+			if err != nil {
+				return err
+			}
+			return db.SetSetting(ctx, knownUSB, b)
+		},
+		Observe: func(ctx context.Context, now time.Time, v map[string]float64) {
+			engine.Observe(ctx, now, hardware.Metric, v)
+		}}
+	dockerWG.Add(1)
+	go func() { defer dockerWG.Done(); usbWatch.Run(dockerCtx) }()
 	srv.API.HandleFunc("GET /api/v1/logs", logview.New(brokerClient, safeexec.Run).Handle)
 	diskHealth := smart.New(smart.Config{Broker: brokerClient, Log: log,
 		Observe: func(ctx context.Context, now time.Time, v map[string]float64) {
@@ -582,6 +607,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		defer func() { _ = bus.Close() }()
 		f(bus)
 	}
+	srv.API.HandleFunc("GET /api/v1/hardware/firmware", hardware.HandleFirmware(withSystemBus))
 	security := posture.New(posture.Config{
 		UID: os.Getuid(), Path: append(filepath.SplitList(os.Getenv("PATH")), filepath.Join(appsCfg.Home, ".local/bin")),
 		Sockets: func() (netinfo.Sockets, error) { return netAPI.Resolver.Read(netinfo.Dump, collect.Users()) },

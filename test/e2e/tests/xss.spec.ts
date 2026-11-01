@@ -78,6 +78,7 @@ const pages: { name: string; hash: string; text: string }[] = [
   { name: 'Home tile', hash: '#/', text: PAYLOAD },
   { name: 'Docker container name, image, status and project', hash: '#/docker', text: PAYLOAD },
   { name: 'Scheduler job name', hash: '#/scheduler', text: PAYLOAD },
+  { name: 'Hardware device name', hash: '#/hardware', text: PAYLOAD },
   { name: 'Alerts rule name', hash: '#/alerts', text: PAYLOAD.slice(0, 80) },
   { name: 'Packages description', hash: '#/packages?q=hearth-xss-probe', text: PAYLOAD },
   { name: 'Network process name', hash: '#/network?q=7778', text: COMM },

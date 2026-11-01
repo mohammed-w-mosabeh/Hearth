@@ -51,6 +51,7 @@ var Metrics = []Metric{
 	{ID: LogMetric, Label: "Log line matches a pattern", Instance: "pattern", Max: 1},
 	{ID: "disk.smart_failing", Label: "Disk reports it is failing (SMART)", Instance: "disk", Max: 1},
 	{ID: "disk.forecast_full", Label: "Disk forecast to fill within 7 days", Instance: "mount", Max: 1},
+	{ID: "usb.new_device", Label: "New USB device connected", Instance: "device", Max: 1},
 	{ID: "net.internet_down", Label: "Internet down", Max: 1, NotifyEnd: true},
 	{ID: "net.data_cap", Label: "Monthly data cap reached", Instance: "interface", Max: 1},
 }
@@ -181,6 +182,9 @@ func Describe(e store.AlertEvent) (summary, body string) {
 	}
 	if e.Metric == "disk.smart_failing" {
 		return e.RuleName, "Disk " + e.Instance + " reports it is failing. Back up what is on it now."
+	}
+	if e.Metric == "usb.new_device" {
+		return e.RuleName, e.Instance + " was connected for the first time."
 	}
 	if e.Metric == "net.internet_down" {
 		return e.RuleName, "The internet cannot be reached from this computer."

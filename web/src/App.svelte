@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Hardware from './routes/Hardware.svelte';
   import CommandPalette from './components/CommandPalette.svelte';
   import Sidebar from './components/Sidebar.svelte';
   import EmptyState from './components/EmptyState.svelte';
@@ -116,6 +117,8 @@
         <Reports />
       {:else if route?.id === 'profiles'}
         {#if live}<Profiles {live} />{/if}
+      {:else if route?.id === 'hardware'}
+        <Hardware />
       {:else if route?.id === 'space'}
         <Space />
       {:else if route?.id === 'insight'}

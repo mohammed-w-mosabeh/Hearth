@@ -61,6 +61,7 @@ const metricKeys: Record<string, MessageKey> = {
   'net.new_listener': 'metric.net.new_listener',
   'disk.smart_failing': 'metric.disk.smart_failing',
   'disk.forecast_full': 'metric.disk.forecast_full',
+  'usb.new_device': 'metric.usb.new_device',
   'net.internet_down': 'metric.net.internet_down',
   'net.data_cap': 'metric.net.data_cap',
   'container.unhealthy': 'metric.container.unhealthy',
@@ -77,6 +78,7 @@ const instanceKeys: Record<string, MessageKey> = {
   listener: 'instance.listener',
   disk: 'instance.disk',
   interface: 'instance.interface',
+  device: 'instance.device',
   pattern: 'instance.pattern',
 };
 
@@ -187,6 +189,7 @@ export function conditionText(r: Pick<Rule, 'metric' | 'target' | 'op' | 'thresh
   if (r.metric === 'container.oom') return r.target ? t('alerts.cond.oom', { name: r.target }) : t('alerts.cond.anyOom');
   if (r.metric === 'log.match') return t('alerts.cond.log', { pattern: r.target });
   if (r.metric === 'disk.smart_failing') return r.target ? t('alerts.cond.smart', { name: r.target }) : t('alerts.cond.anySmart');
+  if (r.metric === 'usb.new_device') return t('alerts.cond.usb');
   if (r.metric === 'net.internet_down') return t('alerts.cond.internet');
   if (r.metric === 'net.data_cap') return r.target ? t('alerts.cond.cap', { name: r.target }) : t('alerts.cond.anyCap');
   if (r.metric === 'disk.forecast_full') return r.target ? t('alerts.cond.forecast', { name: r.target }) : t('alerts.cond.anyForecast');

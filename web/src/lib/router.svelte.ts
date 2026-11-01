@@ -20,6 +20,7 @@ export const routes: Route[] = [
   { id: 'packages', label: 'nav.packages', icon: 'package' },
   { id: 'tools', label: 'nav.tools', icon: 'wrench' },
   { id: 'space', label: 'nav.space', icon: 'broom' },
+  { id: 'hardware', label: 'nav.hardware', icon: 'grid' },
   { id: 'network', label: 'nav.network', icon: 'network' },
   { id: 'terminal', label: 'nav.terminal', icon: 'terminal' },
   { id: 'scheduler', label: 'nav.scheduler', icon: 'calendar' },

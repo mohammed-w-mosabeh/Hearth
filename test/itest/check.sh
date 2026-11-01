@@ -577,6 +577,16 @@ check "the crash report lists it" grep -q 'SIGSEGV' <<<"$(pkgs_api crashes)"
 systemd-run --quiet --unit=itest-inhibit /usr/bin/systemd-inhibit --what=sleep --who="$xss" --why="$xss" /bin/sleep 600
 sleep 1
 check "the inhibitor is listed" grep -q 'onerror' <<<"$(pkgs_api power/sleep)"
+# A PCI device named with the payload, through the id file (Hardware page).
+pcidev=$(ls /sys/bus/pci/devices | head -1)
+if [ -n "$pcidev" ]; then
+	v=$(sed 's/^0x//' "/sys/bus/pci/devices/$pcidev/vendor")
+	d=$(sed 's/^0x//' "/sys/bus/pci/devices/$pcidev/device")
+	mkdir -p /usr/share/misc
+	printf '%s  %s\n\t%s  %s\n' "$v" "$xss" "$d" "$xss" >/usr/share/misc/pci.ids
+fi
+check "a PCI device is listed" test -n "$pcidev"
+check "no serial field in the inventory" not grep -qiE '"[a-z_]*(serial|uuid)[a-z_]*":' <<<"$(pkgs_api hardware)"
 # A cache folder named with the payload (Space advisor).
 asuser mkdir -p "/home/$user/.cache/$xss"
 # A Steam game whose name is the payload (VDF escapes its quotes).
@@ -670,6 +680,8 @@ check "turning it on names a target" test "$(conn_put '{"enabled":true,"targets"
 check "connectivity needs the session key" test "$(curl -s -o /dev/null -w '%{http_code}' -X PUT -H "Origin: http://127.0.0.1:$port" -d '{}' "http://127.0.0.1:$port/api/v1/connectivity/config")" = 401
 check "connectivity saves" test "$(conn_put '{"enabled":false,"targets":[{"host":"127.0.0.1","port":'"$port"'}]}')" = 200
 check "the save is audited" grep -q 'connectivity.configure' <<<"$(pkgs_api changes)"
+check "the hardware route answers" grep -q '"pci":' <<<"$(pkgs_api hardware)"
+check "the firmware route says what it found" grep -q '"available":' <<<"$(pkgs_api hardware/firmware)"
 check "the forecast alert exists" grep -q '"metric":"disk.forecast_full"' <<<"$(pkgs_api alerts/rules)"
 check "the forecast route answers" grep -q '"disks":' <<<"$(pkgs_api forecasts)"
 if [ -n "$disk" ]; then
