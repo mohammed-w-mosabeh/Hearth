@@ -46,6 +46,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/diskusage"
 	"github.com/mohammed-w-mosabeh/hearth/internal/docker"
 	"github.com/mohammed-w-mosabeh/hearth/internal/dropin"
+	"github.com/mohammed-w-mosabeh/hearth/internal/firewall"
 	"github.com/mohammed-w-mosabeh/hearth/internal/forecast"
 	"github.com/mohammed-w-mosabeh/hearth/internal/hardware"
 	"github.com/mohammed-w-mosabeh/hearth/internal/homepage"
@@ -404,6 +405,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	docker.RegisterProjects(reg, brokerClient)
 	docker.RegisterPrune(reg, brokerClient)
 	docker.RegisterOrphans(reg, brokerClient)
+	firewall.Register(reg, srv.API, brokerClient)
 	srv.API.HandleFunc("POST /api/v1/actions/{kind}/{action}", reg.Handle)
 	srv.API.HandleFunc("GET /api/v1/broker/status", brokerClient.HandleStatus)
 	srv.API.HandleFunc("GET /api/v1/services/journal", services.HandleJournal(safeexec.Run, services.CanReadSystemJournal))

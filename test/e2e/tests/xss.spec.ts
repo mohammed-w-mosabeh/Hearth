@@ -173,12 +173,23 @@ test('the log explorer shows lines as text', async ({ page }) => {
   await noScriptRan(page);
 });
 
+test('a firewall rule shows as text', async ({ page }) => {
+  await page.goto(`${origin}/#/network`);
+  await page.reload();
+  const card = page.locator('section[aria-labelledby="fw-title"]');
+  await expect(card.getByText('onerror').first()).toBeVisible({ timeout: 15_000 });
+  await expect(card.getByRole('button', { name: 'Delete' })).toHaveCount(0); // read-only
+  await noScriptRan(page);
+});
+
 test('a Lynis finding shows as text', async ({ page }) => {
   await page.goto(`${origin}/#/security`);
   await page.reload();
   const card = page.locator('section[aria-labelledby="lynis-title"]');
   await expect(card.getByText(PAYLOAD).first()).toBeVisible({ timeout: 15_000 });
-  await expect(card.getByRole('link', { name: 'Open in Hearth' })).toHaveCount(0); // AUTH has no page
+  // Only the planted row: real Lynis may also report findings that have a page.
+  const row = card.locator('li').filter({ hasText: 'AUTH-9999' }).first();
+  await expect(row.getByRole('link', { name: 'Open in Hearth' })).toHaveCount(0); // AUTH has no page
   await noScriptRan(page);
 });
 

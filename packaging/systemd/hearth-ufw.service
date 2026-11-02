@@ -1,0 +1,60 @@
+[Unit]
+Description=Hearth: apply one firewall change (ufw)
+Documentation=https://github.com/mohammed-w-mosabeh/hearth
+# Started only by hearth-broker's ufw.rule and ufw.set (SECURITY S16h), after
+# polkit, and only when ufw is installed.
+ConditionFileIsExecutable=/usr/sbin/ufw
+
+[Service]
+Type=oneshot
+# One line, written by the broker from validated fields just before the
+# start: a rule, "--force enable" or "disable". systemd splits $UFW_ARGS into
+# words; no shell is involved. Without the file, the unit does not start.
+EnvironmentFile=/var/lib/hearth/ufw.args
+ExecStart=/usr/sbin/ufw $UFW_ARGS
+StandardOutput=journal
+StandardError=journal
+Environment=LC_ALL=C
+UMask=0022
+TimeoutStartSec=60s
+
+# --- Hardening (SECURITY.md "systemd hardening") ---
+# CAP_NET_ADMIN and CAP_NET_RAW: changing netfilter rules, the whole job.
+# This is why it is a unit of its own: the broker stays without them.
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+AmbientCapabilities=
+NoNewPrivileges=yes
+ProtectSystem=strict
+# ufw's rules and state; /run for /run/ufw.lock and iptables' xtables lock,
+# which live directly in it.
+ReadWritePaths=/etc/ufw /run
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+# Not ProtectKernelTunables=yes: ufw applies /etc/ufw/sysctl.conf when it
+# starts, ignoring failures, so a read-only /proc/sys would silently drop
+# those settings.
+ProtectKernelTunables=no
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+KeyringMode=private
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+# iptables talks to the kernel over netlink and a raw internet socket that
+# carries no traffic. ufw sends nothing, and IPAddressDeny stops any that
+# did: it changes filters and never reaches a network.
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+IPAddressDeny=any
+MemoryMax=256M
+CPUQuota=50%
+TasksMax=64

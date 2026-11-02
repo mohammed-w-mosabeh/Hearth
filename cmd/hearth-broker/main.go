@@ -57,6 +57,13 @@ func run(log *slog.Logger) error {
 		}
 		return c, nil
 	}})...)
+	methods = append(methods, broker.UfwMethods(broker.UfwConfig{Bus: func(ctx context.Context) (broker.SystemBus, error) {
+		c, err := dbusx.SystemBus(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return c, nil
+	}})...)
 	methods = append(methods, broker.LynisMethods(broker.LynisConfig{Bus: func(ctx context.Context) (broker.SystemBus, error) {
 		c, err := dbusx.SystemBus(ctx)
 		if err != nil {

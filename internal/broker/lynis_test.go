@@ -93,6 +93,8 @@ type lynisBus struct {
 	calls []string
 	state string
 	fail  string
+	// onStart sees the moment a unit starts.
+	onStart func()
 }
 
 func (b *lynisBus) Call(_ context.Context, _ string, _ dbus.ObjectPath, method string, out []any, _ ...any) error {
@@ -100,6 +102,9 @@ func (b *lynisBus) Call(_ context.Context, _ string, _ dbus.ObjectPath, method s
 	b.calls = append(b.calls, name)
 	if name == b.fail {
 		return errors.New("refused")
+	}
+	if name == "StartUnit" && b.onStart != nil {
+		b.onStart()
 	}
 	if name == "LoadUnit" {
 		*(out[0].(*dbus.ObjectPath)) = "/unit"

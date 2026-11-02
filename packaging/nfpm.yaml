@@ -64,6 +64,10 @@ contents:
     dst: /usr/lib/systemd/system/hearth-lynis.service
     file_info:
       mode: 0644
+  - src: packaging/systemd/hearth-ufw.service
+    dst: /usr/lib/systemd/system/hearth-ufw.service
+    file_info:
+      mode: 0644
   - src: packaging/polkit/org.hearth.policy
     dst: /usr/share/polkit-1/actions/org.hearth.policy
     file_info:

@@ -618,6 +618,44 @@ check "a schedule left for purge to remove" call_says '"schedule":"monthly"' lyn
 rm -f /etc/polkit-1/rules.d/52-hearth-itest-lynis.rules
 sed -i "s|^hardening_index=.*|warning[]=AUTH-9999\|$xss\|$xss\|$xss\|\n&|" /var/lib/hearth/lynis-report.dat
 check "a hostile finding is listed" grep -q 'onerror' <<<"$(pkgs_api security/lynis)"
+# Real ufw in its sandbox, then a rule the page can only read, with the payload.
+check "the firewall route answers" grep -q '"installed":true' <<<"$(pkgs_api firewall)"
+check "ufw.rule asks polkit" call_says "not authorized" ufw.rule '{"op":"add","action":"allow","proto":"tcp","port":8443}'
+check "ufw.set asks polkit" call_says "not authorized" ufw.set '{"enabled":true}'
+check "ufw never keeps a password" grep -Pzq '(?s)org\.hearth\.firewall\.manage">.*?<allow_active>auth_admin</allow_active>' "$policy"
+cat >/etc/polkit-1/rules.d/53-hearth-itest-ufw.rules <<'RULES'
+polkit.addRule(function(action, subject) {
+	if (action.id == "org.hearth.firewall.manage" && subject.user == "tester") {
+		return polkit.Result.YES;
+	}
+});
+RULES
+sleep 1
+for bad in '{"op":"add","action":"limit","proto":"tcp","port":22}' \
+	'{"op":"add","action":"allow","proto":"tcp","port":22,"interface":"eth0"}' \
+	'{"op":"add","action":"allow","proto":"tcp","port":22,"source":"any to any"}' \
+	'{"op":"add","action":"allow","proto":"tcp port 80","port":22}' \
+	'{"op":"reset","action":"allow","proto":"tcp","port":22}'; do
+	check "ufw.rule refuses $bad" call_says "bad params\|must be" ufw.rule "$bad"
+done
+check "a rule needs an active firewall" call_says "not active" ufw.rule '{"op":"add","action":"allow","proto":"tcp","port":8443}'
+check "ufw enables in its sandbox" call_says '"enabled":true' ufw.set '{"enabled":true}'
+echo "  ufw journal: $(journalctl -u hearth-ufw.service -n 3 --no-pager -o cat 2>/dev/null | tail -2 | cut -c1-160)"
+check "ufw is on" grep -q '^ENABLED=yes' /etc/ufw/ufw.conf
+check "and its chains are loaded" iptables -S ufw-user-input
+check "ufw adds a rule" call_says '"done":true' ufw.rule '{"op":"add","action":"allow","proto":"tcp","port":8443,"source":"10.0.0.0/8"}'
+check "the kernel has it" grep -q 'dport 8443' <<<"$(iptables -S ufw-user-input)"
+check "and the page reads it" grep -q '"port":8443,"source":"10.0.0.0/8"' <<<"$(pkgs_api firewall)"
+check "ufw deletes it" call_says '"done":true' ufw.rule '{"op":"delete","action":"allow","proto":"tcp","port":8443,"source":"10.0.0.0/8"}'
+check "it left the kernel" not grep -q 'dport 8443' <<<"$(iptables -S ufw-user-input)"
+check "the args file is gone" not test -e /var/lib/hearth/ufw.args
+check "the broker gained no capability for ufw" test "$(systemctl show -p CapabilityBoundingSet --value hearth-broker.service)" = "cap_sys_rawio cap_sys_admin"
+check "ufw disables" call_says '"enabled":false' ufw.set '{"enabled":false}'
+check "ufw is off" grep -q '^ENABLED=no' /etc/ufw/ufw.conf
+# A tuple's fields hold no spaces, so this payload has none.
+sed -i 's|^### END RULES ###|### tuple ### limit tcp 2222 0.0.0.0/0 any 0.0.0.0/0 <img/src=x/onerror=window.__xss=1> - in\n&|' /etc/ufw/user.rules
+rm -f /etc/polkit-1/rules.d/53-hearth-itest-ufw.rules
+check "a hostile rule is listed read-only" grep -q 'onerror' <<<"$(pkgs_api firewall)"
 # A cache folder named with the payload (Space advisor).
 asuser mkdir -p "/home/$user/.cache/$xss"
 # A Steam game whose name is the payload (VDF escapes its quotes).

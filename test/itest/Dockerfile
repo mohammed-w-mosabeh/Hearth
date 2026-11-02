@@ -39,6 +39,11 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends needrestart \
  && rm -rf /var/lib/apt/lists/*
 
+# ufw, run for real by hearth-ufw.service (its own layer).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ufw \
+ && rm -rf /var/lib/apt/lists/*
+
 # Lynis, run for real by hearth-lynis.service (its own layer).
 RUN apt-get update \
  && apt-get install -y --no-install-recommends lynis \

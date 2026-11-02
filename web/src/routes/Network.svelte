@@ -1,5 +1,6 @@
 <script lang="ts">
   import Connectivity from '../components/Connectivity.svelte';
+  import FirewallCard from '../components/FirewallCard.svelte';
   import LineageDialog from '../components/LineageDialog.svelte';
   import { api, ApiError } from '../lib/api';
   import { bytes, rate } from '../lib/format';
@@ -170,6 +171,8 @@
       {/if}
     </div>
   </section>
+
+  <FirewallCard />
 
   <details class="ifaces">
     <summary>{t('net.interfaces', { n: info.interfaces.length })}</summary>
