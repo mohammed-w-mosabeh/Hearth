@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { THEME_EVENT } from '../lib/theme';
   import type uPlot from 'uplot';
   import { format, type Unit } from '../lib/charts';
   import type { Columns } from '../lib/history';
@@ -135,12 +136,14 @@
     void build();
     const rebuild = () => void build();
     scheme.addEventListener('change', rebuild);
+    window.addEventListener(THEME_EVENT, rebuild);
     const ro = new ResizeObserver(() => current?.setSize({ width: Math.max(el.clientWidth, 1), height }));
     ro.observe(el);
     return () => {
       disposed = true;
       ro.disconnect();
       scheme.removeEventListener('change', rebuild);
+      window.removeEventListener(THEME_EVENT, rebuild);
       current?.destroy();
       chart = null;
     };

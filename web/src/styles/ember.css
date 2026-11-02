@@ -1,7 +1,10 @@
-/* Ember tokens (ROADMAP 8.1, docs/design/ember.md). They apply only under the
-   prototype switch, over tokens.css. The amber accent marks live or active
-   state, never decoration. Task 8.2 finishes them and tests the contrast. */
+/* Ember tokens (docs/design/ember.md). They apply under the prototype switch,
+   over tokens.css, until task 8.11. Dark is the primary theme. theme.ts sets
+   data-theme, resolving "system" itself, so each theme is written once.
+   The amber accent marks live or active state, never decoration.
+   src/lib/contrast.test.ts holds these values to WCAG AA. */
 :root[data-ui='ember'] {
+  color-scheme: dark;
   --bg: #14120f;
   --surface: #1c1915;
   --surface-2: #24201b;
@@ -20,28 +23,45 @@
   --info: #8ab4f8;
   --shadow: 0 1px 2px rgb(0 0 0 / 45%);
 
+  --series-1: #f59e0b;
+  --series-2: #6fa0e6;
+  --series-3: #3cc0c2;
+  --series-4: #b18ae6;
+  --series-5: #ea7aa6;
+  --series-6: #a9bd4f;
+  --series-7: #c99a72;
+  --series-8: #95a5b8;
+
   --rail-w: 224px;
   --rail-w-collapsed: 56px;
   --pulse-h: 32px;
 }
 
-@media (prefers-color-scheme: light) {
-  :root[data-ui='ember'] {
-    --bg: #f7f3ec;
-    --surface: #fffdf8;
-    --surface-2: #efe9df;
-    --border: #dcd3c5;
-    --text: #1f1b16;
-    --text-muted: #635a4e;
-    --accent: #a84f05;
-    --accent-contrast: #fffdf8;
-    --accent-soft: #f8e6cc;
-    --focus: #a84f05;
+:root[data-ui='ember'][data-theme='light'] {
+  color-scheme: light;
+  --bg: #f7f3ec;
+  --surface: #fffdf8;
+  --surface-2: #efe9df;
+  --border: #dcd3c5;
+  --text: #1f1b16;
+  --text-muted: #635a4e;
+  --accent: #a84f05;
+  --accent-contrast: #fffdf8;
+  --accent-soft: #f8e6cc;
+  --focus: #a84f05;
 
-    --ok: #1f7a3f;
-    --warn: #8a5a00;
-    --crit: #b3261e;
-    --info: #1f5fa8;
-    --shadow: 0 1px 2px rgb(60 40 20 / 10%), 0 2px 8px rgb(60 40 20 / 6%);
-  }
+  --ok: #1b7038;
+  --warn: #8a5a00;
+  --crit: #b3261e;
+  --info: #1f5fa8;
+  --shadow: 0 1px 2px rgb(60 40 20 / 10%), 0 2px 8px rgb(60 40 20 / 6%);
+
+  --series-1: #a84f05;
+  --series-2: #3b6fb6;
+  --series-3: #0f7f81;
+  --series-4: #8b5cc6;
+  --series-5: #c2457a;
+  --series-6: #66751f;
+  --series-7: #8a5a3b;
+  --series-8: #5b6b7f;
 }

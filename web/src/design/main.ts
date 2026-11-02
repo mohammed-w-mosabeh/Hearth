@@ -8,9 +8,11 @@ import './design.css';
 import Screens from './Screens.svelte';
 import { applyDensity, loadDensity } from '../lib/density';
 import { applyLang, loadLang } from '../lib/i18n';
+import { applyTheme, loadTheme } from '../lib/theme';
 
 applyDensity(loadDensity());
 document.documentElement.dataset['ui'] = 'ember';
+applyTheme(loadTheme());
 
 const target = document.getElementById('app');
 if (!target) throw new Error('missing #app');

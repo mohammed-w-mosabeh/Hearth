@@ -21,14 +21,16 @@ Visual and navigation redesign only: no new backend capability, privilege or net
 | Text | `#EDE6DA` | `#1F1B16` |
 | Muted text | `#A39A8C` | `#635A4E` |
 | Accent | `#F59E0B` | `#A84F05` |
-| Ok | `#6FCF8E` | `#1F7A3F` |
+| Ok | `#6FCF8E` | `#1B7038` |
 | Warning | `#F2C14E` | `#8A5A00` |
 | Critical | `#F28B82` | `#B3261E` |
 | Info | `#8AB4F8` | `#1F5FA8` |
 
-The ember gradient is `#F59E0B` to `#EA580C`. The light accent departs from the plan's amber because `#F59E0B` cannot reach AA contrast on a light background. Task 8.2 adds the automated contrast test and the theme choice; until then the theme follows the system.
+The ember gradient is `#F59E0B` to `#EA580C`. The light accent departs from the plan's amber because `#F59E0B` cannot reach AA contrast on a light background. `web/src/lib/contrast.test.ts` holds every text and status pair to WCAG AA on the real token file, in both themes: 4.5:1 for text, 3:1 for focus rings and chart lines. Settings offers Dark (the default), Light or System, per browser, beside the density toggle.
 
 ## Status
+`StatusMark.svelte` pairs the colour with the shape and gives screen readers the words. Lists adopt it in task 8.8.
+
 | Shape | Meaning |
 |---|---|
 | ● | ok |

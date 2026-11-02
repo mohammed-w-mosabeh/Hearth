@@ -20,12 +20,13 @@ const missing = new Set();
 async function open(scheme, density, lang) {
   const ctx = await browser.newContext({ viewport: size, colorScheme: scheme, reducedMotion: 'reduce' });
   await ctx.addInitScript(
-    ([d, l]) => {
+    ([d, l, t]) => {
       localStorage.setItem('hearth.session', 'a'.repeat(43));
       localStorage.setItem('hearth.density', d);
       localStorage.setItem('hearth.lang', l);
+      localStorage.setItem('hearth.theme', t);
     },
-    [density, lang],
+    [density, lang, scheme],
   );
   const page = await ctx.newPage();
   await page.route('**/api/v1/**', (route) => {

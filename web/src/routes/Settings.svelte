@@ -6,6 +6,7 @@
   import type { App } from '../lib/apps';
   import { exportName, wordPlan, type Backups } from '../lib/backup';
   import { applyDensity, loadDensity, saveDensity, type Density } from '../lib/density';
+  import { applyTheme, loadTheme, saveTheme, type Theme } from '../lib/theme';
   import { bytes } from '../lib/format';
   import { lang, type Lang, locale, type MessageKey, saveLang, t } from '../lib/i18n';
   import {
@@ -247,11 +248,19 @@
   const backupNow = () => act('hearth', 'backup', 'database', {}, t('set.backup.made'), loadBackups);
 
   let density = $state<Density>(loadDensity());
+  let theme = $state<Theme>(loadTheme());
+  const ember = document.documentElement.dataset['ui'] === 'ember';
 
   function setLang(l: Lang): void {
     if (l === lang()) return;
     saveLang(l);
     location.reload(); // every page reads its messages as it is built
+  }
+
+  function setTheme(v: Theme): void {
+    theme = v;
+    applyTheme(v);
+    saveTheme(v);
   }
 
   function setDensity(d: Density): void {
@@ -274,6 +283,15 @@
   <!-- Appearance -->
   <section aria-labelledby="s-look">
     <h2 id="s-look">{t('set.look.title')}</h2>
+    {#if ember}
+      <div class="segmented" role="radiogroup" aria-label={t('set.look.theme')}>
+        {#each ['dark', 'light', 'system'] as const as v (v)}
+          <button type="button" role="radio" aria-checked={theme === v} class:on={theme === v} onclick={() => setTheme(v)}>
+            {t(`set.look.theme.${v}`)}
+          </button>
+        {/each}
+      </div>
+    {/if}
     <div class="segmented" role="radiogroup" aria-label={t('set.look.density')}>
       {#each ['comfortable', 'compact'] as const as d (d)}
         <button type="button" role="radio" aria-checked={density === d} class:on={density === d} onclick={() => setDensity(d)}>

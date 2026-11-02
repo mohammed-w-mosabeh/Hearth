@@ -34,5 +34,7 @@ export default defineConfig({
   },
   test: {
     include: ['src/**/*.test.ts'],
+    // contrast.test.ts reads the real tokens.
+    css: { include: [/ember\.css/] },
   },
 });
