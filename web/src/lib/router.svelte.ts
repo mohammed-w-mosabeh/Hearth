@@ -35,6 +35,13 @@ export const routes: Route[] = [
   { id: 'settings', label: 'nav.settings', icon: 'sliders' },
 ];
 
+/** Names of pages that open another page for now: Apps opens the Docker
+ *  page's Compose tab until Phase 9, Modes the Profiles page until Phase 10. */
+export const aliases: Readonly<Record<string, string>> = { stacks: 'docker', modes: 'profiles' };
+
+/** The page a route id shows. */
+export const pageOf = (id: string): string => aliases[id] ?? id;
+
 export function routeId(hash: string): string {
   const id = hash.replace(/^#\/?/, '').replace(/\?.*$/, '');
   // "#k=<key>" is the session hand-off from /auth (session.ts strips it with

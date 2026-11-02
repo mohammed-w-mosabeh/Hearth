@@ -24,6 +24,7 @@ export const railGroups: RailGroup[] = [
     label: 'nav.groupWorkloads',
     items: [
       { id: 'apps', label: 'nav.desktopApps', icon: 'grid' },
+      { id: 'stacks', label: 'nav.stacks', icon: 'layers' },
       { id: 'docker', label: 'nav.docker', icon: 'box' },
       { id: 'services', label: 'nav.services', icon: 'gear' },
       { id: 'games', label: 'nav.games', icon: 'gamepad' },
@@ -48,7 +49,7 @@ export const railGroups: RailGroup[] = [
     items: [
       { id: 'scheduler', label: 'nav.scheduler', icon: 'calendar' },
       { id: 'alerts', label: 'nav.alerts', icon: 'bell' },
-      { id: 'profiles', label: 'nav.profiles', icon: 'layers' },
+      { id: 'modes', label: 'nav.modes', icon: 'layers' },
     ],
   },
   {
@@ -64,7 +65,29 @@ export const railGroups: RailGroup[] = [
   },
 ];
 
+/** Whether a rail item is the page on screen. Modes is also #/profiles. */
+export const railCurrent = (item: string, routeId: string): boolean => item === routeId || (item === 'modes' && routeId === 'profiles');
+
 const RAIL_KEY = 'hearth.rail';
+const GROUPS_KEY = 'hearth.rail.groups';
+
+/** The groups folded by hand. Unknown names do no harm: they match nothing. */
+export function loadClosedGroups(storage: Pick<Storage, 'getItem'> | undefined = globalThis.localStorage): string[] {
+  try {
+    const v: unknown = JSON.parse(storage?.getItem(GROUPS_KEY) ?? '[]');
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return []; // blocked storage or a damaged value
+  }
+}
+
+export function saveClosedGroups(closed: string[], storage: Pick<Storage, 'setItem'> | undefined = globalThis.localStorage): void {
+  try {
+    storage?.setItem(GROUPS_KEY, JSON.stringify(closed));
+  } catch {
+    // It still applies to this page.
+  }
+}
 
 export function loadRailCollapsed(storage: Pick<Storage, 'getItem'> | undefined = globalThis.localStorage): boolean {
   try {

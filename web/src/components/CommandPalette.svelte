@@ -20,7 +20,9 @@
   let apps = $state.raw<App[]>([]);
   let units = $state.raw<Unit[]>([]);
 
-  const pages = $derived(pageEntries(routes.map((r) => ({ id: r.id, title: t(r.label) }))));
+  // Ember's rail also names Apps and Modes, which open existing pages for now.
+  const extra = document.documentElement.dataset['ui'] === 'ember' ? [{ id: 'stacks', label: 'nav.stacks' }, { id: 'modes', label: 'nav.modes' }] as const : [];
+  const pages = $derived(pageEntries([...routes, ...extra].map((r) => ({ id: r.id, title: t(r.label) }))));
   const entries = $derived([...pages, ...appEntries(apps), ...unitEntries(units)]);
   const results = $derived(search(entries, query));
 

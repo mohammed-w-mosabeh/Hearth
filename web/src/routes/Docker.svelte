@@ -65,7 +65,7 @@
   }
 
   type Section = 'containers' | 'compose' | 'images' | 'networks' | 'volumes' | 'cleanup';
-  let section = $state<Section>('containers');
+  let section = $state<Section>(router.id === 'stacks' ? 'compose' : 'containers');
   const sections: { id: Section; label: MessageKey }[] = [
     { id: 'containers', label: 'docker.section.containers' },
     { id: 'compose', label: 'docker.section.compose' },

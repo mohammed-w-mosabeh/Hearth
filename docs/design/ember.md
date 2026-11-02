@@ -52,7 +52,7 @@ A rail on the inline-start side, 224 px open and 56 px collapsed, remembered per
 | Automation | Scheduler, Alerts, Modes |
 | Insight & security | Security, Changes, Reports, Journal, Heat and energy, Tokens |
 
-Every existing route keeps its URL. Two groups differ from the plan because those pages exist and the plan had no place for them: Space advisor and Terminal join System, Tokens joins Insight & security. Boot analysis and Connectivity stay inside their current pages. Apps (`#/stacks`) and the Modes label arrive in task 8.4, and open the existing Compose tab and Profiles page until Phases 9 and 10 ship.
+A group folds from its heading, remembered per browser; the group holding the page on screen stays open, so the rail fits a short screen. Every `g` shortcut and the Ctrl+K palette reach all groups. Every existing route keeps its URL. Two groups differ from the plan because those pages exist and the plan had no place for them: Space advisor and Terminal join System, Tokens joins Insight & security. Boot analysis and Connectivity stay inside their current pages. Apps (`#/stacks`) opens the Docker page's Compose tab and Modes (`#/modes`) the Profiles page until Phases 9 and 10 ship.
 
 ## Page anatomy
 1. **Pulse strip:** a sticky 32 px bar with CPU, RAM, temperature, network and battery, in mono. A click opens Resources. The prototype samples like Home; the 15 s rate and jumping to a metric come in task 8.5.

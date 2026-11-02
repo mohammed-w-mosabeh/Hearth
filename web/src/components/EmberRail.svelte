@@ -1,6 +1,6 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
-  import { loadRailCollapsed, railGroups, saveRailCollapsed } from '../lib/ember';
+  import { loadClosedGroups, loadRailCollapsed, railCurrent, railGroups, saveClosedGroups, saveRailCollapsed, type RailGroup } from '../lib/ember';
   import { t } from '../lib/i18n';
   import { href, router } from '../lib/router.svelte';
   import type { WsState } from '../lib/ws';
@@ -13,6 +13,15 @@
     collapsed = !collapsed;
     saveRailCollapsed(collapsed);
   }
+
+  let closed = $state(loadClosedGroups());
+  function toggleGroup(g: RailGroup): void {
+    closed = closed.includes(g.label) ? closed.filter((c) => c !== g.label) : [...closed, g.label];
+    saveClosedGroups(closed);
+  }
+  // The page on screen is never hidden, and a collapsed rail has no headings.
+  const holdsCurrent = (g: RailGroup): boolean => g.items.some((i) => railCurrent(i.id, router.id));
+  const open = (g: RailGroup): boolean => collapsed || holdsCurrent(g) || !closed.includes(g.label);
   const toggleLabel = $derived(t(collapsed ? 'rail.expand' : 'rail.collapse'));
 </script>
 
@@ -35,17 +44,21 @@
   <div class="groups">
     {#each railGroups as g (g.label)}
       <section aria-label={t(g.label)}>
-        <h2 class="label">{t(g.label)}</h2>
-        <ul>
-          {#each g.items as item (item.id)}
-            <li>
-              <a href={href(item.id)} title={t(item.label)} aria-current={router.id === item.id ? 'page' : undefined}>
-                <Icon name={item.icon} size={18} />
-                <span class="label">{t(item.label)}</span>
-              </a>
-            </li>
-          {/each}
-        </ul>
+        <h2 class="label">
+          <button type="button" aria-expanded={open(g)} disabled={holdsCurrent(g)} onclick={() => toggleGroup(g)}>{t(g.label)}</button>
+        </h2>
+        {#if open(g)}
+          <ul>
+            {#each g.items as item (item.id)}
+              <li>
+                <a href={href(item.id)} title={t(item.label)} aria-current={railCurrent(item.id, router.id) ? 'page' : undefined}>
+                  <Icon name={item.icon} size={18} />
+                  <span class="label">{t(item.label)}</span>
+                </a>
+              </li>
+            {/each}
+          </ul>
+        {/if}
       </section>
     {/each}
   </div>
@@ -99,11 +112,26 @@
     margin-block-start: var(--space-2);
   }
   h2 {
-    padding: 0 var(--space-2);
-    margin-block-end: var(--space-1);
+    margin: 0;
     font-size: 11px;
     letter-spacing: 0.04em;
+  }
+  h2 button {
+    width: 100%;
+    padding: 2px var(--space-2);
+    border: 0;
+    background: none;
     color: var(--text-muted);
+    font: inherit;
+    font-weight: 600;
+    text-align: start;
+    cursor: pointer;
+  }
+  h2 button:disabled {
+    cursor: default;
+  }
+  h2 button:not(:disabled):hover {
+    color: var(--text);
   }
   ul {
     list-style: none;

@@ -32,7 +32,7 @@
   import { api, setSession } from './lib/api';
   import { emberRequested } from './lib/ember';
   import { t } from './lib/i18n';
-  import { href, router, routes } from './lib/router.svelte';
+  import { href, pageOf, router, routes } from './lib/router.svelte';
   import { Sequence } from './lib/shortcuts';
   import { loadKey } from './lib/session';
   import { Live, type WsState } from './lib/ws';
@@ -60,7 +60,7 @@
     };
   });
 
-  const route = $derived(routes.find((r) => r.id === router.id));
+  const route = $derived(routes.find((r) => r.id === pageOf(router.id)));
 
   // The Terminal page stays mounted once visited, so its shells survive
   // a visit to another page.

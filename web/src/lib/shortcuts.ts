@@ -15,6 +15,16 @@ export const GOTO: Readonly<Record<string, string>> = {
   j: 'journal',
   l: 'alerts',
   e: 'settings',
+  q: 'games',
+  o: 'tools',
+  w: 'hardware',
+  v: 'space',
+  i: 'insight',
+  x: 'security',
+  b: 'tokens',
+  m: 'profiles',
+  y: 'changes',
+  f: 'reports',
 };
 
 /** How long the letter after "g" may take. */
