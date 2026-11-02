@@ -23,6 +23,7 @@ Browser (PWA) ──127.0.0.1 + session token──┐
 
 - **hearthd**: `/usr/bin/hearthd`, unit `/usr/lib/systemd/user/hearthd.service`. Never root (refuses to start if `euid == 0`).
 - **hearth-broker**: `/usr/bin/hearth-broker`, `hearth-broker.socket` at `/run/hearth/broker.sock` mode `0660`, group `hearth`. Speaks a small JSON-RPC over the Unix socket. Checks the caller with `SO_PEERCRED` (uid must be in group `hearth`). Every method is in a static allowlist; destructive methods call polkit `CheckAuthorization` for the caller before acting. No "exec arbitrary command" method exists; the one interactive method, `docker.containers.exec`, runs a fixed `/bin/sh` under SECURITY S12a. Methods are calls (one answer), streams (items until the end) or sessions (items both ways, e.g. terminal input and resize).
+- **Stacks (v1.5)**: state in `/var/lib/hearth/stacks/<name>/` (spec, canonical compose JSON, `secrets.env`), written only by the broker. Work happens in oneshot units, so the broker gains no capability and no view of home: `hearth-stack@.service` (Compose), `hearth-pathcheck.service` (bind checks), `hearth-backup@.service` and `hearth-restore@.service`. Import reads the project in `hearthd`, as the user; the broker treats what it sends as untrusted (SECURITY S12b).
 
 ## Directory layout
 
@@ -54,6 +55,8 @@ hearth/
     terminal/     # pty sessions
     reports/      # html/md renderers
     broker/       # client (hearthd side) + server (broker side) + allowlist
+    stacks/       # v1.5: Apps, import dry-run; spec validation shared with the broker
+    modes/        # v1.6: mode files, triggers, snapshots, approvals (extends profiles/)
     dbusx/        # small helpers over godbus
     safeexec/     # the ONLY place allowed to call os/exec; validates args
   web/
@@ -81,7 +84,7 @@ hearth/
 - **os/exec only inside `internal/safeexec`**. `safeexec.Run(ctx, bin, args...)` resolves `bin` against an allowlist of absolute paths, validates each arg with a per-command validator, never uses a shell. A lint rule forbids importing `os/exec` elsewhere.
 - **API**: REST under `/api/v1`, JSON. Live data over one WebSocket `/api/v1/ws` with topic subscriptions (`metrics`, `procs`, `docker` (snapshots + events), `alerts`, `logs:<id>`, `term:<id>`). Server sends only deltas.
 - **Actions endpoint**: `POST /api/v1/actions/{kind}/{action}` body `{ "target": "...", "params": {...}, "preview": true|false, "confirm": "<name>" }`. `preview: true` returns what would happen without doing it. Destructive actions without a prior preview token are rejected.
-- **Database**: migrations in `internal/store/migrations/NNNN_*.sql`, applied at start. Tables: `items_override`, `homepage_tiles`, `alert_rules`, `alert_events`, `metrics_1m`, `metrics_1h`, `audit_log`, `jobs`, `profiles`, `settings`.
+- **Database**: migrations in `internal/store/migrations/NNNN_*.sql`, applied at start. Tables: `items_override`, `homepage_tiles`, `alert_rules`, `alert_events`, `metrics_1m`, `metrics_1h`, `audit_log`, `jobs`, `profiles`, `settings`. In v1.6 `profiles` migrates to modes: definitions move to TOML files in `~/.config/hearth/modes/`, and the database keeps arming, active mode, snapshots and approvals.
 - **Sampling**: 1 s while a UI client subscribes to live metrics; 15 s otherwise (alerts only). Process sampling only while the processes page is open (or for alert rules that need it).
 - **Discovery**: full scan at start, then incremental via fsnotify / D-Bus signals / Docker `/events`. Debounce bursts (500 ms).
 - **Frontend**: Svelte 5 runes, TypeScript strict. No `{@html}`. All data rendered as text. Route-level code splitting; xterm.js and uPlot lazy-loaded. CSS tokens in `styles/tokens.css`, light/dark via `prefers-color-scheme`.

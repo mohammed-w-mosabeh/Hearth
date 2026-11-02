@@ -147,4 +147,43 @@ Visual and navigation redesign only: no new backend capability, privilege or net
 - [ ] 8.10 Accessibility: axe-core in e2e on every page (no serious or critical violations), visible focus rings in both themes, icon buttons labelled, drawer and dialogs keyboard operable, tested in LTR and RTL
 - [ ] 8.11 Remove the old UI and the `?ui=ember` switch, delete dead CSS and components, update the screenshots and the README
 
-**Gate 8:** e2e, XSS, DNS-rebinding and RTL tests pass on the new UI; axe has no serious/critical issues; the contrast test passes; idle and Home-open budgets from Gate 1 still met with the pulse strip on; app bundle < 300 KB gz and fonts ≤ 250 KB; before/after screenshots attached to the report.
+Added to Phase 8, design only, for Phases 9 and 10 (`docs/plan/phases-9-10.md`). No backend, no route to a new API, no real data. Screens use fixtures in a development-only build entry, excluded from the production bundle, so no mock data can ship.
+- 8.1 also prototypes with mocked data: apps list; app detail in drawer and full page (status, health, logs, volumes, backups, danger warnings, masked secrets); import dry-run (converted spec, refusals with reasons, volume reuse, port conflicts); deploy/update confirmation with per-flag opt-in warnings; backup/restore; modes list; mode editor (session actions, stack actions, triggers); revert view; pending-approval notification and in-app approval screen. The later tasks finish them.
+- 8.4 Workloads gains Apps at `#/stacks`, which will absorb the Docker page's Compose tab; Automation's Profiles entry becomes Modes at `#/modes`. Until Phases 9 and 10 ship, they open the existing Compose tab and Profiles page. `#/apps` stays the desktop Applications page, labelled Desktop apps.
+- 8.6 reserves Needs-attention rows and documented health-ring deductions for unhealthy apps, failed backups, stacks needing an update and pending mode approvals, inactive and deducting nothing until their phases ship.
+- 8.11 keeps these screens as fixture-only components; screens that need a backend stay out of production navigation.
+
+**Gate 8:** e2e, XSS, DNS-rebinding and RTL tests pass on the new UI; axe has no serious/critical issues (including the fixture screens); the contrast test passes; idle and Home-open budgets from Gate 1 still met with the pulse strip on; app bundle < 300 KB gz and fonts ≤ 250 KB; before/after screenshots attached to the report, including the Phase 9 and 10 screens.
+
+## Phase 9 — v1.5: Apps
+Each app is a Compose stack stored root-owned in `/var/lib/hearth/stacks/<name>/`. Deliberately relaxes S12 (owner decision); S12a does not change. The UI implements the Phase 8 screens, with no new visual design. Details are in `docs/plan/phases-9-10.md`.
+- [ ] 9.0 Preparation: strip `hearthd` (`-s -w`) and record the size saved; add `*_URL`, `*_URI`, `*_DSN` and URLs holding user info to S19 masking, on every page
+- [ ] 9.1 Stack spec: versioned JSON, strict decoding, closed key lists, bounds, name rules; no YAML, anchors, extends, include, profiles, interpolation, build or env_file (fuzzed)
+- [ ] 9.2 Canonical compose generated only from the spec; `hearth-stack@.service` with a fixed argv; atomic root-owned writes; `stack.validate`
+- [ ] 9.3 Path checks: `hearth-pathcheck.service` resolves binds without following links, before polkit and again before `up`; live mounts verified after `up`
+- [ ] 9.4 Lifecycle: deploy, start, stop, restart, update (reusing the 7.6 digest preview), remove (volumes kept; removing them is a separate typed confirmation), status, health, restart policy
+- [ ] 9.5 Secrets: per-service references into `secrets.env`, masked, revealed by a click and a password, never hashed into audit
+- [ ] 9.6 Danger flags: per-stack, per-flag opt-in, `org.hearth.stack.danger` with no retention, one prompt per deploy or update, one audit entry per container, exposure in Security posture
+- [ ] 9.7 Import dry-run: discovery repeated and the catalog confirmed by the owner in chat; converted spec, refusals and required changes, volume and port analysis; nothing changed and no secret shown
+- [ ] 9.8 Confirmed import: per-stack confirmation, same project name, volumes and binds reused in place, no data copied, `.env` values moved into `secrets.env` undisplayed
+- [ ] 9.9 Apps page: Managed and Detected groups, the 6.6 log explorer, the 7.6 preview; the Compose tab goes
+- [ ] 9.10 Backups: `stack.backup` and `stack.restore`, size preview, free-space check, retention, typed restore
+- [ ] 9.11 Scheduled backups: a generated timer with a fixed unit and a validated OnCalendar, no script
+- [ ] 9.12 Integration: Security posture, alerts, Change timeline, Reports, and Home's reserved rows
+- [ ] 9.13 Optional reverse proxy: `<app>.localhost`, 127.0.0.1 by default, LAN a separate opt-in, never proxies Hearth
+
+**Gate 9:** a pentest like Gate 2, as a `hearth` member outside the docker group: every hostile spec refused before polkit (every S12 risk with and without opt-in, anchors/extends/include, interpolation tricks, build contexts, env_file paths, bind traversal and symlink escapes, oversized specs, unknown keys, name injection); secrets absent from journal, audit and Hearth's inspect output; import touches nothing without confirmation; restore needs its typed confirmation; one real deploy, update, backup and restore on real Docker; spec parser and every validator fuzzed ≥ 60 s; e2e, XSS, RTL and axe pass on the new screens; budgets met; then the owner's manual pentest.
+
+## Phase 10 — v1.6: Modes
+Modes extend Profiles (S15a, task 4.6); there is no parallel system. Depends on Phase 9. The UI implements the Phase 8 screens, with no new visual design. Details are in `docs/plan/phases-9-10.md`.
+- [ ] 10.1 Mode model and files: TOML in `~/.config/hearth/modes/`, untrusted, validated on load, fsnotify reload, invalid files ignored with a visible error (fuzzed); the database holds arming, active mode, snapshots and approvals
+- [ ] 10.2 Migration: profiles become modes, keeping restore-on-revert, the game trigger's limits and existing IDs in history; `#/profiles` redirects
+- [ ] 10.3 Session actions as the user: wallpaper and Do Not Disturb (GNOME first, other desktops detected), brightness via logind, power-profiles-daemon, opening apps, NetworkManager connections and VPN; apps are never closed
+- [ ] 10.4 Stack actions by name through `stack.batch`; one polkit prompt on a manual switch
+- [ ] 10.5 Snapshot and revert: restores exactly what the mode changed
+- [ ] 10.6 Triggers: schedule, Wi-Fi connection, battery level, display connect/disconnect; a trigger arms only after an in-app click and disarms if its file changes
+- [ ] 10.7 Approvals: an automatic trigger never prompts; a stack action needing authorization waits for a click
+- [ ] 10.8 Unattended grants: per stack, approved once with polkit, stop only by default, 90 days
+- [ ] 10.9 Modes pages replace Profiles
+
+**Gate 10:** mode-file fuzzing ≥ 60 s; a hostile mode file cannot reach any broker method beyond its named stacks; no polkit prompt ever appears from an automatic trigger; revert restores session and stack state; migrated profiles behave as before; e2e, RTL and axe pass; budgets met.
