@@ -26,6 +26,9 @@ func TestClassify(t *testing.T) {
 		{"Accepted publickey for me from 192.0.2.1 port 50000 ssh2: ED25519 SHA256:abc", "192.0.2.1", true, true},
 		{"Accepted password for me from 2001:db8::1 port 50000 ssh2", "2001:db8::1", true, true},
 		{"Accepted password for me from ::ffff:192.0.2.9 port 50000 ssh2", "192.0.2.9", true, true},
+		// A zone is free text to netip.ParseAddr and says nothing about the source.
+		{"Accepted password for me from fe80::1%eth0 port 50000 ssh2", "fe80::1", true, true},
+		{"Invalid user x from fe80::2%\"<b> port 22", "fe80::2", false, true},
 		{"Failed password for me from 192.0.2.2 port 1 ssh2", "192.0.2.2", false, true},
 		{"Failed publickey for me from host.example port 1 ssh2", "host.example", false, true},
 		{"Invalid user admin from 192.0.2.3 port 22", "192.0.2.3", false, true},

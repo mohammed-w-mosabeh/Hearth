@@ -151,10 +151,12 @@ var (
 )
 
 // source is a line's address in one spelling, or "" if it is not an address
-// or a host name (sshd's UseDNS gives names, which DNS's owner chooses).
+// or a host name (sshd's UseDNS gives names, which DNS's owner chooses). The
+// zone goes: ParseAddr allows any text in it, and it says nothing about who
+// connected.
 func source(s string) string {
 	if a, err := netip.ParseAddr(s); err == nil {
-		return a.Unmap().String()
+		return a.Unmap().WithZone("").String()
 	}
 	if s != "UNKNOWN" && hostName.MatchString(s) {
 		return s
