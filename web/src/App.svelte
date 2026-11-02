@@ -1,6 +1,8 @@
 <script lang="ts">
   import Hardware from './routes/Hardware.svelte';
   import CommandPalette from './components/CommandPalette.svelte';
+  import EmberRail from './components/EmberRail.svelte';
+  import PulseStrip from './components/PulseStrip.svelte';
   import Sidebar from './components/Sidebar.svelte';
   import EmptyState from './components/EmptyState.svelte';
   import Toaster from './components/Toaster.svelte';
@@ -28,12 +30,14 @@
   import Services from './routes/Services.svelte';
   import ShortcutsDialog from './components/ShortcutsDialog.svelte';
   import { api, setSession } from './lib/api';
+  import { emberRequested } from './lib/ember';
   import { t } from './lib/i18n';
   import { href, router, routes } from './lib/router.svelte';
   import { Sequence } from './lib/shortcuts';
   import { loadKey } from './lib/session';
   import { Live, type WsState } from './lib/ws';
 
+  const ember = emberRequested(location.search);
   let key = $state(loadKey({ location, history, storage: localStorage }));
   let status = $state<WsState>('connecting');
   let live = $state.raw<Live | null>(null);
@@ -92,8 +96,13 @@
   </main>
 {:else}
   <div class="shell">
-    <Sidebar {status} onsearch={() => (palette = true)} />
+    {#if ember}
+      <EmberRail {status} onsearch={() => (palette = true)} />
+    {:else}
+      <Sidebar {status} onsearch={() => (palette = true)} />
+    {/if}
     <main>
+      {#if ember && live}<PulseStrip {live} />{/if}
       {#if route?.id === 'home'}
         {#if live}<Home {live} />{/if}
       {:else if route?.id === 'apps'}

@@ -135,7 +135,7 @@ Gate 7 result (2026-11-02): **passed.** All 12 checklist items pass. Broker: `Te
 
 ## Phase 8 — v1.4: Ember redesign
 Visual and navigation redesign only: no new backend capability, privilege or network access. Details for each task are in `docs/plan/phases-6-8.md`.
-- [ ] 8.1 Design spec and prototype: `docs/design/ember.md`, new tokens and shell behind a temporary `?ui=ember` switch, Playwright screenshots beside the current UI in `docs/design/screens/` (**STOP: wait for owner approval before 8.2**)
+- [x] 8.1 Design spec and prototype: `docs/design/ember.md`, new tokens and shell behind a temporary `?ui=ember` switch, Playwright screenshots beside the current UI in `docs/design/screens/` (**STOP: wait for owner approval before 8.2**) (invented data only; Phase 9 and 10 screens in the development-only `web/design.html`; the light accent is darker than the plan's amber, which cannot reach AA on a light background)
 - [ ] 8.2 Tokens: dark primary and light themes, ember accent for live or active state only, status always colour plus shape, automated WCAG AA contrast test, theme choice and density toggle kept
 - [ ] 8.3 Typography: IBM Plex Sans, IBM Plex Sans Arabic, JetBrains Mono with tabular figures; fonts subset, may be lazy-loaded, ≤ 250 KB total
 - [ ] 8.4 Navigation: collapsible grouped rail (Overview, Workloads, System, Automation, Insight & security), every existing route URL keeps working, `g` shortcuts kept and completed, Ctrl+K covers all groups
