@@ -43,6 +43,7 @@ Priority: **P1** = v0.x MVP, **P2** = v1.0, **P3** = after v1.0. Tags like **(P2
 - **Networks and volumes**: driver, project, used by, volume size; remove an orphan after a preview (the name is typed for a volume).
 - **Compose projects**: grouped by `com.docker.compose.project` label; start/stop/restart whole project; show compose file path.
 - **Compose update** (P2, v1.3): for an existing project, pull and recreate after the image update check; the config is rendered first and anything with an S12 risk refused; the preview shows which services change image digest.
+- From v1.5, Compose projects move to Apps (section 22); projects Hearth does not manage stay there, in a Detected group, with these actions.
 - **Networks & volumes**: list, size, used-by, remove orphans.
 - **Cleanup**: dangling images, stopped containers, orphan volumes, build cache — show reclaimable size before acting.
 
@@ -112,7 +113,7 @@ Priority: **P1** = v0.x MVP, **P2** = v1.0, **P3** = after v1.0. Tags like **(P2
 - **Command palette** Ctrl+K: search every item and action (P1).
 - **Security posture**: exposed listeners, firewall state, SSH config (root login, password auth), pending security updates, `debsecan` CVEs, privileged containers, world-writable files in PATH.
 - **Change timeline**: packages installed/removed, units changed, containers created/deleted, new listeners; diff two snapshots.
-- **Profiles**: named sets of containers/services/apps to start/stop together ("Dev", "Gaming" — auto-stop heavy stuff when a game launches and restore after, "Battery").
+- **Profiles**: named sets of containers/services/apps to start/stop together ("Dev", "Gaming" — auto-stop heavy stuff when a game launches and restore after, "Battery"). Become Modes in v1.6 (section 23).
 - **Space advisor**: Docker leftovers, apt cache, journal size, old kernels, `~/.cache`, trash, large files — preview, then move to trash/clean.
 - **"Why is my fan loud?"**: one-click explanation from top consumers + temps.
 - **Per-app energy estimate**.
@@ -136,3 +137,23 @@ Priority: **P1** = v0.x MVP, **P2** = v1.0, **P3** = after v1.0. Tags like **(P2
 - Visual and navigation redesign only (`docs/design/ember.md`): warm dark-first tokens, status as colour plus shape, IBM Plex Sans, IBM Plex Sans Arabic and JetBrains Mono.
 - Grouped collapsible rail: Overview, Workloads, System, Automation, Insight & security. Every existing route URL keeps working.
 - Pulse strip on every page; inspector drawer for every list, linkable with `?inspect=<item id>`; inline sparklines; WCAG AA contrast and axe-checked accessibility in LTR and RTL.
+- Also designs the Apps and Modes screens, with fixtures only, and reserves their Home rows and health-ring deductions.
+
+### 22. Apps (P2, v1.5)
+- Each app is a Compose stack managed by Hearth, on `#/stacks`, separate from desktop Applications on `#/apps`. Stored root-owned: a validated spec, a generated compose file and `secrets.env`.
+- Lifecycle: deploy, start, stop, restart, update with a digest preview, remove (volumes kept unless a separate typed confirmation says otherwise), logs, health, restart policy.
+- Images only: `build` and `env_file` are refused. Bind mounts only under roots approved per stack. Ports default to 127.0.0.1; anything else is a per-stack opt-in shown as exposure.
+- Danger flags: S12 risks refused by default, some allowed by per-stack, per-flag opt-in with a warning, a password each time and an audit entry; `privileged`, `/` and `/etc` binds and unconfined `security_opt` are never allowed.
+- Import: a dry-run shows the converted spec, what would be refused and why, and the changes needed. Running services and data are never touched without a per-stack confirmation; volumes and binds are reused in place, and no data is copied.
+- Backups: on request or on a schedule, optionally stopping the stack, to `/var/lib/hearth/backups/<stack>/<timestamp>.tar.zst`, keeping the last N. Restore previews what is overwritten, then needs a typed confirmation.
+- Secrets: masked, revealed by a click and a password.
+- Optional reverse proxy for `<app>.localhost`, loopback by default, LAN a separate opt-in. Never proxies Hearth.
+- Compose projects Hearth does not manage stay listed as Detected, with their existing actions.
+
+### 23. Modes (P2, v1.6)
+- Modes extend Profiles; existing profiles migrate and keep restore-on-revert.
+- Definitions are TOML files in `~/.config/hearth/modes/`, validated on load and reloaded on change. An invalid file is ignored with a visible error. Stacks are referenced by name only.
+- Session actions: wallpaper, Do Not Disturb, brightness, power profile, opening apps, NetworkManager connections and VPN. GNOME first, with other desktops detected. Apps are never closed.
+- Manual switch: one password prompt covers all of a mode's stack actions.
+- Automatic triggers (schedule, Wi-Fi connection, battery level, display connect/disconnect) apply session actions directly. A stack action needing authorization becomes a notification to approve, never an unattended prompt. A per-stack grant may allow unattended stops. A trigger arms only by a click in Hearth.
+- Revert restores exactly what the mode changed, from a snapshot of session settings and running stacks.
