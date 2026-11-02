@@ -83,6 +83,11 @@ const reasons: Record<string, MessageKey> = {
   unavailable: 'reason.unavailable',
   enterprise: 'reason.enterprise',
   invalid: 'reason.invalid',
+  'firewall-inactive': 'reason.firewallInactive',
+  'firewall-exists': 'reason.firewallExists',
+  'firewall-missing': 'reason.firewallMissing',
+  'firewall-no-tool': 'reason.firewallNoTool',
+  'firewall-same': 'reason.firewallSame',
   active: 'reason.active',
 };
 

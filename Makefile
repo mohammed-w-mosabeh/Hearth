@@ -74,6 +74,7 @@ dev: web ## Run hearthd (isolated .dev/ config) + Vite dev server, both on 127.0
 build: web ## Build web + binaries into bin/
 	$(GO) build $(GO_BUILD_FLAGS) -o bin/hearthd ./cmd/hearthd
 	$(GO) build $(GO_BUILD_FLAGS) -o bin/hearth-broker ./cmd/hearth-broker
+	$(GO) build $(GO_BUILD_FLAGS) -o bin/hearth ./cmd/hearth
 
 .PHONY: test
 test: web ## go test + vitest

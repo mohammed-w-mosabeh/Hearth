@@ -30,6 +30,7 @@ import (
 
 	"github.com/godbus/dbus/v5"
 
+	"github.com/mohammed-w-mosabeh/hearth/internal/access"
 	"github.com/mohammed-w-mosabeh/hearth/internal/actions"
 	"github.com/mohammed-w-mosabeh/hearth/internal/alerts"
 	"github.com/mohammed-w-mosabeh/hearth/internal/api"
@@ -46,13 +47,16 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/diskusage"
 	"github.com/mohammed-w-mosabeh/hearth/internal/docker"
 	"github.com/mohammed-w-mosabeh/hearth/internal/dropin"
+	"github.com/mohammed-w-mosabeh/hearth/internal/firewall"
 	"github.com/mohammed-w-mosabeh/hearth/internal/forecast"
 	"github.com/mohammed-w-mosabeh/hearth/internal/hardware"
 	"github.com/mohammed-w-mosabeh/hearth/internal/homepage"
 	"github.com/mohammed-w-mosabeh/hearth/internal/insight"
+	"github.com/mohammed-w-mosabeh/hearth/internal/integrity"
 	"github.com/mohammed-w-mosabeh/hearth/internal/launch"
 	"github.com/mohammed-w-mosabeh/hearth/internal/launcher"
 	"github.com/mohammed-w-mosabeh/hearth/internal/logview"
+	"github.com/mohammed-w-mosabeh/hearth/internal/lynis"
 	"github.com/mohammed-w-mosabeh/hearth/internal/netinfo"
 	"github.com/mohammed-w-mosabeh/hearth/internal/pkgs"
 	"github.com/mohammed-w-mosabeh/hearth/internal/posture"
@@ -140,7 +144,14 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	if err != nil {
 		return err
 	}
-	srv, err := api.New(api.Config{Port: cfg.Port, Auth: am, Static: web.Dist(), Logger: log, Version: version()})
+	readOnly, skippedTokens, err := auth.NewTokens(paths.TokensDir())
+	if err != nil {
+		return err
+	}
+	if len(skippedTokens) > 0 {
+		log.Warn("tokens: ignored files that are not private token files", "files", skippedTokens)
+	}
+	srv, err := api.New(api.Config{Port: cfg.Port, Auth: am, Tokens: readOnly, Static: web.Dist(), Logger: log, Version: version()})
 	if err != nil {
 		return err
 	}
@@ -236,6 +247,20 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	srv.API.HandleFunc("GET /api/v1/metrics/live", sampler.HandleLive)
 	srv.API.HandleFunc("GET /api/v1/metrics/history", collect.HandleHistory(db))
 	srv.RegisterSettings(db)
+	srv.RegisterTokens(db, func(ctx context.Context, action, target, result string) error {
+		return db.Audit(ctx, store.AuditEntry{Origin: store.OriginLocal, UID: os.Getuid(), Action: action, Target: target, Result: result})
+	})
+	srv.SetMetrics(func(ctx context.Context) ([]byte, bool) {
+		if !api.MetricsEnabled(ctx, db) {
+			return nil, false
+		}
+		firing := 0
+		if open, err := db.OpenAlertEvents(ctx); err == nil {
+			firing = len(open)
+		}
+		s, _ := sampler.Ring().Last() // an empty sample before the first tick
+		return collect.OpenMetrics(s, firing), true
+	})
 	samplerCtx, stopSampler := context.WithCancel(ctx)
 	samplerDone := make(chan struct{})
 	go func() { sampler.Run(samplerCtx); close(samplerDone) }()
@@ -403,6 +428,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	docker.RegisterProjects(reg, brokerClient)
 	docker.RegisterPrune(reg, brokerClient)
 	docker.RegisterOrphans(reg, brokerClient)
+	firewall.Register(reg, srv.API, brokerClient)
 	srv.API.HandleFunc("POST /api/v1/actions/{kind}/{action}", reg.Handle)
 	srv.API.HandleFunc("GET /api/v1/broker/status", brokerClient.HandleStatus)
 	srv.API.HandleFunc("GET /api/v1/services/journal", services.HandleJournal(safeexec.Run, services.CanReadSystemJournal))
@@ -423,6 +449,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	}
 	defer func() { stopDocker(); dockerWG.Wait() }()
 	srv.API.HandleFunc("GET /api/v1/docker", dockerObjs.HandleSnapshot)
+	srv.API.HandleFunc("GET /api/v1/containers", dockerObjs.HandleBrief)
 	srv.API.HandleFunc("GET /api/v1/hardware", hardware.HandleInventory(hardware.Paths{}))
 	// A USB device never seen here raises "usb.new_device" once.
 	const knownUSB = "usb.known_devices"
@@ -498,6 +525,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	srv.API.HandleFunc("GET /api/v1/docker/containers/{id}", docker.HandleInspect(brokerClient))
 	srv.API.HandleFunc("GET /api/v1/docker/volumes/sizes", docker.HandleVolumeSizes(brokerClient))
 	images := &docker.Images{B: brokerClient, Registry: docker.NewRegistry(), Run: safeexec.Run, CacheDir: filepath.Join(paths.DataDir, "trivy")}
+	docker.RegisterUpdate(reg, brokerClient, images.Registry, safeexec.Run)
 	srv.API.HandleFunc("GET /api/v1/docker/images/{id}", images.HandleDetail)
 	srv.API.HandleFunc("GET /api/v1/docker/images/{id}/updates", images.HandleUpdates)
 	srv.API.HandleFunc("POST /api/v1/docker/images/{id}/scan", images.HandleScan)
@@ -578,6 +606,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		User:   func(ctx context.Context) (services.Bus, error) { return dbusx.SessionBus(ctx) },
 		Pub:    srv.Hub, Log: log, UID: os.Getuid(),
 	})
+	srv.API.HandleFunc("GET /api/v1/services", units.HandleList)
 	unitsCtx, stopUnits := context.WithCancel(ctx)
 	unitsDone := make(chan struct{})
 	go func() { units.Run(unitsCtx); close(unitsDone) }()
@@ -642,6 +671,28 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		Run: posture.Runner(safeexec.Run), Settings: db, Log: log,
 	})
 	security.Register(srv.API, db)
+	lynisAudits := lynis.New(lynis.Config{Broker: brokerClient, Store: db, Audit: db, Log: log,
+		Observe: func(ctx context.Context, now time.Time, v map[string]float64) {
+			engine.Observe(ctx, now, lynis.Metric, v)
+		}})
+	lynisAudits.Register(srv.API)
+	dockerWG.Add(1)
+	go func() { defer dockerWG.Done(); lynisAudits.Run(dockerCtx) }()
+	if home, err := os.UserHomeDir(); err != nil {
+		log.Warn("integrity watch off: no home directory", "err", err)
+	} else {
+		watch := integrity.New(integrity.Config{Store: db, Audit: db, Home: home, Log: log,
+			Observe: func(ctx context.Context, now time.Time, v map[string]float64) {
+				engine.Observe(ctx, now, integrity.Metric, v)
+			}})
+		watch.Register(srv.API)
+		dockerWG.Add(1)
+		go func() { defer dockerWG.Done(); watch.Run(dockerCtx) }()
+	}
+
+	srv.API.HandleFunc("GET /api/v1/security/access", access.New(access.Config{Run: safeexec.Run,
+		CanReadSystem: services.CanReadSystemJournal,
+		Bus:           func(ctx context.Context) (access.Bus, error) { return dbusx.SystemBus(ctx) }}).Handle)
 
 	// Change timeline: dpkg's log, hourly snapshots of units, containers,
 	// listeners and packages (stored only when something changed), and

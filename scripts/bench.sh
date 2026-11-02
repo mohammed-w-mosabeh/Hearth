@@ -6,6 +6,7 @@ set -euo pipefail
 
 bin=${1:-bin/hearthd}
 seconds=${BENCH_SECONDS:-60}
+settle=${BENCH_SETTLE:-70}
 port=${BENCH_PORT:-7391}
 max_rss_kb=${BENCH_MAX_RSS_KB:-40960} # 40 MB
 max_cpu_pct=${BENCH_MAX_CPU_PCT:-1.0}
@@ -39,8 +40,10 @@ curl -fsS "http://127.0.0.1:$port/api/v1/health" >/dev/null || {
 	exit 1
 }
 
-# Let startup allocations settle before measuring.
-sleep 2
+# Let startup settle before measuring. Throwaway dirs mean a first run, so the
+# integrity watch hashes every watched file for its baseline one minute in
+# (0.9 s of CPU on 265 MB, once ever). That is setup, not idle: wait past it.
+sleep "$settle"
 
 ticks() { awk '{print $14 + $15}' "/proc/$pid/stat"; } # utime + stime
 rss_kb() { awk '/^VmRSS:/ {print $2}' "/proc/$pid/status"; }

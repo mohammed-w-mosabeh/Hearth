@@ -24,6 +24,8 @@ type Config struct {
 	// Port on 127.0.0.1; 0 picks a free port (tests).
 	Port int
 	Auth *auth.Manager
+	// Tokens are the read-only tokens (SECURITY S2a); nil accepts none.
+	Tokens *auth.Tokens
 	// Static serves the embedded UI at /. Nil serves 404 (until ROADMAP 0.7).
 	Static fs.FS
 	Logger *slog.Logger
@@ -73,6 +75,8 @@ type Server struct {
 	srv *http.Server
 	ln  net.Listener
 
+	metrics atomic.Pointer[MetricsFunc]
+
 	connMu   sync.Mutex
 	newConns map[net.Conn]struct{} // accepted, no request read yet
 }
@@ -112,7 +116,8 @@ func (s *Server) handler() http.Handler {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 	root.Handle("GET /api/v1/ws", s.cfg.Auth.Require(http.HandlerFunc(s.Hub.serveWS)))
-	root.Handle("/api/", s.cfg.Auth.Require(s.API))
+	root.Handle("/api/", s.guard(s.API))
+	root.HandleFunc("GET /metrics", s.serveMetrics)
 	// "/" rather than "GET /": the latter conflicts with "/api/" in the mux.
 	root.Handle("/", staticHandler(s.cfg.Static))
 

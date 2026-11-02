@@ -666,6 +666,13 @@ func TestCrashArgs(t *testing.T) {
 	if Check("journalctl-oom", good...) == nil {
 		t.Error("the two commands are interchangeable")
 	}
+	ssh := SSHArgs(1790000000)
+	if err := Check("journalctl-ssh", ssh...); err != nil {
+		t.Fatal(err)
+	}
+	if Check("journalctl-ssh", slices.Replace(slices.Clone(ssh), len(ssh)-3, len(ssh)-2, "_UID=1000")...) == nil {
+		t.Error("accepted another uid")
+	}
 }
 
 func FuzzDiskName(f *testing.F) {
@@ -681,6 +688,43 @@ func FuzzDiskName(f *testing.F) {
 		}
 		if WholeDisk("/dev/"+s) != nil {
 			t.Fatalf("WholeDisk refused accepted name %q", s)
+		}
+	})
+}
+
+func TestComposeConfigArgs(t *testing.T) {
+	v := allowlist["docker-compose-config"].Validate
+	head := []string{"compose", "--project-name", "app", "--project-directory", "/home/me/app"}
+	tail := []string{"config", "--format", "json"}
+	ok := slices.Concat(head, []string{"--file", "/home/me/app/a.yaml", "--file", "/b.yaml"}, tail)
+	if err := v(ok); err != nil {
+		t.Error(err)
+	}
+	for name, bad := range map[string][]string{
+		"no file":      slices.Concat(head, tail),
+		"five files":   slices.Concat(head, slices.Repeat([]string{"--file", "/a"}, 5), tail),
+		"up":           slices.Concat(head, []string{"--file", "/a"}, []string{"up", "--format", "json"}),
+		"option":       {"compose", "--project-name", "-x", "--project-directory", "/a", "--file", "/a", "config", "--format", "json"},
+		"relative":     {"compose", "--project-name", "a", "--project-directory", "a", "--file", "/a", "config", "--format", "json"},
+		"unclean file": {"compose", "--project-name", "a", "--project-directory", "/a", "--file", "/a/../b", "config", "--format", "json"},
+		"odd flag":     {"compose", "--project-name", "a", "--project-directory", "/a", "--env-file", "/a", "config", "--format", "json"},
+		"other":        {"run", "--project-name", "a", "--project-directory", "/a", "--file", "/a", "config", "--format", "json"},
+		"nothing":      {},
+	} {
+		if v(bad) == nil {
+			t.Errorf("%s was accepted", name)
+		}
+	}
+}
+
+func FuzzComposeConfigArgs(f *testing.F) {
+	f.Add("app", "/a", "/a/b.yaml")
+	f.Add("-x", "a", "../b")
+	v := allowlist["docker-compose-config"].Validate
+	f.Fuzz(func(t *testing.T, project, dir, file string) {
+		err := v([]string{"compose", "--project-name", project, "--project-directory", dir, "--file", file, "config", "--format", "json"})
+		if err == nil && (project[0] == '-' || dir[0] != '/' || file[0] != '/') {
+			t.Fatalf("accepted %q %q %q", project, dir, file)
 		}
 	})
 }

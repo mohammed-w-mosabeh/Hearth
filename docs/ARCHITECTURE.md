@@ -32,6 +32,7 @@ hearth/
   Makefile
   go.mod
   cmd/
+    hearth/       # read-only CLI: GET to 127.0.0.1 with a read-only token (SECURITY S2a)
     hearthd/main.go
     hearth-broker/main.go
   internal/

@@ -28,6 +28,16 @@
       <allow_active>auth_admin_keep</allow_active>
     </defaults>
   </action>
+  <action id="org.hearth.docker.compose">
+    <description>Pull and recreate a Docker Compose project through Hearth</description>
+    <message>Authentication is required to update this Compose project</message>
+    <icon_name>preferences-system</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
   <action id="org.hearth.docker.remove">
     <description>Remove Docker containers, images, networks and volumes through Hearth</description>
     <message>Authentication is required to let Hearth remove Docker data</message>
@@ -100,6 +110,26 @@
       <allow_any>auth_admin</allow_any>
       <allow_inactive>auth_admin</allow_inactive>
       <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.hearth.lynis.run">
+    <description>Run a Lynis security audit, or schedule one, through Hearth</description>
+    <message>Authentication is required to let Hearth run a security audit</message>
+    <icon_name>preferences-system</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.hearth.firewall.manage">
+    <description>Change the firewall through Hearth</description>
+    <message>Authentication is required to let Hearth change the firewall</message>
+    <icon_name>preferences-system</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
     </defaults>
   </action>
   <action id="org.hearth.units.override">

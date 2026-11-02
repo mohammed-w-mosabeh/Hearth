@@ -97,40 +97,40 @@ func (c NeedrestartConfig) read() (NeedrestartResult, error) {
 	return parseNeedrestart(io.LimitReader(f, maxRestartOutput))
 }
 
-// runUnit starts the unit and waits until it has ended after started. The
-// state alone cannot tell: before the job begins it still reads inactive.
-func (c NeedrestartConfig) runUnit(ctx context.Context) error {
-	bus, err := c.Bus(ctx)
+// runOneshot starts a fixed oneshot unit and waits until it has ended after
+// started. The state alone cannot tell: before the job begins it still reads
+// inactive. name opens its error messages.
+func runOneshot(ctx context.Context, dial func(context.Context) (SystemBus, error), poll time.Duration, name, unitName string) error {
+	bus, err := dial(ctx)
 	if err != nil {
 		return Errorf(CodeFailed, "the system bus is not available")
 	}
 	defer func() { _ = bus.Close() }()
 	started := uint64(time.Now().UnixMicro()) // #nosec G115 -- after 1970
 	var job, unit dbus.ObjectPath
-	if err := bus.Call(ctx, sdDest, sdPath, sdManager+".LoadUnit", []any{&unit}, NeedrestartUnit); err != nil {
-		return Errorf(CodeFailed, "needrestart: the unit is not installed")
+	if err := bus.Call(ctx, sdDest, sdPath, sdManager+".LoadUnit", []any{&unit}, unitName); err != nil {
+		return Errorf(CodeFailed, "%s: the unit is not installed", name)
 	}
 	// systemd unloads an inactive unit, and then its state cannot be read:
 	// the reference holds it for as long as this bus connection lives.
 	if err := bus.Call(ctx, sdDest, unit, sdUnit+".Ref", nil); err != nil {
-		return Errorf(CodeFailed, "needrestart: the unit could not be held")
+		return Errorf(CodeFailed, "%s: the unit could not be held", name)
 	}
-	if err := bus.Call(ctx, sdDest, sdPath, sdManager+".StartUnit", []any{&job}, NeedrestartUnit, "replace"); err != nil {
-		return Errorf(CodeFailed, "needrestart: the unit did not start")
+	if err := bus.Call(ctx, sdDest, sdPath, sdManager+".StartUnit", []any{&job}, unitName, "replace"); err != nil {
+		return Errorf(CodeFailed, "%s: the unit did not start", name)
 	}
-	poll := c.Poll
 	if poll == 0 {
 		poll = 500 * time.Millisecond
 	}
 	for {
 		select {
 		case <-ctx.Done():
-			return Errorf(CodeFailed, "needrestart: took too long")
+			return Errorf(CodeFailed, "%s: took too long", name)
 		case <-time.After(poll):
 		}
 		props, err := bus.GetAll(ctx, sdDest, unit, sdUnit)
 		if err != nil {
-			return Errorf(CodeFailed, "needrestart: its state could not be read")
+			return Errorf(CodeFailed, "%s: its state could not be read", name)
 		}
 		state, _ := props["ActiveState"].Value().(string)
 		changed, _ := props["StateChangeTimestamp"].Value().(uint64)
@@ -138,7 +138,7 @@ func (c NeedrestartConfig) runUnit(ctx context.Context) error {
 			continue
 		}
 		if state == "failed" {
-			return Errorf(CodeFailed, "needrestart: it failed; see the journal of "+NeedrestartUnit)
+			return Errorf(CodeFailed, "%s: it failed; see the journal of %s", name, unitName)
 		}
 		return nil
 	}
@@ -166,7 +166,7 @@ func NeedrestartMethods(c NeedrestartConfig) []Method {
 			if fi, err := os.Stat(c.Output); err == nil && fi.Size() > 0 && time.Since(fi.ModTime()) < needrestartFresh {
 				return c.read()
 			}
-			if err := c.runUnit(ctx); err != nil {
+			if err := runOneshot(ctx, c.Bus, c.Poll, "needrestart", NeedrestartUnit); err != nil {
 				return nil, err
 			}
 			return c.read()

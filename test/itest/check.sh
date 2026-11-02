@@ -528,6 +528,40 @@ check "hostname: unchanged" test "$(hostname)" = "$hn"
 check "power off needs a preview token" not grep -q '"done":1' <<<"$(post actions/power/poweroff '{"target":"machine"}')"
 rm -f /etc/xdg/autostart/hearth-itest.desktop "/home/$user/.config/autostart/hearth-itest.desktop"
 
+echo "== read-only tokens and the hearth command"
+hearth_cli() { asuser env HOME="/home/$user" /usr/bin/hearth "$@" 2>&1 || true; }
+ro_code() { curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $ro" "$@"; }
+check "binary hearth root-owned 0755" test "$(stat -c '%U %a' /usr/bin/hearth)" = "root 755"
+check "without a token it says what to do" grep -q 'Tokens page' <<<"$(hearth_cli status)"
+check "a token is created" grep -q '"name":"cli"' <<<"$(post tokens '{"name":"cli"}')"
+tokfile="/home/$user/.config/hearth/tokens/cli.token"
+check "its file is 0600 in a 0700 directory" test "$(stat -c '%a' "$tokfile") $(stat -c '%a' "${tokfile%/*}")" = "600 700"
+ro=$(cat "$tokfile")
+check "the list never carries a token" not grep -q hearth_ro_ <<<"$(pkgs_api tokens)"
+check "status answers" grep -q 'Open alerts' <<<"$(hearth_cli status)"
+check "ports lists hearthd's own port" grep -q "$port" <<<"$(hearth_cli ports)"
+check "alerts answers" grep -q 'SEVERITY' <<<"$(hearth_cli alerts)"
+check "units lists hearthd" grep -q 'hearthd.service' <<<"$(hearth_cli units)"
+check "containers answers" grep -q 'IMAGE' <<<"$(hearth_cli containers)"
+check "--json is JSON" jq -e .units <<<"$(hearth_cli units --json)"
+check "a token cannot act" test "$(ro_code -X POST -H "Origin: http://127.0.0.1:$port" "http://127.0.0.1:$port/api/v1/actions/system/hostname")" = 403
+check "a token cannot open a terminal" test "$(ro_code "http://127.0.0.1:$port/api/v1/terminal")" = 403
+check "a token cannot read the journal" test "$(ro_code "http://127.0.0.1:$port/api/v1/journal")" = 403
+check "a token cannot export settings" test "$(ro_code "http://127.0.0.1:$port/api/v1/backup/export")" = 403
+check "/metrics is off by default" test "$(ro_code "http://127.0.0.1:$port/metrics")" = 404
+curl -s -X PUT -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$port" -H 'Content-Type: application/json' -d '{"enabled":true}' "http://127.0.0.1:$port/api/v1/tokens/metrics"
+check "/metrics speaks OpenMetrics" grep -q '^# EOF$' <<<"$(curl -s -H "Authorization: Bearer $ro" "http://127.0.0.1:$port/metrics")"
+check "/metrics needs a token" test "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/metrics")" = 401
+curl -s -X DELETE -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$port" "http://127.0.0.1:$port/api/v1/tokens/cli"
+check "revoking removes the file" not test -e "$tokfile"
+check "a revoked token is refused" test "$(ro_code "http://127.0.0.1:$port/api/v1/session")" = 401
+
+echo "== compose update"
+check "unit installed" test -f /usr/lib/systemd/system/hearth-compose.service
+check "its unit denies every address" test "$(systemctl show -p IPAddressDeny --value hearth-compose.service)" != ""
+check "it holds no capability" test -z "$(systemctl show -p CapabilityBoundingSet --value hearth-compose.service | sed 's/^0*$//')"
+check "polkit asks every time" grep -A8 'org.hearth.docker.compose"' /usr/share/polkit-1/actions/org.hearth.policy
+
 echo "== terminal"
 # A shell through hearthd: it must run as the user, in the folder asked,
 # outside hearthd's sandbox (home writable), on a terminal of its own.
@@ -587,13 +621,133 @@ if [ -n "$pcidev" ]; then
 fi
 check "a PCI device is listed" test -n "$pcidev"
 check "no serial field in the inventory" not grep -qiE '"[a-z_]*(serial|uuid)[a-z_]*":' <<<"$(pkgs_api hardware)"
+# Real Lynis in its sandbox: a run, its report, then a finding with the payload.
+check "lynis.run asks polkit" call_says "not authorized" lynis.run
+cat >/etc/polkit-1/rules.d/52-hearth-itest-lynis.rules <<'RULES'
+polkit.addRule(function(action, subject) {
+	if (action.id == "org.hearth.lynis.run" && subject.user == "tester") {
+		return polkit.Result.YES;
+	}
+});
+RULES
+sleep 1
+check "lynis.run takes no params" call_says "takes no params" lynis.run '{"args":"--upload"}'
+check "lynis.schedule takes only the table" call_says "must be off, weekly or monthly" lynis.schedule '{"every":"hourly"}'
+ly=$(asuser timeout 900 /usr/bin/hearthd broker-call lynis.run 2>&1 || true)
+echo "  lynis: ${ly:0:200}"
+check "real Lynis ran in its sandbox" grep -q '"index":[0-9]' <<<"$ly"
+check "the report left only figures and findings" not grep -qE "$(hostname)|\"(hostname|real_user)" <<<"$ly"
+check "its unit denies every address" test "$(systemctl show -p IPAddressDeny --value hearth-lynis.service)" != ""
+check "its report is root's" test "$(stat -c '%U %a' /var/lib/hearth/lynis-report.dat)" = "root 600"
+check "the temporary report is gone" not test -e /var/lib/hearth/lynis-report.tmp
+check "the broker gained no capability for it" test "$(systemctl show -p CapabilityBoundingSet --value hearth-broker.service)" = "cap_sys_rawio cap_sys_admin"
+check "lynis.report starts nothing" test "$(systemctl show -p ActiveState --value hearth-lynis.service)" = inactive
+check "a schedule writes the timer" call_says '"schedule":"weekly"' lynis.schedule '{"every":"weekly"}'
+check "the timer is active" systemctl is-active hearth-lynis.timer
+check "the timer is enabled" systemctl is-enabled hearth-lynis.timer
+check "the page reads the schedule" call_says '"schedule":"weekly"' lynis.report
+check "off removes it" call_says '"schedule":"off"' lynis.schedule '{"every":"off"}'
+check "the timer is gone" not test -e /etc/systemd/system/hearth-lynis.timer
+check "a schedule left for purge to remove" call_says '"schedule":"monthly"' lynis.schedule '{"every":"monthly"}'
+rm -f /etc/polkit-1/rules.d/52-hearth-itest-lynis.rules
+sed -i "s|^hardening_index=.*|warning[]=AUTH-9999\|$xss\|$xss\|$xss\|\n&|" /var/lib/hearth/lynis-report.dat
+check "a hostile finding is listed" grep -q 'onerror' <<<"$(pkgs_api security/lynis)"
+# Real ufw in its sandbox, then a rule the page can only read, with the payload.
+check "the firewall route answers" grep -q '"installed":true' <<<"$(pkgs_api firewall)"
+check "ufw.rule asks polkit" call_says "not authorized" ufw.rule '{"op":"add","action":"allow","proto":"tcp","port":8443}'
+check "ufw.set asks polkit" call_says "not authorized" ufw.set '{"enabled":true}'
+risky='{"project":"app","dir":"/home/x","files":["/home/x/c.yaml"],"config":{"name":"app","services":{"web":{"image":"nginx","provider":{"type":"x"}}}}}'
+clean='{"project":"app","dir":"/home/x","files":["/home/x/c.yaml"],"config":{"name":"app","services":{"web":{"image":"nginx"}}}}'
+check "compose.update refuses a provider service before polkit" call_says 'refused: web: provider' compose.update "$risky"
+check "compose.update refuses an unknown param" call_says 'bad params' compose.update '{"project":"app","exec":"sh"}'
+check "compose.update asks polkit for a clean config" call_says "not authorized" compose.update "$clean"
+check "ufw never keeps a password" grep -Pzq '(?s)org\.hearth\.firewall\.manage">.*?<allow_active>auth_admin</allow_active>' "$policy"
+cat >/etc/polkit-1/rules.d/53-hearth-itest-ufw.rules <<'RULES'
+polkit.addRule(function(action, subject) {
+	if (action.id == "org.hearth.firewall.manage" && subject.user == "tester") {
+		return polkit.Result.YES;
+	}
+});
+RULES
+sleep 1
+for bad in '{"op":"add","action":"limit","proto":"tcp","port":22}' \
+	'{"op":"add","action":"allow","proto":"tcp","port":22,"interface":"eth0"}' \
+	'{"op":"add","action":"allow","proto":"tcp","port":22,"source":"any to any"}' \
+	'{"op":"add","action":"allow","proto":"tcp port 80","port":22}' \
+	'{"op":"reset","action":"allow","proto":"tcp","port":22}'; do
+	check "ufw.rule refuses $bad" call_says "bad params\|must be" ufw.rule "$bad"
+done
+check "a rule needs an active firewall" call_says "not active" ufw.rule '{"op":"add","action":"allow","proto":"tcp","port":8443}'
+check "ufw enables in its sandbox" call_says '"enabled":true' ufw.set '{"enabled":true}'
+echo "  ufw journal: $(journalctl -u hearth-ufw.service -n 3 --no-pager -o cat 2>/dev/null | tail -2 | cut -c1-160)"
+check "ufw is on" grep -q '^ENABLED=yes' /etc/ufw/ufw.conf
+check "and its chains are loaded" iptables -S ufw-user-input
+check "ufw adds a rule" call_says '"done":true' ufw.rule '{"op":"add","action":"allow","proto":"tcp","port":8443,"source":"10.0.0.0/8"}'
+check "the kernel has it" grep -q 'dport 8443' <<<"$(iptables -S ufw-user-input)"
+check "and the page reads it" grep -q '"port":8443,"source":"10.0.0.0/8"' <<<"$(pkgs_api firewall)"
+check "ufw deletes it" call_says '"done":true' ufw.rule '{"op":"delete","action":"allow","proto":"tcp","port":8443,"source":"10.0.0.0/8"}'
+check "it left the kernel" not grep -q 'dport 8443' <<<"$(iptables -S ufw-user-input)"
+check "the args file is gone" not test -e /var/lib/hearth/ufw.args
+check "the broker gained no capability for ufw" test "$(systemctl show -p CapabilityBoundingSet --value hearth-broker.service)" = "cap_sys_rawio cap_sys_admin"
+check "ufw disables" call_says '"enabled":false' ufw.set '{"enabled":false}'
+check "ufw is off" grep -q '^ENABLED=no' /etc/ufw/ufw.conf
+# A tuple's fields hold no spaces, so this payload has none.
+sed -i 's|^### END RULES ###|### tuple ### limit tcp 2222 0.0.0.0/0 any 0.0.0.0/0 <img/src=x/onerror=window.__xss=1> - in\n&|' /etc/ufw/user.rules
+rm -f /etc/polkit-1/rules.d/53-hearth-itest-ufw.rules
+check "a hostile rule is listed read-only" grep -q 'onerror' <<<"$(pkgs_api firewall)"
+# Integrity watch, as the user. The daemon may have taken its baseline already,
+# so everything found now is accepted first.
+integrity_post() { curl -s -X POST -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$port" -H 'Content-Type: application/json' -d "$1" "http://127.0.0.1:$port/api/v1/security/integrity/accept"; }
+hearth_db=/home/$user/.local/share/hearth/hearth.db
+asuser mkdir -p "/home/$user/.ssh" "/home/$user/.local/bin"
+printf 'alias a=b\nexport API_TOKEN=hunter2\n' | asuser tee -a "/home/$user/.bashrc" >/dev/null
+iv=$(pkgs_api security/integrity)
+if [ "$(jq '.changes|length' <<<"$iv")" != 0 ]; then
+	integrity_post "$(jq -c '{items:[.changes[]|{path,hash}]}' <<<"$iv")" >/dev/null
+fi
+check "a baseline exists and is clean" grep -q '"changes":\[\]' <<<"$(pkgs_api security/integrity)"
+check "integrity reports sudoers.d" grep -q '"dir":"/etc/sudoers.d"' <<<"$(pkgs_api security/integrity)"
+sleep 3 # past the window in which a same-size rewrite is not trusted
+echo 'ssh-ed25519 AAAAitestkey me@laptop' | asuser tee -a "/home/$user/.ssh/authorized_keys" >/dev/null
+printf 'alias c=d\nexport API_TOKEN=hunter3\n' | asuser tee -a "/home/$user/.bashrc" >/dev/null
+iv=$(pkgs_api security/integrity)
+check "a new key is seen" test "$(jq -r '.changes[]|select(.path=="~/.ssh/authorized_keys").kind' <<<"$iv")" = added
+check "a changed rc file is seen" test "$(jq -r '.changes[]|select(.path=="~/.bashrc").kind' <<<"$iv")" = changed
+idiff=$(pkgs_api 'security/integrity/diff?path=~/.bashrc')
+check "the diff shows the change" grep -q 'alias c=d' <<<"$idiff"
+check "and hides the secret" not grep -q 'hunter' <<<"$idiff"
+ibase=$(sqlite3 "$hearth_db" "SELECT text FROM integrity_baseline WHERE path='~/.bashrc'")
+check "the baseline has the file's text" grep -q 'alias a=b' <<<"$ibase"
+check "and no secret" not grep -q 'hunter' <<<"$ibase"
+check "the diff reads only watched paths" test "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/security/integrity/diff?path=/etc/passwd")" = 404
+check "an accept without Origin is refused" test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $key" -H 'Content-Type: application/json' -d '{"items":[{"path":"~/.bashrc","hash":"x"}]}' "http://127.0.0.1:$port/api/v1/security/integrity/accept")" = 403
+ia=$(integrity_post "$(jq -c '{items:[.changes[]|select(.path=="~/.bashrc")|{path,hash}]}' <<<"$iv")")
+check "accept takes the shown change" test "$(jq '[.changes[]|select(.path=="~/.bashrc")]|length' <<<"$ia")" = 0
+check "and leaves the others" test "$(jq '[.changes[]|select(.path=="~/.ssh/authorized_keys")]|length' <<<"$ia")" = 1
+check "accepting is in the audit log" grep -q 'security.integrity.accept' <<<"$(sqlite3 "$hearth_db" 'SELECT action FROM audit_log')"
+check "the alert fired" grep -q 'integrity.changed' <<<"$(pkgs_api alerts/events)"
+asuser touch "/home/$user/.local/bin/$xss"
+check "a hostile file name is listed" grep -q 'onerror' <<<"$(pkgs_api security/integrity)"
+# Access, read-only: this user cannot read the system journal here.
+ac=$(pkgs_api security/access)
+check "access says the journal is out of reach" test "$(jq -r .limited <<<"$ac")" = true
+check "access lists the user" test "$(jq --arg u "$user" '[.users[]|select(.name==$u)]|length' <<<"$ac")" = 1
+check "access lists root first" test "$(jq -r '.users[0].name' <<<"$ac")" = root
+check "access asked logind" test "$(jq -r '.sessionsError // false' <<<"$ac")" = false
+check "the access command is allowed" journalctl --quiet --no-pager --output=json --reverse --lines=5000 --output-fields=MESSAGE --since=@1 _UID=0 SYSLOG_IDENTIFIER=sshd SYSLOG_IDENTIFIER=sshd-session
+# A group member named with the payload (a directory service could send one).
+sed -i "s|^sudo:.*|&,$xss|" /etc/group
+check "a hostile member is flagged" test "$(jq '[.users[]|select(.uid==-1 and .sudo)]|length' <<<"$(pkgs_api security/access)")" = 1
 # A cache folder named with the payload (Space advisor).
 asuser mkdir -p "/home/$user/.cache/$xss"
 # A Steam game whose name is the payload (VDF escapes its quotes).
 steamapps=/home/$user/.local/share/Steam/steamapps
 asuser mkdir -p "$steamapps"
 printf '"AppState"\n{\n\t"appid"\t"9"\n\t"name"\t"%s"\n\t"StateFlags"\t"4"\n}\n' "${xss//\"/\\\"}" | asuser tee "$steamapps/appmanifest_9.acf" >/dev/null
-check "hostile game listed" grep -q '"id":"steam.9"' <<<"$(pkgs_api games)"
+# The list is a scan kept for a while, so it shows up within that time.
+game_listed() { grep -q '"id":"steam.9"' <<<"$(pkgs_api games)"; }
+wait_until 90 game_listed || true
+check "hostile game listed" game_listed
 e2e=$(cd /opt/e2e && HEARTH_VERSION="$HEARTH_VERSION" HEARTH_URL="http://127.0.0.1:$port/auth?t=$(cat /home/$user/.config/hearth/token)" timeout 300 npx playwright test 2>&1) || true
 if grep -qE '[0-9]+ passed' <<<"$e2e" && ! grep -qE '[0-9]+ (failed|flaky)' <<<"$e2e"; then
 	echo "$e2e" | grep -E '✓|passed' | head -20 | sed 's/^/  | /'
@@ -861,6 +1015,8 @@ pkill -f hearth-stub-browser || true
 
 echo "== purge"
 apt-get purge -y -qq hearth >/dev/null
+check "purge removes the Lynis schedule" not test -e /etc/systemd/system/hearth-lynis.timer
+check "and its enable link" not test -L /etc/systemd/system/timers.target.wants/hearth-lynis.timer
 check "package gone" not dpkg -s hearth
 for f in /usr/bin/hearthd /usr/lib/systemd/user/hearthd.service \
 	/etc/systemd/user/default.target.wants/hearthd.service /usr/share/applications/hearth.desktop; do

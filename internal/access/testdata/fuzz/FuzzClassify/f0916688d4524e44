@@ -1,0 +1,2 @@
+go test fuzz v1
+string("Accepted 0 for  from 0::1%\" port 0 ssh2")

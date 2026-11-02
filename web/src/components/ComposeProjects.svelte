@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { reasonKey, run, type Result } from '../lib/actions';
+  import { preview, reasonKey, run, type Plan, type Result } from '../lib/actions';
   import { ApiError } from '../lib/api';
   import { finished, projectOps, projectState, projectView, tone, type Container, type Project, type ProjectOp } from '../lib/docker';
   import { t, type MessageKey } from '../lib/i18n';
   import { toast } from '../lib/toast.svelte';
+  import ConfirmDialog from './ConfirmDialog.svelte';
 
   // Compose projects (ROADMAP 2.7): containers grouped by their project
   // label, with start / stop / restart of the whole project through
@@ -41,6 +42,39 @@
     const reason =
       first?.reason === 'error' && first.detail ? first.detail : first?.reason === 'not-found' ? t('compose.reason.gone') : t(reasonKey(first?.reason ?? 'error'), { detail: first?.detail ?? '', user: '' });
     toast(t('compose.partial', { op: t(opLabels[op]), name: p.name, done: res.done, failed: bad.length, who: first?.name ?? '', reason }), { tone: 'error' });
+  }
+
+  // Pull and recreate: the preview lists each service with what happens to its
+  // image digest, or what stops the project from being updated.
+  let updating = $state.raw<{ project: Project; plan: Plan } | null>(null);
+
+  async function askUpdate(p: Project): Promise<void> {
+    busy = new Set([...busy, p.name]);
+    try {
+      updating = { project: p, plan: await preview('project', 'update', p.name) };
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+    } finally {
+      busy = new Set([...busy].filter((x) => x !== p.name));
+    }
+  }
+
+  async function update(): Promise<void> {
+    if (!updating) return;
+    const { project: p, plan } = updating;
+    updating = null;
+    busy = new Set([...busy, p.name]);
+    toast(t('compose.updateHint'));
+    try {
+      const res = await run('project', 'update', p.name, {}, plan.token);
+      const first = res.failed[0];
+      if (first) toast(t('compose.updateFailed', { name: p.name, reason: first.detail || t(reasonKey(first.reason), { detail: '', user: '' }) }), { tone: 'error' });
+      else toast(t('compose.updated', { name: p.name }));
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+    } finally {
+      busy = new Set([...busy].filter((x) => x !== p.name));
+    }
   }
 
   async function act(op: ProjectOp, p: Project): Promise<void> {
@@ -85,6 +119,7 @@
           {#each projectOps(p, byId) as op (op)}
             <button type="button" class="plain" disabled={busy.has(p.name)} onclick={() => act(op, p)}>{t(opLabels[op])}</button>
           {/each}
+          <button type="button" class="plain" disabled={busy.has(p.name)} onclick={() => askUpdate(p)}>{t('compose.update')}</button>
         </div>
         <div class="meta">
           {#if p.working_dir}<span class="mono" title={t('compose.dir')}>{p.working_dir}</span>{/if}
@@ -110,6 +145,15 @@
   </ul>
   <p class="foot">{t('compose.footnote')}</p>
 {/if}
+
+<ConfirmDialog
+  plan={updating?.plan ?? null}
+  title={t('compose.updateTitle', { name: updating?.project.name ?? '' })}
+  verb={t('compose.update')}
+  body={t('compose.updateBody')}
+  onconfirm={update}
+  oncancel={() => (updating = null)}
+/>
 
 <style>
   .bar {

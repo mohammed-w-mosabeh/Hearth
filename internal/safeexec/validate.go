@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -281,6 +282,43 @@ func HTTPURL(s string) error {
 	}
 	if u.Opaque != "" {
 		return invalid("URL %q is opaque", s)
+	}
+	return nil
+}
+
+// composeProjectRe is a Compose project name.
+var composeProjectRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,127}$`)
+
+// composeConfigArgs accepts one shape: compose --project-name NAME
+// --project-directory DIR --file F [--file F]... (at most 4) config --format json.
+func composeConfigArgs(args []string) error {
+	const head, tail = 5, 3
+	if len(args) < head+2+tail || (len(args)-head-tail)%2 != 0 || len(args) > head+8+tail {
+		return invalid("wrong number of arguments")
+	}
+	abs := PathUnder("/")
+	for i, want := range map[int]string{0: "compose", 1: "--project-name", 3: "--project-directory"} {
+		if args[i] != want {
+			return invalid("argument %d is not %q", i, want)
+		}
+	}
+	if !composeProjectRe.MatchString(args[2]) {
+		return invalid("%q is not a Compose project name", args[2])
+	}
+	if err := abs(args[4]); err != nil {
+		return err
+	}
+	rest := args[head : len(args)-tail]
+	for i := 0; i < len(rest); i += 2 {
+		if rest[i] != "--file" {
+			return invalid("expected --file, got %q", rest[i])
+		}
+		if err := abs(rest[i+1]); err != nil {
+			return err
+		}
+	}
+	if !slices.Equal(args[len(args)-tail:], []string{"config", "--format", "json"}) {
+		return invalid("expected config --format json")
 	}
 	return nil
 }

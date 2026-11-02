@@ -14,6 +14,8 @@ if [ "$1" = "purge" ]; then
 	rm -f /etc/systemd/user/default.target.wants/hearthd.service
 	rm -f /etc/systemd/system/sockets.target.wants/hearth-broker.socket
 	rm -rf /var/lib/hearth /run/hearth
+	# A Lynis schedule set through Hearth (SECURITY S16h).
+	rm -f /etc/systemd/system/hearth-lynis.timer /etc/systemd/system/timers.target.wants/hearth-lynis.timer
 	# Limits set through Hearth (SECURITY S16d). Other drop-ins stay.
 	for f in /etc/systemd/system/*.service.d/hearth.conf; do
 		[ -e "$f" ] || continue

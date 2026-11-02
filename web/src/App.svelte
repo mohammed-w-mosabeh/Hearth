@@ -15,6 +15,7 @@
   import Reports from './routes/Reports.svelte';
   import Space from './routes/Space.svelte';
   import Security from './routes/Security.svelte';
+  import Tokens from './routes/Tokens.svelte';
   import Settings from './routes/Settings.svelte';
   import Disks from './routes/Disks.svelte';
   import Docker from './routes/Docker.svelte';
@@ -127,6 +128,8 @@
         <Journal />
       {:else if route?.id === 'changes'}
         <Changes />
+      {:else if route?.id === 'tokens'}
+        <Tokens />
       {:else if route?.id === 'security'}
         <Security />
       {:else if route?.id === 'tools'}
