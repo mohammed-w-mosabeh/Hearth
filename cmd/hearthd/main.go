@@ -51,6 +51,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/hardware"
 	"github.com/mohammed-w-mosabeh/hearth/internal/homepage"
 	"github.com/mohammed-w-mosabeh/hearth/internal/insight"
+	"github.com/mohammed-w-mosabeh/hearth/internal/integrity"
 	"github.com/mohammed-w-mosabeh/hearth/internal/launch"
 	"github.com/mohammed-w-mosabeh/hearth/internal/launcher"
 	"github.com/mohammed-w-mosabeh/hearth/internal/logview"
@@ -652,6 +653,17 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	lynisAudits.Register(srv.API)
 	dockerWG.Add(1)
 	go func() { defer dockerWG.Done(); lynisAudits.Run(dockerCtx) }()
+	if home, err := os.UserHomeDir(); err != nil {
+		log.Warn("integrity watch off: no home directory", "err", err)
+	} else {
+		watch := integrity.New(integrity.Config{Store: db, Audit: db, Home: home, Log: log,
+			Observe: func(ctx context.Context, now time.Time, v map[string]float64) {
+				engine.Observe(ctx, now, integrity.Metric, v)
+			}})
+		watch.Register(srv.API)
+		dockerWG.Add(1)
+		go func() { defer dockerWG.Done(); watch.Run(dockerCtx) }()
+	}
 
 	// Change timeline: dpkg's log, hourly snapshots of units, containers,
 	// listeners and packages (stored only when something changed), and

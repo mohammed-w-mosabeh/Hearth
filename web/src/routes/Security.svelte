@@ -1,4 +1,5 @@
 <script lang="ts">
+  import IntegrityCard from '../components/IntegrityCard.svelte';
   import LynisCard from '../components/LynisCard.svelte';
   import { api, ApiError } from '../lib/api';
   import { locale, t } from '../lib/i18n';
@@ -194,6 +195,7 @@
 {/if}
 
 <LynisCard />
+<IntegrityCard />
 
 <style>
   header {

@@ -656,6 +656,39 @@ check "ufw is off" grep -q '^ENABLED=no' /etc/ufw/ufw.conf
 sed -i 's|^### END RULES ###|### tuple ### limit tcp 2222 0.0.0.0/0 any 0.0.0.0/0 <img/src=x/onerror=window.__xss=1> - in\n&|' /etc/ufw/user.rules
 rm -f /etc/polkit-1/rules.d/53-hearth-itest-ufw.rules
 check "a hostile rule is listed read-only" grep -q 'onerror' <<<"$(pkgs_api firewall)"
+# Integrity watch, as the user. The daemon may have taken its baseline already,
+# so everything found now is accepted first.
+integrity_post() { curl -s -X POST -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$port" -H 'Content-Type: application/json' -d "$1" "http://127.0.0.1:$port/api/v1/security/integrity/accept"; }
+hearth_db=/home/$user/.local/share/hearth/hearth.db
+asuser mkdir -p "/home/$user/.ssh" "/home/$user/.local/bin"
+printf 'alias a=b\nexport API_TOKEN=hunter2\n' | asuser tee -a "/home/$user/.bashrc" >/dev/null
+iv=$(pkgs_api security/integrity)
+if [ "$(jq '.changes|length' <<<"$iv")" != 0 ]; then
+	integrity_post "$(jq -c '{items:[.changes[]|{path,hash}]}' <<<"$iv")" >/dev/null
+fi
+check "a baseline exists and is clean" grep -q '"changes":\[\]' <<<"$(pkgs_api security/integrity)"
+check "integrity reports sudoers.d" grep -q '"dir":"/etc/sudoers.d"' <<<"$(pkgs_api security/integrity)"
+sleep 3 # past the window in which a same-size rewrite is not trusted
+echo 'ssh-ed25519 AAAAitestkey me@laptop' | asuser tee -a "/home/$user/.ssh/authorized_keys" >/dev/null
+printf 'alias c=d\nexport API_TOKEN=hunter3\n' | asuser tee -a "/home/$user/.bashrc" >/dev/null
+iv=$(pkgs_api security/integrity)
+check "a new key is seen" test "$(jq -r '.changes[]|select(.path=="~/.ssh/authorized_keys").kind' <<<"$iv")" = added
+check "a changed rc file is seen" test "$(jq -r '.changes[]|select(.path=="~/.bashrc").kind' <<<"$iv")" = changed
+idiff=$(pkgs_api 'security/integrity/diff?path=~/.bashrc')
+check "the diff shows the change" grep -q 'alias c=d' <<<"$idiff"
+check "and hides the secret" not grep -q 'hunter' <<<"$idiff"
+ibase=$(sqlite3 "$hearth_db" "SELECT text FROM integrity_baseline WHERE path='~/.bashrc'")
+check "the baseline has the file's text" grep -q 'alias a=b' <<<"$ibase"
+check "and no secret" not grep -q 'hunter' <<<"$ibase"
+check "the diff reads only watched paths" test "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/security/integrity/diff?path=/etc/passwd")" = 404
+check "an accept without Origin is refused" test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $key" -H 'Content-Type: application/json' -d '{"items":[{"path":"~/.bashrc","hash":"x"}]}' "http://127.0.0.1:$port/api/v1/security/integrity/accept")" = 403
+ia=$(integrity_post "$(jq -c '{items:[.changes[]|select(.path=="~/.bashrc")|{path,hash}]}' <<<"$iv")")
+check "accept takes the shown change" test "$(jq '[.changes[]|select(.path=="~/.bashrc")]|length' <<<"$ia")" = 0
+check "and leaves the others" test "$(jq '[.changes[]|select(.path=="~/.ssh/authorized_keys")]|length' <<<"$ia")" = 1
+check "accepting is in the audit log" grep -q 'security.integrity.accept' <<<"$(sqlite3 "$hearth_db" 'SELECT action FROM audit_log')"
+check "the alert fired" grep -q 'integrity.changed' <<<"$(pkgs_api alerts/events)"
+asuser touch "/home/$user/.local/bin/$xss"
+check "a hostile file name is listed" grep -q 'onerror' <<<"$(pkgs_api security/integrity)"
 # A cache folder named with the payload (Space advisor).
 asuser mkdir -p "/home/$user/.cache/$xss"
 # A Steam game whose name is the payload (VDF escapes its quotes).

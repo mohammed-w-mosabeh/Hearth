@@ -182,6 +182,14 @@ test('a firewall rule shows as text', async ({ page }) => {
   await noScriptRan(page);
 });
 
+test('an integrity change shows as text', async ({ page }) => {
+  await page.goto(`${origin}/#/security`);
+  await page.reload();
+  const card = page.locator('section[aria-labelledby="integrity-title"]');
+  await expect(card.getByText(PAYLOAD).first()).toBeVisible({ timeout: 15_000 });
+  await noScriptRan(page);
+});
+
 test('a Lynis finding shows as text', async ({ page }) => {
   await page.goto(`${origin}/#/security`);
   await page.reload();
