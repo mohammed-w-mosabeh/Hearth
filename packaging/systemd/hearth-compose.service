@@ -1,0 +1,55 @@
+[Unit]
+Description=Hearth: pull and recreate one Compose project
+Documentation=https://github.com/mohammed-w-mosabeh/hearth
+# Started only by hearth-broker's compose.update (SECURITY S16h), after polkit,
+# on a rendering the broker checked.
+ConditionFileIsExecutable=/usr/bin/docker
+ConditionPathExists=/var/lib/hearth/compose.json
+
+[Service]
+Type=oneshot
+# One line, written by the broker: COMPOSE_PROJECT=<validated name>. The file
+# holds only the checked rendering, and only the Docker socket does the work,
+# so it needs no capability and never sees the project's own files. systemd
+# splits the line into words; no shell is involved.
+EnvironmentFile=/var/lib/hearth/compose.args
+ExecStart=/usr/bin/docker compose --project-name $COMPOSE_PROJECT --project-directory /var/lib/hearth --file /var/lib/hearth/compose.json up --detach --pull always --no-build --quiet-pull
+StandardOutput=journal
+StandardError=journal
+Environment=LC_ALL=C
+# Root has no registry logins here, and compose needs somewhere to look.
+Environment=HOME=/nonexistent DOCKER_CONFIG=/tmp/docker
+UMask=0077
+TimeoutStartSec=30min
+
+# --- Hardening (SECURITY.md "systemd hardening") ---
+# None: /run/docker.sock is root's, and connecting needs no capability.
+CapabilityBoundingSet=
+AmbientCapabilities=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+KeyringMode=private
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+# The Docker socket only: Docker's daemon does the pulling.
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+MemoryMax=256M
+CPUQuota=50%
+TasksMax=64

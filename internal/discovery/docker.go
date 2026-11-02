@@ -36,6 +36,9 @@ const (
 	labelService    = "com.docker.compose.service"
 	labelWorkingDir = "com.docker.compose.project.working_dir"
 	labelConfigs    = "com.docker.compose.project.config_files"
+	// broker.LabelComposeDir and broker.LabelComposeFiles.
+	labelHearthDir   = "org.hearth.compose.dir"
+	labelHearthFiles = "org.hearth.compose.files"
 )
 
 // Container is one container as the lists show it; details come from
@@ -546,6 +549,23 @@ func volumes(raw rawVolumes, cs []Container) []Volume {
 	return out
 }
 
+// ComposePlace is where a project lives. After an update through Hearth,
+// Compose's own labels name the broker's rendering, and Hearth's name the
+// project's real folder and files (SECURITY S16h).
+func ComposePlace(labels map[string]string) (dir string, files []string) {
+	dir, list := labels[labelWorkingDir], labels[labelConfigs]
+	if v := labels[labelHearthDir]; v != "" {
+		dir = v
+	}
+	if v := labels[labelHearthFiles]; v != "" {
+		list = v
+	}
+	if list != "" {
+		files = strings.Split(list, ",")
+	}
+	return dir, files
+}
+
 func projects(cs []rawContainer) []Project {
 	byName := map[string]*Project{}
 	for _, c := range cs {
@@ -558,11 +578,12 @@ func projects(cs []rawContainer) []Project {
 			p = &Project{Name: name, ConfigFiles: []string{}, Services: []string{}, Containers: []string{}}
 			byName[name] = p
 		}
+		dir, files := ComposePlace(c.Labels)
 		if p.WorkingDir == "" {
-			p.WorkingDir = c.Labels[labelWorkingDir]
+			p.WorkingDir = dir
 		}
-		if len(p.ConfigFiles) == 0 && c.Labels[labelConfigs] != "" {
-			p.ConfigFiles = strings.Split(c.Labels[labelConfigs], ",")
+		if len(p.ConfigFiles) == 0 {
+			p.ConfigFiles = files
 		}
 		if s := c.Labels[labelService]; s != "" && !slices.Contains(p.Services, s) {
 			p.Services = append(p.Services, s)

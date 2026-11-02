@@ -1990,5 +1990,11 @@
   "tokens.metrics": "Metrics",
   "tokens.metricsIntro": "An OpenMetrics page at /metrics on this computer's loopback address only, for a local Prometheus. It needs a read-only token.",
   "tokens.metricsOn": "Serve /metrics",
-  "tokens.metricsHow": "A Prometheus job for it, reading the token from its file:"
+  "tokens.metricsHow": "A Prometheus job for it, reading the token from its file:",
+  "compose.update": "Pull and recreate",
+  "compose.updateTitle": "Update {name}?",
+  "compose.updateBody": "Pulls each service's image and recreates what changed. Containers restart, and only what is in volumes or bind mounts is kept. Images that need a registry login cannot be pulled. Variables from your shell are not used; a .env file in the project folder is.",
+  "compose.updateHint": "Your password is needed. This can take minutes while images download.",
+  "compose.updated": "Updated {name}.",
+  "compose.updateFailed": "Could not update {name}: {reason}"
 }

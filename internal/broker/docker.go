@@ -201,6 +201,29 @@ func filtersQ(f map[string][]string) string {
 	return string(b)
 }
 
+// ComposeServices lists the services project has containers for.
+func (d *Docker) ComposeServices(ctx context.Context, project string) ([]string, error) {
+	raw, err := d.containersList(ctx, json.RawMessage(`{"all":true}`))
+	if err != nil {
+		return nil, err
+	}
+	b, err := json.Marshal(raw)
+	if err != nil {
+		return nil, err
+	}
+	var list []struct{ Labels map[string]string }
+	if err := json.Unmarshal(b, &list); err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, c := range list {
+		if c.Labels["com.docker.compose.project"] == project {
+			out = append(out, c.Labels["com.docker.compose.service"])
+		}
+	}
+	return out, nil
+}
+
 // DockerMethods are the broker's Docker methods. Each privileged one is
 // checked before polkit by running it on a dry copy of d whose transport
 // refuses every request: the handler's own validation runs, nothing can

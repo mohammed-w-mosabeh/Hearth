@@ -525,6 +525,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	srv.API.HandleFunc("GET /api/v1/docker/containers/{id}", docker.HandleInspect(brokerClient))
 	srv.API.HandleFunc("GET /api/v1/docker/volumes/sizes", docker.HandleVolumeSizes(brokerClient))
 	images := &docker.Images{B: brokerClient, Registry: docker.NewRegistry(), Run: safeexec.Run, CacheDir: filepath.Join(paths.DataDir, "trivy")}
+	docker.RegisterUpdate(reg, brokerClient, images.Registry, safeexec.Run)
 	srv.API.HandleFunc("GET /api/v1/docker/images/{id}", images.HandleDetail)
 	srv.API.HandleFunc("GET /api/v1/docker/images/{id}/updates", images.HandleUpdates)
 	srv.API.HandleFunc("POST /api/v1/docker/images/{id}/scan", images.HandleScan)

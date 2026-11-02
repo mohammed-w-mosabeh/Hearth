@@ -77,6 +77,16 @@ var allowlist = map[string]Spec{
 			Literal("L"), Literal("APT::Periodic::Update-Package-Lists")),
 		Timeout: 5 * time.Second,
 	},
+	// docker compose config, rendering one project as the user: it reads the
+	// project's files and needs no daemon. Run by hearthd; what it prints goes
+	// to the broker as untrusted input (SECURITY S16h). The output is bounded
+	// by the rendering's own limit there.
+	"docker-compose-config": {
+		Paths:    []string{"/usr/bin/docker"},
+		Validate: composeConfigArgs,
+		Env:      []string{"HOME"},
+		Timeout:  20 * time.Second,
+	},
 	"trivy-version": {
 		Paths:    []string{"/usr/bin/trivy", "/usr/local/bin/trivy"},
 		Validate: exactly(Literal("--version")),

@@ -1990,5 +1990,11 @@
   "tokens.metrics": "المقاييس",
   "tokens.metricsIntro": "صفحة OpenMetrics في ‎/metrics على عنوان الاسترجاع لهذا الحاسوب فقط، من أجل Prometheus محلي. تتطلب رمزًا للقراءة فقط.",
   "tokens.metricsOn": "تقديم ‎/metrics",
-  "tokens.metricsHow": "مهمة Prometheus لها، تقرأ الرمز من ملفه:"
+  "tokens.metricsHow": "مهمة Prometheus لها، تقرأ الرمز من ملفه:",
+  "compose.update": "سحب وإعادة إنشاء",
+  "compose.updateTitle": "تحديث {name}؟",
+  "compose.updateBody": "يسحب صورة كل خدمة ويعيد إنشاء ما تغيّر. تُعاد تشغيل الحاويات، ولا يُحفظ إلا ما في وحدات التخزين أو عمليات الربط. لا يمكن سحب الصور التي تتطلب تسجيل الدخول إلى السجل. لا تُستخدم متغيرات الطرفية؛ بل ملف ‎.env في مجلد المشروع.",
+  "compose.updateHint": "كلمة المرور مطلوبة. قد يستغرق هذا دقائق أثناء تنزيل الصور.",
+  "compose.updated": "حُدّث {name}.",
+  "compose.updateFailed": "تعذر تحديث {name}: {reason}"
 }

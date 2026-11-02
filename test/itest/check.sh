@@ -556,6 +556,12 @@ curl -s -X DELETE -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$
 check "revoking removes the file" not test -e "$tokfile"
 check "a revoked token is refused" test "$(ro_code "http://127.0.0.1:$port/api/v1/session")" = 401
 
+echo "== compose update"
+check "unit installed" test -f /usr/lib/systemd/system/hearth-compose.service
+check "its unit denies every address" test "$(systemctl show -p IPAddressDeny --value hearth-compose.service)" != ""
+check "it holds no capability" test -z "$(systemctl show -p CapabilityBoundingSet --value hearth-compose.service | sed 's/^0*$//')"
+check "polkit asks every time" grep -A8 'org.hearth.docker.compose"' /usr/share/polkit-1/actions/org.hearth.policy
+
 echo "== terminal"
 # A shell through hearthd: it must run as the user, in the folder asked,
 # outside hearthd's sandbox (home writable), on a terminal of its own.
@@ -650,6 +656,11 @@ check "a hostile finding is listed" grep -q 'onerror' <<<"$(pkgs_api security/ly
 check "the firewall route answers" grep -q '"installed":true' <<<"$(pkgs_api firewall)"
 check "ufw.rule asks polkit" call_says "not authorized" ufw.rule '{"op":"add","action":"allow","proto":"tcp","port":8443}'
 check "ufw.set asks polkit" call_says "not authorized" ufw.set '{"enabled":true}'
+risky='{"project":"app","dir":"/home/x","files":["/home/x/c.yaml"],"config":{"name":"app","services":{"web":{"image":"nginx","provider":{"type":"x"}}}}}'
+clean='{"project":"app","dir":"/home/x","files":["/home/x/c.yaml"],"config":{"name":"app","services":{"web":{"image":"nginx"}}}}'
+check "compose.update refuses a provider service before polkit" call_says 'refused: web: provider' compose.update "$risky"
+check "compose.update refuses an unknown param" call_says 'bad params' compose.update '{"project":"app","exec":"sh"}'
+check "compose.update asks polkit for a clean config" call_says "not authorized" compose.update "$clean"
 check "ufw never keeps a password" grep -Pzq '(?s)org\.hearth\.firewall\.manage">.*?<allow_active>auth_admin</allow_active>' "$policy"
 cat >/etc/polkit-1/rules.d/53-hearth-itest-ufw.rules <<'RULES'
 polkit.addRule(function(action, subject) {

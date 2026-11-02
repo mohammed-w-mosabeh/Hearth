@@ -45,7 +45,16 @@ func run(log *slog.Logger) error {
 	}
 	var srv *broker.Server
 	methods := broker.BaseMethods(version(), func() []string { return srv.Names() })
-	methods = append(methods, broker.DockerMethods(broker.NewDocker(broker.DockerSocket))...)
+	dockerAPI := broker.NewDocker(broker.DockerSocket)
+	methods = append(methods, broker.DockerMethods(dockerAPI)...)
+	methods = append(methods, broker.ComposeMethods(broker.ComposeConfig{Services: dockerAPI.ComposeServices,
+		Bus: func(ctx context.Context) (broker.SystemBus, error) {
+			c, err := dbusx.SystemBus(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return c, nil
+		}})...)
 	methods = append(methods, broker.PackageMethods(safeexec.Run)...)
 	methods = append(methods, broker.SpaceMethods(safeexec.Run, broker.AptArchives)...)
 	methods = append(methods, broker.SmartMethods(safeexec.Run, broker.SysRoot)...)
