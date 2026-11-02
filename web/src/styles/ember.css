@@ -3,8 +3,30 @@
    data-theme, resolving "system" itself, so each theme is written once.
    The amber accent marks live or active state, never decoration.
    src/lib/contrast.test.ts holds these values to WCAG AA. */
+/* Subset and bundled, no CDN (SECURITY S24a, assets/fonts/README.md). */
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('../assets/fonts/IBMPlexSans-Regular.subset.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('../assets/fonts/IBMPlexSans-SemiBold.subset.woff2') format('woff2');
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('../assets/fonts/JetBrainsMono-Regular.subset.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+
 :root[data-ui='ember'] {
   color-scheme: dark;
+  --font-ui: 'IBM Plex Sans', 'IBM Plex Sans Arabic', system-ui, 'Noto Sans', Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'DejaVu Sans Mono', monospace;
   --bg: #14120f;
   --surface: #1c1915;
   --surface-2: #24201b;

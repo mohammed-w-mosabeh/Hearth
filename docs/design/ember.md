@@ -39,7 +39,7 @@ The ember gradient is `#F59E0B` to `#EA580C`. The light accent departs from the 
 | ■ | stopped or failed |
 
 ## Typography
-IBM Plex Sans and IBM Plex Sans Arabic for UI, JetBrains Mono with tabular figures for numbers, units and code. The prototype still uses the system stacks; fonts arrive in task 8.3, within 250 KB.
+IBM Plex Sans and IBM Plex Sans Arabic for UI, JetBrains Mono with tabular figures for numbers, units and code. Bundled and subset, loaded by the browser only when drawn; `check-forbidden.sh` holds all of them to 250 KB. Sources are in `web/src/assets/fonts/README.md`.
 
 ## Navigation
 A rail on the inline-start side, 224 px open and 56 px collapsed, remembered per browser, collapsed automatically below 900 px.

@@ -34,6 +34,10 @@ report "placeholder page text" \
 report "production code importing web/src/design" \
 	"$(git grep -nE "from '[^']*/design/|import '[^']*/design/" -- 'web/src' ':!web/src/design' || true)"
 
+# Fonts have their own budget (Gate 8).
+fonts=$(cat web/src/assets/fonts/*.woff2 | wc -c)
+report "fonts over 250 KB" "$([ "$fonts" -le 256000 ] || echo "$fonts bytes")"
+
 # Logical CSS only, so the layout mirrors for right-to-left languages.
 report "physical-direction CSS (use margin-inline-start, text-align: start, ...)" \
 	"$(git grep -nE '(margin|padding|border)-(left|right)\b|text-align: *(left|right)\b|float: *(left|right)\b' -- 'web/src/*.svelte' 'web/src/*.css' | grep -v 'rtl-physical' || true)"
