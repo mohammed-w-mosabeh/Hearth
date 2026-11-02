@@ -24,7 +24,7 @@ func securityHeaders(next http.Handler) http.Handler {
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("Cross-Origin-Opener-Policy", "same-origin")
 		h.Set("Cross-Origin-Resource-Policy", "same-origin")
-		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/auth" {
+		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/auth" || r.URL.Path == "/metrics" {
 			h.Set("Cache-Control", "no-store")
 		}
 		next.ServeHTTP(w, r)

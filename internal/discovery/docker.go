@@ -300,6 +300,38 @@ func (w *DockerWatcher) HandleSnapshot(rw http.ResponseWriter, r *http.Request) 
 	writeJSON(rw, s)
 }
 
+// ContainerBrief is a container as read-only tokens see it: never its command
+// line or mounts, which can quote secrets and paths (SECURITY S2a).
+type ContainerBrief struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Image   string `json:"image"`
+	State   string `json:"state"`
+	Status  string `json:"status"`
+	Health  string `json:"health,omitempty"`
+	Project string `json:"project,omitempty"`
+}
+
+// HandleBrief serves GET /api/v1/containers from the same snapshot.
+func (w *DockerWatcher) HandleBrief(rw http.ResponseWriter, r *http.Request) {
+	s := w.getLast()
+	if s == nil {
+		fresh := w.Snapshot(r.Context())
+		s = &fresh
+	}
+	rw.Header().Set("Cache-Control", "no-store")
+	writeJSON(rw, briefs(s))
+}
+
+func briefs(s *DockerSnapshot) map[string]any {
+	list := make([]ContainerBrief, 0, len(s.Containers))
+	for _, c := range s.Containers {
+		list = append(list, ContainerBrief{ID: c.ID, Name: c.Name, Image: c.Image, State: c.State,
+			Status: c.Status, Health: c.Health, Project: c.Project})
+	}
+	return map[string]any{"state": s.State, "containers": list}
+}
+
 // Raw shapes of the Engine's list answers (API v1.44).
 type (
 	rawContainer struct {

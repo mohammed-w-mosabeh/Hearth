@@ -28,6 +28,7 @@ export const routes: Route[] = [
   { id: 'journal', label: 'nav.journal', icon: 'book' },
   { id: 'alerts', label: 'nav.alerts', icon: 'bell' },
   { id: 'security', label: 'nav.security', icon: 'shield' },
+  { id: 'tokens', label: 'nav.tokens', icon: 'shield' },
   { id: 'profiles', label: 'nav.profiles', icon: 'layers' },
   { id: 'changes', label: 'nav.changes', icon: 'history' },
   { id: 'reports', label: 'nav.reports', icon: 'report' },

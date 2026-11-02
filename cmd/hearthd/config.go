@@ -29,6 +29,7 @@ type Paths struct {
 
 func (p Paths) ConfigFile() string { return filepath.Join(p.ConfigDir, "config.json") }
 func (p Paths) TokenFile() string  { return filepath.Join(p.ConfigDir, "token") }
+func (p Paths) TokensDir() string  { return filepath.Join(p.ConfigDir, "tokens") }
 func (p Paths) DBFile() string     { return filepath.Join(p.DataDir, "hearth.db") }
 
 // resolvePaths applies the XDG Base Directory rules: a variable is used only

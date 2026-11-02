@@ -528,6 +528,34 @@ check "hostname: unchanged" test "$(hostname)" = "$hn"
 check "power off needs a preview token" not grep -q '"done":1' <<<"$(post actions/power/poweroff '{"target":"machine"}')"
 rm -f /etc/xdg/autostart/hearth-itest.desktop "/home/$user/.config/autostart/hearth-itest.desktop"
 
+echo "== read-only tokens and the hearth command"
+hearth_cli() { asuser env HOME="/home/$user" /usr/bin/hearth "$@" 2>&1 || true; }
+ro_code() { curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $ro" "$@"; }
+check "binary hearth root-owned 0755" test "$(stat -c '%U %a' /usr/bin/hearth)" = "root 755"
+check "without a token it says what to do" grep -q 'Tokens page' <<<"$(hearth_cli status)"
+check "a token is created" grep -q '"name":"cli"' <<<"$(post tokens '{"name":"cli"}')"
+tokfile="/home/$user/.config/hearth/tokens/cli.token"
+check "its file is 0600 in a 0700 directory" test "$(stat -c '%a' "$tokfile") $(stat -c '%a' "${tokfile%/*}")" = "600 700"
+ro=$(cat "$tokfile")
+check "the list never carries a token" not grep -q hearth_ro_ <<<"$(pkgs_api tokens)"
+check "status answers" grep -q 'Open alerts' <<<"$(hearth_cli status)"
+check "ports lists hearthd's own port" grep -q "$port" <<<"$(hearth_cli ports)"
+check "alerts answers" grep -q 'SEVERITY' <<<"$(hearth_cli alerts)"
+check "units lists hearthd" grep -q 'hearthd.service' <<<"$(hearth_cli units)"
+check "containers answers" grep -q 'IMAGE' <<<"$(hearth_cli containers)"
+check "--json is JSON" jq -e .units <<<"$(hearth_cli units --json)"
+check "a token cannot act" test "$(ro_code -X POST -H "Origin: http://127.0.0.1:$port" "http://127.0.0.1:$port/api/v1/actions/system/hostname")" = 403
+check "a token cannot open a terminal" test "$(ro_code "http://127.0.0.1:$port/api/v1/terminal")" = 403
+check "a token cannot read the journal" test "$(ro_code "http://127.0.0.1:$port/api/v1/journal")" = 403
+check "a token cannot export settings" test "$(ro_code "http://127.0.0.1:$port/api/v1/backup/export")" = 403
+check "/metrics is off by default" test "$(ro_code "http://127.0.0.1:$port/metrics")" = 404
+curl -s -X PUT -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$port" -H 'Content-Type: application/json' -d '{"enabled":true}' "http://127.0.0.1:$port/api/v1/tokens/metrics"
+check "/metrics speaks OpenMetrics" grep -q '^# EOF$' <<<"$(curl -s -H "Authorization: Bearer $ro" "http://127.0.0.1:$port/metrics")"
+check "/metrics needs a token" test "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/metrics")" = 401
+curl -s -X DELETE -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$port" "http://127.0.0.1:$port/api/v1/tokens/cli"
+check "revoking removes the file" not test -e "$tokfile"
+check "a revoked token is refused" test "$(ro_code "http://127.0.0.1:$port/api/v1/session")" = 401
+
 echo "== terminal"
 # A shell through hearthd: it must run as the user, in the folder asked,
 # outside hearthd's sandbox (home writable), on a terminal of its own.

@@ -144,7 +144,14 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	if err != nil {
 		return err
 	}
-	srv, err := api.New(api.Config{Port: cfg.Port, Auth: am, Static: web.Dist(), Logger: log, Version: version()})
+	readOnly, skippedTokens, err := auth.NewTokens(paths.TokensDir())
+	if err != nil {
+		return err
+	}
+	if len(skippedTokens) > 0 {
+		log.Warn("tokens: ignored files that are not private token files", "files", skippedTokens)
+	}
+	srv, err := api.New(api.Config{Port: cfg.Port, Auth: am, Tokens: readOnly, Static: web.Dist(), Logger: log, Version: version()})
 	if err != nil {
 		return err
 	}
@@ -240,6 +247,20 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	srv.API.HandleFunc("GET /api/v1/metrics/live", sampler.HandleLive)
 	srv.API.HandleFunc("GET /api/v1/metrics/history", collect.HandleHistory(db))
 	srv.RegisterSettings(db)
+	srv.RegisterTokens(db, func(ctx context.Context, action, target, result string) error {
+		return db.Audit(ctx, store.AuditEntry{Origin: store.OriginLocal, UID: os.Getuid(), Action: action, Target: target, Result: result})
+	})
+	srv.SetMetrics(func(ctx context.Context) ([]byte, bool) {
+		if !api.MetricsEnabled(ctx, db) {
+			return nil, false
+		}
+		firing := 0
+		if open, err := db.OpenAlertEvents(ctx); err == nil {
+			firing = len(open)
+		}
+		s, _ := sampler.Ring().Last() // an empty sample before the first tick
+		return collect.OpenMetrics(s, firing), true
+	})
 	samplerCtx, stopSampler := context.WithCancel(ctx)
 	samplerDone := make(chan struct{})
 	go func() { sampler.Run(samplerCtx); close(samplerDone) }()
@@ -428,6 +449,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	}
 	defer func() { stopDocker(); dockerWG.Wait() }()
 	srv.API.HandleFunc("GET /api/v1/docker", dockerObjs.HandleSnapshot)
+	srv.API.HandleFunc("GET /api/v1/containers", dockerObjs.HandleBrief)
 	srv.API.HandleFunc("GET /api/v1/hardware", hardware.HandleInventory(hardware.Paths{}))
 	// A USB device never seen here raises "usb.new_device" once.
 	const knownUSB = "usb.known_devices"
@@ -583,6 +605,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		User:   func(ctx context.Context) (services.Bus, error) { return dbusx.SessionBus(ctx) },
 		Pub:    srv.Hub, Log: log, UID: os.Getuid(),
 	})
+	srv.API.HandleFunc("GET /api/v1/services", units.HandleList)
 	unitsCtx, stopUnits := context.WithCancel(ctx)
 	unitsDone := make(chan struct{})
 	go func() { units.Run(unitsCtx); close(unitsDone) }()
