@@ -174,6 +174,13 @@ var allowlist = map[string]Spec{
 		Validate: journalFixed(sleepFlags, "MESSAGE_ID="+SleepEnteredID, "MESSAGE_ID="+SleepLeftID),
 		Timeout:  10 * time.Second,
 	},
+	// journalctl for SSH logins (Security page). Only root's sshd entries:
+	// _UID is set by the journal, so a user cannot forge one with logger.
+	"journalctl-ssh": {
+		Paths:    []string{"/usr/bin/journalctl", "/bin/journalctl"},
+		Validate: journalFixed(sshFlags, sshMatches...),
+		Timeout:  10 * time.Second,
+	},
 	// journalctl listing the boots it has logs of (Journal page).
 	"journalctl-boots": {
 		Paths:    []string{"/usr/bin/journalctl", "/bin/journalctl"},
@@ -369,6 +376,19 @@ var sleepFlags = []string{"--quiet", "--no-pager", "--output=json", "--reverse",
 // SleepArgs is journalctl-sleep's command line from a unix time.
 func SleepArgs(since int64) []string {
 	return slices.Concat(sleepFlags, []string{"--since=@" + strconv.FormatInt(since, 10), "MESSAGE_ID=" + SleepEnteredID, "MESSAGE_ID=" + SleepLeftID})
+}
+
+// MaxSSHLines bounds what one SSH login query returns.
+const MaxSSHLines = 5000
+
+var (
+	sshFlags   = []string{"--quiet", "--no-pager", "--output=json", "--reverse", "--lines=5000", "--output-fields=MESSAGE"}
+	sshMatches = []string{"_UID=0", "SYSLOG_IDENTIFIER=sshd", "SYSLOG_IDENTIFIER=sshd-session"}
+)
+
+// SSHArgs is journalctl-ssh's command line from a unix time.
+func SSHArgs(since int64) []string {
+	return slices.Concat(sshFlags, []string{"--since=@" + strconv.FormatInt(since, 10)}, sshMatches)
 }
 
 // CrashArgs is journalctl-crashes' command line from a unix time.

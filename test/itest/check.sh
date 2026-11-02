@@ -689,6 +689,16 @@ check "accepting is in the audit log" grep -q 'security.integrity.accept' <<<"$(
 check "the alert fired" grep -q 'integrity.changed' <<<"$(pkgs_api alerts/events)"
 asuser touch "/home/$user/.local/bin/$xss"
 check "a hostile file name is listed" grep -q 'onerror' <<<"$(pkgs_api security/integrity)"
+# Access, read-only: this user cannot read the system journal here.
+ac=$(pkgs_api security/access)
+check "access says the journal is out of reach" test "$(jq -r .limited <<<"$ac")" = true
+check "access lists the user" test "$(jq --arg u "$user" '[.users[]|select(.name==$u)]|length' <<<"$ac")" = 1
+check "access lists root first" test "$(jq -r '.users[0].name' <<<"$ac")" = root
+check "access asked logind" test "$(jq -r '.sessionsError // false' <<<"$ac")" = false
+check "the access command is allowed" journalctl --quiet --no-pager --output=json --reverse --lines=5000 --output-fields=MESSAGE --since=@1 _UID=0 SYSLOG_IDENTIFIER=sshd SYSLOG_IDENTIFIER=sshd-session
+# A group member named with the payload (a directory service could send one).
+sed -i "s|^sudo:.*|&,$xss|" /etc/group
+check "a hostile member is flagged" test "$(jq '[.users[]|select(.uid==-1 and .sudo)]|length' <<<"$(pkgs_api security/access)")" = 1
 # A cache folder named with the payload (Space advisor).
 asuser mkdir -p "/home/$user/.cache/$xss"
 # A Steam game whose name is the payload (VDF escapes its quotes).

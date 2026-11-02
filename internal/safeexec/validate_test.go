@@ -666,6 +666,13 @@ func TestCrashArgs(t *testing.T) {
 	if Check("journalctl-oom", good...) == nil {
 		t.Error("the two commands are interchangeable")
 	}
+	ssh := SSHArgs(1790000000)
+	if err := Check("journalctl-ssh", ssh...); err != nil {
+		t.Fatal(err)
+	}
+	if Check("journalctl-ssh", slices.Replace(slices.Clone(ssh), len(ssh)-3, len(ssh)-2, "_UID=1000")...) == nil {
+		t.Error("accepted another uid")
+	}
 }
 
 func FuzzDiskName(f *testing.F) {

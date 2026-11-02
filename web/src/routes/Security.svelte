@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AccessCard from '../components/AccessCard.svelte';
   import IntegrityCard from '../components/IntegrityCard.svelte';
   import LynisCard from '../components/LynisCard.svelte';
   import { api, ApiError } from '../lib/api';
@@ -196,6 +197,7 @@
 
 <LynisCard />
 <IntegrityCard />
+<AccessCard />
 
 <style>
   header {

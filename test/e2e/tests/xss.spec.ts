@@ -190,6 +190,14 @@ test('an integrity change shows as text', async ({ page }) => {
   await noScriptRan(page);
 });
 
+test('a hostile group member shows as text', async ({ page }) => {
+  await page.goto(`${origin}/#/security`);
+  await page.reload();
+  const card = page.locator('section[aria-labelledby="access-title"]');
+  await expect(card.getByText(PAYLOAD).first()).toBeVisible({ timeout: 15_000 });
+  await noScriptRan(page);
+});
+
 test('a Lynis finding shows as text', async ({ page }) => {
   await page.goto(`${origin}/#/security`);
   await page.reload();

@@ -30,6 +30,7 @@ import (
 
 	"github.com/godbus/dbus/v5"
 
+	"github.com/mohammed-w-mosabeh/hearth/internal/access"
 	"github.com/mohammed-w-mosabeh/hearth/internal/actions"
 	"github.com/mohammed-w-mosabeh/hearth/internal/alerts"
 	"github.com/mohammed-w-mosabeh/hearth/internal/api"
@@ -664,6 +665,10 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		dockerWG.Add(1)
 		go func() { defer dockerWG.Done(); watch.Run(dockerCtx) }()
 	}
+
+	srv.API.HandleFunc("GET /api/v1/security/access", access.New(access.Config{Run: safeexec.Run,
+		CanReadSystem: services.CanReadSystemJournal,
+		Bus:           func(ctx context.Context) (access.Bus, error) { return dbusx.SystemBus(ctx) }}).Handle)
 
 	// Change timeline: dpkg's log, hourly snapshots of units, containers,
 	// listeners and packages (stored only when something changed), and
