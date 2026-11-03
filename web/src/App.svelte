@@ -41,6 +41,7 @@
   const ember = emberRequested(location.search);
   let key = $state(loadKey({ location, history, storage: localStorage }));
   let status = $state<WsState>('connecting');
+  let beat = $state(0);
   let live = $state.raw<Live | null>(null);
 
   setSession(
@@ -53,7 +54,11 @@
     // A stored key dies when hearthd restarts; a 401 here clears it and
     // shows the "open from the launcher" screen.
     api('/session').catch(() => {});
-    const l = new Live(key, (s) => (status = s));
+    const l = new Live(
+      key,
+      (s) => (status = s),
+      () => beat++,
+    );
     live = l;
     return () => {
       l.close();
@@ -98,7 +103,7 @@
 {:else}
   <div class="shell">
     {#if ember}
-      <EmberRail {status} onsearch={() => (palette = true)} />
+      <EmberRail {status} {beat} onsearch={() => (palette = true)} />
     {:else}
       <Sidebar {status} onsearch={() => (palette = true)} />
     {/if}

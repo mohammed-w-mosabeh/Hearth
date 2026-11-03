@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from './Skeleton.svelte';
   import { failure } from '../lib/errors';
   import ConfirmDialog from './ConfirmDialog.svelte';
   import { preview, reasonKey, run, type Plan, type Result } from '../lib/actions';
@@ -180,7 +181,7 @@
         <span class="step">{t('net.lineage.package')}</span>
         <div>
           {#if loading}
-            <p class="muted">{t('net.lineage.loading')}</p>
+            <Skeleton label={t('net.lineage.loading')} rows={2} />
           {:else if failed}
             <p class="error">{failed}</p>
           {:else if packages.length > 0}

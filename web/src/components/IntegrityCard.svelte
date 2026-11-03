@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from './Skeleton.svelte';
   import { failure } from '../lib/errors';
   import type { Plan } from '../lib/actions';
   import { api } from '../lib/api';
@@ -73,7 +74,7 @@
   {#if failed}
     <p class="muted" role="status">{failed}</p>
   {:else if view === null}
-    <p class="muted">{t('security.loading')}</p>
+    <Skeleton label={t('security.loading')} rows={2} />
   {:else}
     <p class="muted">{t('integrity.intro')}</p>
     {#if view.error}<p class="muted" role="status">{t('integrity.failed')}</p>{/if}
@@ -102,7 +103,7 @@
               {#if diffFailed}
                 <p class="muted" role="status">{diffFailed}</p>
               {:else if diff === null}
-                <p class="muted">{t('security.loading')}</p>
+                <Skeleton label={t('security.loading')} rows={2} />
               {:else if diff.note}
                 <p class="muted">{t(`integrity.note.${diff.note}`)}</p>
               {:else}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from '../components/Skeleton.svelte';
   import { failure } from '../lib/errors';
   import AlertChannels from '../components/AlertChannels.svelte';
   import RuleDialog from '../components/RuleDialog.svelte';
@@ -183,7 +184,7 @@
 <section aria-labelledby="rules-h">
   <h2 id="rules-h">{t('alerts.rules')}</h2>
   {#if rules === null}
-    <p class="note">{t('alerts.loading')}</p>
+    <Skeleton label={t('alerts.loading')} />
   {:else if rules.length === 0}
     <p class="note">{t('alerts.noRules')}</p>
   {:else}

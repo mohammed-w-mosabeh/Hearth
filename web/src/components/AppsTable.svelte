@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from './Skeleton.svelte';
   import { failure } from '../lib/errors';
   import CapDialog from './CapDialog.svelte';
   import RowSpark from './RowSpark.svelte';
@@ -203,7 +204,7 @@
 </div>
 
 {#if !snap}
-  <p class="note">{t('apps.loading')}</p>
+  <Skeleton label={t('apps.loading')} />
 {:else if rows.length === 0}
   <p class="note">{t('apps.none')}</p>
 {:else}

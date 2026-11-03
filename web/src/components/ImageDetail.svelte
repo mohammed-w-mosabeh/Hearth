@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from './Skeleton.svelte';
   import { failure } from '../lib/errors';
   import { api } from '../lib/api';
   import {
@@ -175,7 +176,7 @@
     <div class="body" role="tabpanel">
       {#if tab === 'overview'}
         {#if !inspect}
-          <p class="note">{t('detail.loading')}</p>
+          <Skeleton label={t('detail.loading')} />
         {:else}
           {@const cfg = inspect.Config ?? {}}
           <dl>
@@ -286,7 +287,7 @@
         {/if}
       {:else if tab === 'scan'}
         {#if !trivy}
-          <p class="note">{t('detail.loading')}</p>
+          <Skeleton label={t('detail.loading')} />
         {:else if !trivy.installed}
           <p class="note">{t('image.scan.missing')}</p>
         {:else}

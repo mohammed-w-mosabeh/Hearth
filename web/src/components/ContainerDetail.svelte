@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from './Skeleton.svelte';
   import { failure } from '../lib/errors';
   import ContainerShell from './ContainerShell.svelte';
   import Sparkline from './Sparkline.svelte';
@@ -194,7 +195,7 @@
     <div class="body" role="tabpanel">
       {#if tab === 'overview'}
         {#if !ins}
-          <p class="note">{t('detail.loading')}</p>
+          <Skeleton label={t('detail.loading')} />
         {:else}
           {#if info && info.risks.length > 0}
             <div class="risks" role="note">
@@ -341,13 +342,13 @@
         <p class="note small">{t('detail.logs.foot', { n: lines.length })}</p>
       {:else if tab === 'shell'}
         {#if !info}
-          <p class="note">{t('detail.loading')}</p>
+          <Skeleton label={t('detail.loading')} />
         {:else}
           <ContainerShell id={c.id} name={c.name} refused={info.risks.map(riskText)} />
         {/if}
       {:else if tab === 'inspect'}
         {#if !ins}
-          <p class="note">{t('detail.loading')}</p>
+          <Skeleton label={t('detail.loading')} />
         {:else}
           <div class="bar"><button type="button" class="plain" onclick={copy}>{t('detail.inspect.copy')}</button></div>
           <pre>{JSON.stringify(ins, null, 2)}</pre>

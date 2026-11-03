@@ -1,4 +1,6 @@
 <script lang="ts">
+  import EmptyState from '../components/EmptyState.svelte';
+  import Skeleton from '../components/Skeleton.svelte';
   import { failure } from '../lib/errors';
   import { loadMarkers, type Marker } from '../lib/markers';
   import Chart from '../components/Chart.svelte';
@@ -274,7 +276,7 @@
   <p class="note error" role="status">{failed}</p>
 {:else if view === 'machine'}
   {#if machine === null}
-    <p class="note">{t('reports.loading')}</p>
+    <Skeleton label={t('reports.loading')} />
   {:else}
     {@const m = machine}
     <section aria-busy={loading}>
@@ -396,9 +398,9 @@
     </section>
   {/if}
 {:else if items !== null && items.length === 0}
-  <p class="note">{t('reports.items.none')}</p>
+  <EmptyState inline icon="report" body={t('reports.items.none')} />
 {:else if item === null}
-  <p class="note">{t('reports.loading')}</p>
+  <Skeleton label={t('reports.loading')} />
 {:else}
   {@const it = item}
   <section aria-busy={loading}>

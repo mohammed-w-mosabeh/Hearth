@@ -1,4 +1,6 @@
 <script lang="ts">
+  import EmptyState from '../components/EmptyState.svelte';
+  import Skeleton from '../components/Skeleton.svelte';
   import { failure } from '../lib/errors';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import JobDialog from '../components/JobDialog.svelte';
@@ -141,12 +143,11 @@
 {#if failed}<p class="note error" role="status">{failed}</p>{/if}
 
 {#if jobs === null && !failed}
-  <p class="note">{t('jobs.loading')}</p>
+  <Skeleton label={t('jobs.loading')} />
 {:else if jobs && jobs.length === 0}
-  <div class="empty">
-    <p>{t('jobs.empty')}</p>
+  <EmptyState inline icon="calendar" body={t('jobs.empty')}>
     <button type="button" class="btn" onclick={() => (editing = { scope: 'user', job: blank() })}>{t('jobs.new')}</button>
-  </div>
+  </EmptyState>
 {:else if jobs}
   <div class="scroll">
     <table>
@@ -222,7 +223,7 @@
     </header>
     {#if limited}<p class="note warn">{t('jobs.historyLimited')}</p>{/if}
     {#if runs === null}
-      <p class="note">{t('jobs.loading')}</p>
+      <Skeleton label={t('jobs.loading')} />
     {:else if runs.length === 0}
       <p class="note">{t('jobs.noRuns')}</p>
     {:else}
@@ -278,14 +279,6 @@
   .foot {
     font-size: 12px;
     margin-top: var(--space-2);
-  }
-  .empty {
-    padding: var(--space-6);
-    text-align: center;
-    color: var(--text-muted);
-    background: var(--surface);
-    border: 1px dashed var(--border);
-    border-radius: var(--radius-m);
   }
   .btn {
     font: inherit;

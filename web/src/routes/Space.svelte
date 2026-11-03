@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from '../components/Skeleton.svelte';
   import { failure } from '../lib/errors';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import { preview, reasonKey, run, type Plan, type Result } from '../lib/actions';
@@ -160,7 +161,7 @@
 {#if failed}
   <p class="note error" role="status">{failed}</p>
 {:else if report === null}
-  <p class="note">{t('space.loading')}</p>
+  <Skeleton label={t('space.loading')} />
 {:else}
   {@const r = report}
   <section class="summary" aria-busy={loading}><strong>{t('space.total', { size: bytes(total) })}</strong></section>

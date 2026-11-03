@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from '../Skeleton.svelte';
   import { failure } from '../../lib/errors';
   import { api } from '../../lib/api';
   import { bytes } from '../../lib/format';
@@ -76,7 +77,7 @@
   </div>
 
 {:else}
-  <p class="muted">{t('inspect.loading')}</p>
+  <Skeleton label={t('inspect.loading')} rows={2} />
 {/if}
 
 <style>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from './Skeleton.svelte';
   import { failure } from '../lib/errors';
   import { api } from '../lib/api';
   import { bytes } from '../lib/format';
@@ -95,7 +96,7 @@
       {#if failed}
         <p class="note error" role="status">{failed}</p>
       {:else if !detail}
-        <p class="note">{t('pkg.detail.loading')}</p>
+        <Skeleton label={t('pkg.detail.loading')} />
       {:else}
         <section>
           <h3>{t('pkg.detail.deps', { n: detail.deps.length })}</h3>

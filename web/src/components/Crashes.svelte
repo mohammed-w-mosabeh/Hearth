@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from './Skeleton.svelte';
   import { failure } from '../lib/errors';
   import { api } from '../lib/api';
   import { CRASH_DAYS, ownerKey, peakDay, type CrashReport } from '../lib/crashes';
@@ -73,7 +74,7 @@
       {#if r.truncated || r.events.length > SHOWN}<p class="note">{t('crashes.truncated')}</p>{/if}
     {/if}
   {:else if !failed}
-    <p class="note">{t('crashes.loading')}</p>
+    <Skeleton label={t('crashes.loading')} />
   {/if}
 </section>
 

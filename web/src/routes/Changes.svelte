@@ -1,4 +1,6 @@
 <script lang="ts">
+  import EmptyState from '../components/EmptyState.svelte';
+  import Skeleton from '../components/Skeleton.svelte';
   import { failure } from '../lib/errors';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import type { Plan } from '../lib/actions';
@@ -171,9 +173,9 @@
   {#if failed}
     <p class="note error" role="status">{failed}</p>
   {:else if events === null}
-    <p class="note">{t('changes.loading')}</p>
+    <Skeleton label={t('changes.loading')} />
   {:else if events.length === 0}
-    <p class="note">{t('changes.none')}</p>
+    <EmptyState inline icon="history" body={t('changes.none')} />
   {:else}
     <div aria-busy={loading}>
       {#each days as d (d.day)}
@@ -211,7 +213,7 @@
   {#if snapshotsFailed}
     <p class="note error" role="status">{snapshotsFailed}</p>
   {:else if snapshots.length === 0}
-    <p class="note">{t('changes.snap.none')}</p>
+    <EmptyState inline icon="history" body={t('changes.snap.none')} />
   {:else}
     {#if kept.length > 0}
       <h2>{t('changes.snap.kept')}</h2>

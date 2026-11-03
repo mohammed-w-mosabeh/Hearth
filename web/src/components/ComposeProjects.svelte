@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EmptyState from './EmptyState.svelte';
   import { failure } from '../lib/errors';
   import { preview, reasonKey, run, type Plan, type Result } from '../lib/actions';
     import { finished, projectOps, projectState, projectView, tone, type Container, type Project, type ProjectOp } from '../lib/docker';
@@ -95,7 +96,7 @@
 </div>
 
 {#if projects.length === 0}
-  <p class="note">{t('compose.none')}</p>
+  <EmptyState inline icon="layers" body={t('compose.none')} />
 {:else if rows.length === 0}
   <p class="note">{t('docker.noMatch')}</p>
 {:else}

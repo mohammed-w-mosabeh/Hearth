@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from '../Skeleton.svelte';
   import Act from './Act.svelte';
   import Chain from './Chain.svelte';
   import MiniChart from './MiniChart.svelte';
@@ -85,7 +86,7 @@
 
   <Chain {links} />
 {:else}
-  <p class="muted">{t('inspect.loading')}</p>
+  <Skeleton label={t('inspect.loading')} rows={2} />
 {/if}
 
 <style>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from '../Skeleton.svelte';
   import { failure } from '../../lib/errors';
   import Act from './Act.svelte';
   import Chain from './Chain.svelte';
@@ -101,5 +102,5 @@
 
   <Chain {links} />
 {:else}
-  <p class="muted">{t('inspect.loading')}</p>
+  <Skeleton label={t('inspect.loading')} rows={2} />
 {/if}

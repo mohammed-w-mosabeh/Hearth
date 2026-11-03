@@ -96,9 +96,18 @@
   }
 }
 
+/* Nothing animates under reduced motion (ROADMAP 8.9), whatever a component
+   sets; src/lib/motion.test.ts keeps every duration within --motion. */
 @media (prefers-reduced-motion: reduce) {
   :root {
     --motion: 0ms;
+  }
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
   }
 }
 

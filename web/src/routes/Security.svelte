@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from '../components/Skeleton.svelte';
   import { failure } from '../lib/errors';
   import AccessCard from '../components/AccessCard.svelte';
   import IntegrityCard from '../components/IntegrityCard.svelte';
@@ -100,7 +101,7 @@
 {#if failed}
   <p class="note error" role="status">{failed}</p>
 {:else if report === null}
-  <p class="note">{t('security.loading')}</p>
+  <Skeleton label={t('security.loading')} />
 {:else}
   <section class="summary {verdict}" aria-busy={loading}>
     <strong>{t(verdictKey(verdict ?? 'ok'))}</strong>

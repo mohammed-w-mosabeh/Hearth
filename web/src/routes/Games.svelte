@@ -1,4 +1,6 @@
 <script lang="ts">
+  import EmptyState from '../components/EmptyState.svelte';
+  import Skeleton from '../components/Skeleton.svelte';
   import { failure } from '../lib/errors';
   import { run } from '../lib/actions';
   import { api } from '../lib/api';
@@ -109,9 +111,9 @@
 {#if failed}
   <p class="note error" role="status">{failed}</p>
 {:else if games === null}
-  <p class="note">{t('games.loading')}</p>
+  <Skeleton label={t('games.loading')} />
 {:else if games.length === 0}
-  <p class="note">{t('games.empty')}</p>
+  <EmptyState inline icon="gamepad" body={t('games.empty')} />
 {:else if shown.length === 0}
   <p class="note">{t('games.none')}</p>
 {:else}

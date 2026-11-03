@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from './Skeleton.svelte';
   import { failure } from '../lib/errors';
   import { api, ApiError } from '../lib/api';
   import { t } from '../lib/i18n';
@@ -56,7 +57,7 @@
     {#if failed}
       <p class="note">{failed}</p>
     {:else if !text}
-      <p class="note">{t('tools.man.loading')}</p>
+      <Skeleton label={t('tools.man.loading')} rows={2} />
     {:else}
       <pre>{shown}</pre>
     {/if}

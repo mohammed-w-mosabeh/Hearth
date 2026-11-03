@@ -1,4 +1,6 @@
 <script lang="ts">
+  import EmptyState from '../components/EmptyState.svelte';
+  import Skeleton from '../components/Skeleton.svelte';
   import { failure } from '../lib/errors';
   import MarkerList from '../components/MarkerList.svelte';
   import AppsTable from '../components/AppsTable.svelte';
@@ -177,9 +179,9 @@
     <p class="note error" role="status">{failed}</p>
   {/if}
   {#if cols === null}
-    {#if !failed}<p class="note">{t('resources.loading')}</p>{/if}
+    {#if !failed}<Skeleton label={t('resources.loading')} />{/if}
   {:else if charts.length === 0}
-    <p class="note">{t('resources.empty')}</p>
+    <EmptyState inline icon="chart" body={t('resources.empty')} />
   {:else}
     <MarkerList {markers} />
     <div class="grid">

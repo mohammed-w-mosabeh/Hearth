@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from './Skeleton.svelte';
   import { failure } from '../lib/errors';
   import { t, type MessageKey } from '../lib/i18n';
   import { loadOverride, overrideFields, restartPolicies, type Unit } from '../lib/services';
@@ -58,7 +59,7 @@
       <h2 id="limits-title">{t('svc.limits.title', { name: unit.name })}</h2>
       <p class="muted">{t('svc.limits.intro')}</p>
       {#if loading}
-        <p role="status">{t('svc.limits.loading')}</p>
+        <Skeleton label={t('svc.limits.loading')} rows={2} />
       {:else if loadError}
         <p class="error" role="alert">{t('svc.limits.loadError', { msg: loadError })}</p>
       {:else}

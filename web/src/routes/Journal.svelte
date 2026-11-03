@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from '../components/Skeleton.svelte';
   import { failure } from '../lib/errors';
   import LogExplorer from '../components/LogExplorer.svelte';
   import Crashes from '../components/Crashes.svelte';
@@ -121,7 +122,7 @@
   {#if limited}<p class="note">{t('journal.limited')}</p>{/if}
   {#if error}<p class="note error" role="status">{error}</p>{/if}
   {#if entries === null}
-    {#if !error}<p class="note">{t('journal.loading')}</p>{/if}
+    {#if !error}<Skeleton label={t('journal.loading')} />{/if}
   {:else if entries.length === 0}
     <p class="note">{t('journal.none')}</p>
   {:else}
@@ -141,7 +142,7 @@
 {:else if bootFailed}
   <p class="note error" role="status">{bootFailed}</p>
 {:else if boot === null}
-  <p class="note">{t('boot.loading')}</p>
+  <Skeleton label={t('boot.loading')} />
 {:else if boot.error}
   <p class="note error" role="status">{boot.error}</p>
 {:else if !boot.finished}

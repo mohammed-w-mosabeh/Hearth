@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from '../components/Skeleton.svelte';
   import { failure } from '../lib/errors';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import RowSpark from '../components/RowSpark.svelte';
@@ -292,7 +293,7 @@
 </div>
 
 {#if units === null}
-  <p class="note">{t('svc.loading')}</p>
+  <Skeleton label={t('svc.loading')} />
 {:else if rows.length === 0}
   <p class="note">{t('svc.none')}</p>
 {:else}

@@ -109,7 +109,12 @@ Services, Docker containers and Resources' processes (apps, services and contain
 - Secrets: masked dots, with a Reveal button per value.
 
 ## Motion
-Transitions of at most 150 ms. One pulse on a live dot per update. Nothing animates under `prefers-reduced-motion`.
+Transitions of at most 150 ms, all through `--motion`. The live dot at the foot of the rail pulses once for each WebSocket update: it is recreated per update and scales down from 1.75× with transform and opacity only, so it stays on the compositor. Nothing loops. Under `prefers-reduced-motion`, `--motion` is 0 and a global rule turns every animation and transition off. `src/lib/motion.test.ts` checks every stylesheet and component for both.
+
+## States
+- Loading: `Skeleton`, a muted line saying what is being read over two or three still bars in the rough shape of the content, with `role="status"` and `aria-busy`. Nothing shimmers.
+- Empty: `EmptyState`. A whole page uses it centred. A list with nothing in it yet uses it inline, with an icon, a dashed edge, why it is empty and how to fill it, plus an action where one exists (New job).
+- Error: what failed, then what to do next. `failure()` in `src/lib/errors.ts` takes the server's message and adds a next step by HTTP status: 400, 413 and 422 check the input; 403 group membership; 404 reload; 409 wait and reload; 429 wait; 502 to 504 the service Hearth relies on; anything else hearthd's log. When no answer came at all, it says to check that Hearth is running. `src/lib/errors.test.ts` refuses a bare server message or a load error rendered without its next step.
 
 ## Right to left
 Logical CSS only; the rail and drawer flip. Code, logs and charts stay left to right. A value inside an Arabic sentence is isolated so it keeps its own order.

@@ -15,10 +15,13 @@ export class Live {
   #timer: ReturnType<typeof setTimeout> | undefined;
   #closed = false;
   #onState: (s: WsState) => void;
+  #onBeat: () => void;
 
-  constructor(key: string, onState: (s: WsState) => void) {
+  /** onBeat runs once per update received, for the live dot's pulse. */
+  constructor(key: string, onState: (s: WsState) => void, onBeat: () => void = () => {}) {
     this.#key = key;
     this.#onState = onState;
+    this.#onBeat = onBeat;
     this.#connect();
   }
 
@@ -77,6 +80,7 @@ export class Live {
         return;
       }
       if (typeof msg.topic !== 'string') return;
+      this.#onBeat();
       for (const fn of this.#handlers.get(msg.topic) ?? []) fn(msg.data);
       for (const fn of this.#listeners.get(msg.topic) ?? []) fn(msg.data);
     };

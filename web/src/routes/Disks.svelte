@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from '../components/Skeleton.svelte';
   import { failure } from '../lib/errors';
   import { api } from '../lib/api';
   import DiskHealth from '../components/DiskHealth.svelte';
@@ -89,7 +90,7 @@
 
 <h2>{t('disks.mounts')}</h2>
 {#if !sample}
-  <p class="note">{t('disks.loading')}</p>
+  <Skeleton label={t('disks.loading')} />
 {:else}
   <ul class="mounts">
     {#each disks as d (d.mount)}

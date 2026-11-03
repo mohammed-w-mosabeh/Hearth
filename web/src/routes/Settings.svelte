@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from '../components/Skeleton.svelte';
   import { failure } from '../lib/errors';
   import SleepPower from '../components/SleepPower.svelte';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
@@ -314,7 +315,7 @@
   <section aria-labelledby="s-net">
     <h2 id="s-net">{t('set.net.title')}</h2>
     {#if net === null}
-      <p class="note">{t('set.loading')}</p>
+      <Skeleton label={t('set.loading')} />
     {:else if !net.available}
       <p class="note">{t('set.net.unavailable')}</p>
     {:else}
@@ -385,7 +386,7 @@
   <section aria-labelledby="s-sound">
     <h2 id="s-sound">{t('set.sound.title')}</h2>
     {#if audio === null}
-      <p class="note">{t('set.loading')}</p>
+      <Skeleton label={t('set.loading')} />
     {:else if !audio.available}
       <p class="note">{t('set.sound.unavailable')}</p>
     {:else}
@@ -572,7 +573,7 @@
   <section aria-labelledby="s-auto" class="wide">
     <h2 id="s-auto">{t('set.auto.title')}</h2>
     {#if autostart === null}
-      <p class="note">{t('set.loading')}</p>
+      <Skeleton label={t('set.loading')} />
     {:else}
       <ul class="list">
         {#each autostart as e (e.id)}

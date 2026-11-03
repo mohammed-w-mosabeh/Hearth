@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from '../components/Skeleton.svelte';
   import { failure } from '../lib/errors';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import { preview, run, type Plan } from '../lib/actions';
@@ -212,7 +213,7 @@
 {#if failed}
   <p class="note error" role="status">{failed}</p>
 {:else if apps === null}
-  <p class="note">{t('apps2.loading')}</p>
+  <Skeleton label={t('apps2.loading')} />
 {:else if shown.length === 0}
   <p class="note">{t('apps2.none')}</p>
 {:else}

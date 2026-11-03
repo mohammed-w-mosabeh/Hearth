@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from './Skeleton.svelte';
   import { failure } from '../lib/errors';
   import { api } from '../lib/api';
   import { locale, t } from '../lib/i18n';
@@ -77,7 +78,7 @@
   {#if failed}
     <p class="muted" role="status">{failed}</p>
   {:else if view === null}
-    <p class="muted">{t('security.loading')}</p>
+    <Skeleton label={t('security.loading')} rows={2} />
   {:else if !view.installed}
     <p class="muted">{t('lynis.install')} <code>sudo apt install lynis</code></p>
   {:else}

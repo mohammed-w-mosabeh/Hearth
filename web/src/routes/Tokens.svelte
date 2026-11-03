@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from '../components/Skeleton.svelte';
   import { failure } from '../lib/errors';
   import type { Plan } from '../lib/actions';
   import { api } from '../lib/api';
@@ -74,7 +75,7 @@
 {#if failed}
   <p class="muted" role="status">{failed}</p>
 {:else if view === null}
-  <p class="muted">{t('security.loading')}</p>
+  <Skeleton label={t('security.loading')} />
 {:else}
   <section class="card" aria-labelledby="tokens-list">
     <h2 id="tokens-list">{t('tokens.list')}</h2>

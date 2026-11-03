@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EmptyState from './EmptyState.svelte';
   import { failure } from '../lib/errors';
   import ConfirmDialog from './ConfirmDialog.svelte';
   import ImageDetail from './ImageDetail.svelte';
@@ -158,7 +159,7 @@
 </div>
 
 {#if images.length === 0}
-  <p class="note">{t('image.none')}</p>
+  <EmptyState inline icon="layers" body={t('image.none')} />
 {:else if rows.length === 0}
   <p class="note">{t('docker.noMatch')}</p>
 {:else}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from '../components/Skeleton.svelte';
   import { failure } from '../lib/errors';
   import Connectivity from '../components/Connectivity.svelte';
   import FirewallCard from '../components/FirewallCard.svelte';
@@ -223,7 +224,7 @@
 </div>
 
 {#if sockets === null && !failed}
-  <p class="note">{t('net.loading')}</p>
+  <Skeleton label={t('net.loading')} />
 {:else if tab === 'listening'}
   {#if shown.length === 0}
     <p class="note">{t('net.noneMatch')}</p>

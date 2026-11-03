@@ -5,7 +5,7 @@
   import { href, router } from '../lib/router.svelte';
   import type { WsState } from '../lib/ws';
 
-  let { status, onsearch }: { status: WsState; onsearch: () => void } = $props();
+  let { status, beat = 0, onsearch }: { status: WsState; beat?: number; onsearch: () => void } = $props();
   const statusKey = { connected: 'status.connected', connecting: 'status.connecting', offline: 'status.offline' } as const;
 
   let collapsed = $state(loadRailCollapsed());
@@ -63,7 +63,8 @@
     {/each}
   </div>
   <div class="status" data-state={status} role="status">
-    <span class="dot" aria-hidden="true"></span>
+    <!-- Recreated per update, so the pulse plays once each time. -->
+    {#key beat}<span class="dot" class:beat={beat > 0} aria-hidden="true"></span>{/key}
     <span class="label">{t(statusKey[status])}</span>
     <span class="visually-hidden">{t(statusKey[status])}</span>
   </div>
@@ -225,6 +226,16 @@
   }
   [data-state='connected'] .dot {
     background: var(--accent);
+  }
+  /* One pulse per update; transform and opacity only, so it stays on the compositor. */
+  [data-state='connected'] .dot.beat {
+    animation: beat var(--motion) ease-out;
+  }
+  @keyframes beat {
+    from {
+      transform: scale(1.75);
+      opacity: 0.55;
+    }
   }
   [data-state='offline'] .dot {
     border-radius: 0;

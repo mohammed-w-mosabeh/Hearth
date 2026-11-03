@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from '../Skeleton.svelte';
   import { failure } from '../../lib/errors';
   import { api } from '../../lib/api';
   import { valueText, type AlertEvent, type Metric } from '../../lib/alerts';
@@ -61,5 +62,5 @@
     <a href={href('alerts')}>{t('inspect.fullPage')}</a>
   </div>
 {:else}
-  <p class="muted">{t('inspect.loading')}</p>
+  <Skeleton label={t('inspect.loading')} rows={2} />
 {/if}

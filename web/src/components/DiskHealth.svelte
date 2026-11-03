@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from './Skeleton.svelte';
   import { failure } from '../lib/errors';
   import { run, reasonKey } from '../lib/actions';
   import { api } from '../lib/api';
@@ -60,7 +61,7 @@
 {#if failed}
   <p class="note error" role="status">{failed}</p>
 {:else if !health}
-  <p class="note">{t('disks.health.loading')}</p>
+  <Skeleton label={t('disks.health.loading')} rows={2} />
 {:else if health.status !== 'ok'}
   <p class="note">{t(statusKeys[health.status])}</p>
 {:else if health.disks.length === 0}

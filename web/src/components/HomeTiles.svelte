@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EmptyState from './EmptyState.svelte';
   import { failure } from '../lib/errors';
   import Icon from './Icon.svelte';
   import TileForm from './TileForm.svelte';
@@ -159,7 +160,7 @@
   </header>
 
   {#if tiles !== null && tiles.length === 0}
-    <p class="note">{t('tiles.empty')}</p>
+    <EmptyState inline icon="globe" body={t('tiles.empty')} />
   {/if}
 
   {#each groups as g (g.group)}

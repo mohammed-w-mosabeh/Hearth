@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from '../components/Skeleton.svelte';
   import { failure } from '../lib/errors';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import ProfileDialog from '../components/ProfileDialog.svelte';
@@ -125,7 +126,7 @@
 {#if failed}
   <p class="note error" role="status">{failed}</p>
 {:else if profiles === null}
-  <p class="note">{t('profiles.loading')}</p>
+  <Skeleton label={t('profiles.loading')} />
 {:else if profiles.length === 0}
   <p class="note">{t('profiles.none')}</p>
   <div class="templates">

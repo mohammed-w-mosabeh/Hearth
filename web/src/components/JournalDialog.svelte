@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from './Skeleton.svelte';
   import { failure } from '../lib/errors';
   import { api } from '../lib/api';
   import { t } from '../lib/i18n';
@@ -95,7 +96,7 @@
     {#if limited}<p class="note">{t('journal.limited')}</p>{/if}
     {#if failed}<p class="note error" role="status">{failed}</p>{/if}
     {#if loading}
-      <p class="note">{t('journal.loading')}</p>
+      <Skeleton label={t('journal.loading')} rows={2} />
     {:else if shown.length === 0}
       <p class="note">{entries.length === 0 ? t('journal.empty') : t('journal.noMatch')}</p>
     {/if}

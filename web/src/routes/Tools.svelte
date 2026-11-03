@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from '../components/Skeleton.svelte';
   import { failure } from '../lib/errors';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import ManDialog from '../components/ManDialog.svelte';
@@ -154,7 +155,7 @@
 </div>
 
 {#if list === null && !failed}
-  <p class="note">{t('tools.loading')}</p>
+  <Skeleton label={t('tools.loading')} />
 {:else if shown.length === 0}
   <p class="note">{t('tools.none')}</p>
 {:else}

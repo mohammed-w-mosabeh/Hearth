@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from '../components/Skeleton.svelte';
   import { failure } from '../lib/errors';
   import CapDialog from '../components/CapDialog.svelte';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
@@ -305,7 +306,7 @@
     <DockerCleanup />
   {:else if section === 'images' || section === 'compose' || section === 'networks' || section === 'volumes'}
     {#if snap === null}
-      <p class="note">{t('docker.loading')}</p>
+      <Skeleton label={t('docker.loading')} />
     {:else if section === 'images'}
       <ImagesTable images={snap.images} {containers} />
     {:else if section === 'networks'}
@@ -335,9 +336,9 @@
   </div>
 
   {#if snap === null}
-    <p class="note">{t('docker.loading')}</p>
+    <Skeleton label={t('docker.loading')} />
   {:else if containers.length === 0}
-    <p class="note">{t('docker.none')}</p>
+    <EmptyState inline icon="box" body={t('docker.none')} />
   {:else if rows.length === 0}
     <p class="note">{t('docker.noMatch')}</p>
   {:else}

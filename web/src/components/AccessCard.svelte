@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from './Skeleton.svelte';
   import { failure } from '../lib/errors';
   import { sessionPlace, type AccessReport } from '../lib/access';
   import { api } from '../lib/api';
@@ -29,7 +30,7 @@
   {#if failed}
     <p class="muted" role="status">{failed}</p>
   {:else if report === null}
-    <p class="muted">{t('security.loading')}</p>
+    <Skeleton label={t('security.loading')} rows={2} />
   {:else}
     <p class="muted">{t('access.intro')}</p>
 
