@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { api, ApiError } from '../../lib/api';
+  import { failure } from '../../lib/errors';
+  import { api } from '../../lib/api';
   import { valueText, type AlertEvent, type Metric } from '../../lib/alerts';
   import { t } from '../../lib/i18n';
   import type { Inspect } from '../../lib/inspect';
@@ -21,7 +22,7 @@
         e = r.events.find((x) => x.id === item.id) ?? null;
         missing = e === null;
       })
-      .catch((err: unknown) => (failed = err instanceof ApiError ? err.message : t('inspect.error')));
+      .catch((err: unknown) => (failed = failure(err, 'inspect.error')));
     // The catalog gives the value's unit.
     api<{ metrics: Metric[] }>('/alerts/metrics')
       .then((r) => (catalog = r.metrics))

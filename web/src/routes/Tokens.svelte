@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import type { Plan } from '../lib/actions';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import { locale, t } from '../lib/i18n';
   import { scrapeConfig, validName, type TokenInfo, type TokensView } from '../lib/tokens';
   import { toast } from '../lib/toast.svelte';
@@ -9,7 +10,7 @@
   // Read-only tokens for the hearth command and /metrics (ROADMAP 7.5). The
   // page never sees a token: it lives in the file named here.
   let view = $state.raw<TokensView | null>(null);
-  let failed = $state(false);
+  let failed = $state('');
   let name = $state('cli');
   let busy = $state(false);
   let revoking = $state.raw<TokenInfo | null>(null);
@@ -17,9 +18,9 @@
   async function load(): Promise<void> {
     try {
       view = await api<TokensView>('/tokens');
-      failed = false;
-    } catch {
-      failed = true;
+      failed = '';
+    } catch (err) {
+      failed = failure(err, 'tokens.error');
     }
   }
 
@@ -28,7 +29,7 @@
     try {
       await run();
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     } finally {
       busy = false;
       await load();
@@ -71,7 +72,7 @@
 </header>
 
 {#if failed}
-  <p class="muted" role="status">{t('tokens.error')}</p>
+  <p class="muted" role="status">{failed}</p>
 {:else if view === null}
   <p class="muted">{t('security.loading')}</p>
 {:else}

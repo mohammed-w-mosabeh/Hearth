@@ -1,8 +1,9 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import JobDialog from '../components/JobDialog.svelte';
   import { preview, reasonKey, run, type Plan, type Result } from '../lib/actions';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import { duration } from '../lib/format';
   import { locale, menuLeft, type MessageKey, t } from '../lib/i18n';
   import { blank, describe, order, type Job, type Listed, type Run, type Scope } from '../lib/jobs';
@@ -21,7 +22,7 @@
       jobs = order((await api<{ jobs: Listed[] }>('/jobs')).jobs);
       failed = '';
     } catch (err) {
-      failed = err instanceof ApiError ? err.message : t('jobs.error');
+      failed = failure(err, 'jobs.error');
     }
   }
   $effect(() => {
@@ -40,7 +41,7 @@
     try {
       editing = { scope: j.scope, job: await api<Job>(`/jobs/${j.scope}/${j.id}`) };
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('jobs.error'), { tone: 'error' });
+      toast(failure(err, 'jobs.error'), { tone: 'error' });
     }
   }
 
@@ -73,7 +74,7 @@
       }
       report(op, j, await run('job', op, target));
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     }
   }
 
@@ -84,7 +85,7 @@
     try {
       report('delete', j, await run('job', 'delete', `${j.scope}/${j.id}`, {}, plan.token, typed || undefined));
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     }
   }
 

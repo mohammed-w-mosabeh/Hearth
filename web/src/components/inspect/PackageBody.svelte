@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { api, ApiError } from '../../lib/api';
+  import { failure } from '../../lib/errors';
+  import { api } from '../../lib/api';
   import { bytes } from '../../lib/format';
   import { t } from '../../lib/i18n';
   import { formatInspect, type Inspect } from '../../lib/inspect';
@@ -32,7 +33,7 @@
         if (id === null) missing = true;
         else d = await api<DebDetail>(`/pkgs/apt/${encodeURIComponent(id)}`);
       })
-      .catch((err: unknown) => (failed = err instanceof ApiError ? err.message : t('inspect.error')));
+      .catch((err: unknown) => (failed = failure(err, 'inspect.error')));
   });
 
   const name = $derived(item.name.replace(/:.*$/, ''));

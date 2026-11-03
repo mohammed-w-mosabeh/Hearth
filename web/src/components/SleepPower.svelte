@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import { reasonKey, run } from '../lib/actions';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import { locale, t } from '../lib/i18n';
   import { limitChoices, type SleepReport } from '../lib/sleep';
   import { toast } from '../lib/toast.svelte';
@@ -28,7 +29,7 @@
       if (failed) toast(t('sleep.limitFailed', { reason: failed.detail ?? t(reasonKey(failed.reason), { detail: '', user: '' }) }), { tone: 'error' });
       else toast(t('sleep.limitSet', { name }));
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     } finally {
       busy = false;
       await load();

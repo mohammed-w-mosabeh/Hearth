@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import { preview, reasonKey, run, type Plan, type Result } from '../lib/actions';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import { bytes } from '../lib/format';
   import { locale, t } from '../lib/i18n';
   import { MAX_SELECTED, freeable, pathParams, toggled, type Entry, type Large, type Report } from '../lib/space';
@@ -22,7 +23,7 @@
   }
 
   let report = $state.raw<Report | null>(null);
-  let failed = $state(false);
+  let failed = $state('');
   let loading = $state(false);
   let docker = $state<number | null>(null);
   let keep = $state(500);
@@ -36,9 +37,9 @@
     loading = true;
     try {
       report = await api<Report>('/space');
-      failed = false;
-    } catch {
-      failed = true;
+      failed = '';
+    } catch (err) {
+      failed = failure(err, 'space.error');
     } finally {
       loading = false;
     }
@@ -63,8 +64,8 @@
     }
   }
 
-  function failure(err: unknown): void {
-    toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+  function toastFailure(err: unknown): void {
+    toast(failure(err, 'action.failed'), { tone: 'error' });
   }
 
   async function ask(p: Omit<Pending, 'plan'>): Promise<void> {
@@ -77,7 +78,7 @@
       }
       pending = { ...p, plan };
     } catch (err) {
-      failure(err);
+      toastFailure(err);
     }
   }
 
@@ -90,7 +91,7 @@
       c.after?.();
       await load();
     } catch (err) {
-      failure(err);
+      toastFailure(err);
     }
   }
 
@@ -100,7 +101,7 @@
     try {
       large = await api<Large>('/space/large');
     } catch (err) {
-      failure(err);
+      toastFailure(err);
     } finally {
       finding = false;
     }
@@ -157,7 +158,7 @@
 </header>
 
 {#if failed}
-  <p class="note error" role="status">{t('space.error')}</p>
+  <p class="note error" role="status">{failed}</p>
 {:else if report === null}
   <p class="note">{t('space.loading')}</p>
 {:else}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import RowSpark from '../components/RowSpark.svelte';
   import StatusMark from '../components/StatusMark.svelte';
@@ -6,8 +7,7 @@
   import JournalDialog from '../components/JournalDialog.svelte';
   import OverrideDialog from '../components/OverrideDialog.svelte';
   import { preview, reasonKey, run, type Params, type Plan, type Result } from '../lib/actions';
-  import { ApiError } from '../lib/api';
-  import { bytes, pct } from '../lib/format';
+    import { bytes, pct } from '../lib/format';
   import { menuLeft, type MessageKey, t } from '../lib/i18n';
   import {
     available,
@@ -173,7 +173,7 @@
   }
 
   function errorText(err: unknown): string {
-    return err instanceof ApiError ? err.message : t('action.failed');
+    return failure(err, 'action.failed');
   }
 
   function setBusy(u: Unit, on: boolean): void {

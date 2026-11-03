@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { api, ApiError } from '../lib/api';
+  import { failure } from '../lib/errors';
+  import { api } from '../lib/api';
   import DiskHealth from '../components/DiskHealth.svelte';
   import { child, crumbs, daysLeft, exploreRoot, level, usageQuery, type DiskForecast, type Forecasts, type Usage } from '../lib/disks';
   import { bytes, pct, rate } from '../lib/format';
@@ -64,7 +65,7 @@
         if (!u.running) return;
       } catch (err) {
         if (mine !== token) return;
-        error = err instanceof ApiError ? err.message : t('disks.error');
+        error = failure(err, 'disks.error');
         return;
       }
       await new Promise((r) => setTimeout(r, POLL_MS));

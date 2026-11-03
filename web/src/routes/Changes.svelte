@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import type { Plan } from '../lib/actions';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import {
     SOURCES,
     byDay,
@@ -33,11 +34,11 @@
   let events = $state.raw<TimelineEvent[] | null>(null);
   let next = $state<number | undefined>();
   let filter = $state.raw<string[]>([]);
-  let failed = $state(false);
+  let failed = $state('');
   let loading = $state(false);
 
   let snapshots = $state.raw<Snapshot[]>([]);
-  let snapshotsFailed = $state(false);
+  let snapshotsFailed = $state('');
   let label = $state('');
   let taking = $state(false);
   let from = $state('');
@@ -57,9 +58,9 @@
       if (seq !== loadSeq) return;
       events = before === undefined ? page.events : [...(events ?? []), ...page.events];
       next = page.next;
-      failed = false;
-    } catch {
-      if (seq === loadSeq) failed = true;
+      failed = '';
+    } catch (err) {
+      if (seq === loadSeq) failed = failure(err, 'changes.error');
     } finally {
       if (seq === loadSeq) loading = false;
     }
@@ -68,10 +69,10 @@
   async function loadSnapshots(): Promise<void> {
     try {
       snapshots = await api<Snapshot[]>('/changes/snapshots');
-      snapshotsFailed = false;
+      snapshotsFailed = '';
       if (from === '' && snapshots[0]) from = String(snapshots[0].id);
-    } catch {
-      snapshotsFailed = true;
+    } catch (err) {
+      snapshotsFailed = failure(err, 'changes.snap.error');
     }
   }
 
@@ -96,7 +97,7 @@
       diff = null;
       await Promise.all([loadSnapshots(), load()]);
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     } finally {
       taking = false;
     }
@@ -108,7 +109,7 @@
       diff = await api<SnapshotDiff>(`/changes/diff?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
     } catch (err) {
       diff = null;
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     } finally {
       comparing = false;
     }
@@ -129,7 +130,7 @@
       diff = null;
       await Promise.all([loadSnapshots(), load()]);
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     }
   }
 
@@ -168,7 +169,7 @@
   </div>
 
   {#if failed}
-    <p class="note error" role="status">{t('changes.error')}</p>
+    <p class="note error" role="status">{failed}</p>
   {:else if events === null}
     <p class="note">{t('changes.loading')}</p>
   {:else if events.length === 0}
@@ -208,7 +209,7 @@
   <p class="note">{t('changes.snap.hint')}</p>
 
   {#if snapshotsFailed}
-    <p class="note error" role="status">{t('changes.snap.error')}</p>
+    <p class="note error" role="status">{snapshotsFailed}</p>
   {:else if snapshots.length === 0}
     <p class="note">{t('changes.snap.none')}</p>
   {:else}

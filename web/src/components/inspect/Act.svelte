@@ -1,8 +1,8 @@
 <script lang="ts">
+  import { failure } from '../../lib/errors';
   import ConfirmDialog from '../ConfirmDialog.svelte';
   import { preview, reasonKey, run, type Plan, type Result } from '../../lib/actions';
-  import { ApiError } from '../../lib/api';
-  import { t } from '../../lib/i18n';
+    import { t } from '../../lib/i18n';
   import { toast } from '../../lib/toast.svelte';
 
   // One action of the drawer through the actions registry: preview first,
@@ -46,7 +46,7 @@
     try {
       report(await run(kind, action, target, {}, token, typed || undefined));
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     } finally {
       busy = false;
     }
@@ -59,7 +59,7 @@
       else if (plan.risk === 'destructive') pending = plan;
       else await execute(plan.token);
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     }
   }
 

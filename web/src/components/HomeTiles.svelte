@@ -1,8 +1,9 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import Icon from './Icon.svelte';
   import TileForm from './TileForm.svelte';
   import { reasonKey, run } from '../lib/actions';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import type { Container, Snapshot } from '../lib/docker';
   import { builtinName, emptyForm, formOf, groupTiles, hostOf, moved, suggestionForm, type HomepageMsg, type Status, type Suggestion, type Tile, type TileForm as Form } from '../lib/homepage';
   import { locale, t } from '../lib/i18n';
@@ -30,7 +31,7 @@
       status = { ...status, ...r.status };
     } catch (err) {
       if (tiles === null) tiles = [];
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     }
   }
 
@@ -76,7 +77,7 @@
       await load();
       return null;
     } catch (err) {
-      return err instanceof ApiError ? err.message : t('action.failed');
+      return failure(err, 'action.failed');
     }
   }
 
@@ -85,7 +86,7 @@
     try {
       suggestions = (await api<{ suggestions: Suggestion[] }>('/homepage/suggestions')).suggestions;
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     } finally {
       suggesting = false;
     }
@@ -106,7 +107,7 @@
         },
       });
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     }
   }
 
@@ -116,7 +117,7 @@
       await api('/homepage/order', { method: 'PUT', body: JSON.stringify({ ids: moved(tiles, x.id, by) }) });
       await load();
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     }
   }
 
@@ -132,7 +133,7 @@
         toast(t(op === 'start' ? 'docker.done.start' : 'docker.done.stop', { name: c.name }));
       }
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     } finally {
       await loadContainers();
     }

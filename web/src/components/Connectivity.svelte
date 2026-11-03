@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import Chart from './Chart.svelte';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import { causeKey, parseTargets, targetsText, type ConnReport } from '../lib/connectivity';
   import { bytes } from '../lib/format';
   import type { Columns } from '../lib/history';
@@ -34,7 +35,7 @@
         now = Date.now();
       }
     } catch (err) {
-      failed = err instanceof ApiError ? err.message : t('conn.error');
+      failed = failure(err, 'conn.error');
     }
   }
 
@@ -60,7 +61,7 @@
       toast(t('conn.saved'));
       await load();
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('conn.error'), { tone: 'error' });
+      toast(failure(err, 'conn.error'), { tone: 'error' });
     } finally {
       saving = false;
     }

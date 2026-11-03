@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import LogExplorer from '../components/LogExplorer.svelte';
   import Crashes from '../components/Crashes.svelte';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import { phaseKey, slowLink, spanText, type BootReport } from '../lib/boot';
   import { locale, t } from '../lib/i18n';
   import { entryTime, journalPageQuery, prioClass, type Boot, type JournalEntry, type JournalFilter, type JournalPage } from '../lib/journal';
@@ -26,7 +27,7 @@
   let loading = $state(false);
   let boots = $state.raw<Boot[]>([]);
   let boot = $state.raw<BootReport | null>(null);
-  let bootFailed = $state(false);
+  let bootFailed = $state('');
 
   // A new search can start before the previous one ends.
   let seq = 0;
@@ -42,7 +43,7 @@
       limited = page.limited ?? false;
       error = '';
     } catch (err) {
-      if (mine === seq) error = err instanceof ApiError ? err.message : t('journal.error');
+      if (mine === seq) error = failure(err, 'journal.error');
     } finally {
       if (mine === seq) loading = false;
     }
@@ -58,9 +59,9 @@
     api<BootReport>('/boot').then(
       (r) => {
         boot = r;
-        bootFailed = false;
+        bootFailed = '';
       },
-      () => (bootFailed = true),
+      (err: unknown) => (bootFailed = failure(err, 'boot.error')),
     );
   });
 
@@ -138,7 +139,7 @@
 {:else if view === 'explorer'}
   <LogExplorer />
 {:else if bootFailed}
-  <p class="note error" role="status">{t('boot.error')}</p>
+  <p class="note error" role="status">{bootFailed}</p>
 {:else if boot === null}
   <p class="note">{t('boot.loading')}</p>
 {:else if boot.error}

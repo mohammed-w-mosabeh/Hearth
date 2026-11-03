@@ -1,8 +1,9 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import AccessCard from '../components/AccessCard.svelte';
   import IntegrityCard from '../components/IntegrityCard.svelte';
   import LynisCard from '../components/LynisCard.svelte';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import { locale, t } from '../lib/i18n';
   import {
     checkHint,
@@ -23,7 +24,7 @@
   import { toast } from '../lib/toast.svelte';
 
   let report = $state.raw<Report | null>(null);
-  let failed = $state(false);
+  let failed = $state('');
   let loading = $state(false);
   let cvesRunning = $state(false);
   let onlyFixed = $state(true);
@@ -32,9 +33,9 @@
     loading = true;
     try {
       report = await api<Report>('/security');
-      failed = false;
-    } catch {
-      failed = true;
+      failed = '';
+    } catch (err) {
+      failed = failure(err, 'security.error');
     } finally {
       loading = false;
     }
@@ -47,7 +48,7 @@
       if (v.error) toast(t('security.cves.failed', { s: v.error }), { tone: 'error' });
       await load();
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     } finally {
       cvesRunning = false;
     }
@@ -97,7 +98,7 @@
 </header>
 
 {#if failed}
-  <p class="note error" role="status">{t('security.error')}</p>
+  <p class="note error" role="status">{failed}</p>
 {:else if report === null}
   <p class="note">{t('security.loading')}</p>
 {:else}

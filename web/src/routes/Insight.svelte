@@ -1,22 +1,23 @@
 <script lang="ts">
-  import { api, ApiError } from '../lib/api';
+  import { failure } from '../lib/errors';
+  import { api } from '../lib/api';
   import { t } from '../lib/i18n';
   import { PERIODS, causeKey, periodKey, rounded, type Cause, type Diagnosis, type Energy, type EnergyPeriod } from '../lib/insight';
 
   let diagnosis = $state.raw<Diagnosis | null>(null);
   let running = $state(false);
-  let failure = $state('');
+  let fanError = $state('');
   let energy = $state.raw<Energy | null>(null);
-  let energyFailed = $state(false);
+  let energyFailed = $state('');
   let period = $state<EnergyPeriod>('week');
 
   async function explain(): Promise<void> {
     running = true;
     try {
       diagnosis = await api<Diagnosis>('/insight/fan');
-      failure = '';
+      fanError = '';
     } catch (err) {
-      failure = err instanceof ApiError ? err.message : t('insight.fan.failed');
+      fanError = failure(err, 'insight.fan.failed');
     } finally {
       running = false;
     }
@@ -31,9 +32,9 @@
       const e = await api<Energy>(`/insight/energy?period=${p}`);
       if (mine !== seq) return;
       energy = e;
-      energyFailed = false;
-    } catch {
-      if (mine === seq) energyFailed = true;
+      energyFailed = '';
+    } catch (err) {
+      if (mine === seq) energyFailed = failure(err, 'insight.energy.error');
     }
   }
 
@@ -58,7 +59,7 @@
       {running ? t('insight.fan.running') : diagnosis ? t('insight.fan.again') : t('insight.fan.run')}
     </button>
   </div>
-  {#if failure}<p class="note error" role="status">{failure}</p>{/if}
+  {#if fanError}<p class="note error" role="status">{fanError}</p>{/if}
   {#if diagnosis}
     {@const d = diagnosis}
     <ul class="causes">
@@ -102,7 +103,7 @@
     </div>
   </div>
   {#if energyFailed}
-    <p class="note error" role="status">{t('insight.energy.error')}</p>
+    <p class="note error" role="status">{energyFailed}</p>
   {:else if energy}
     {#if energy.items.length === 0}
       <p class="note">{t('insight.energy.none')}</p>

@@ -1,8 +1,9 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import PackageDetail from '../components/PackageDetail.svelte';
   import { preview, run, type Plan, type Result } from '../lib/actions';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import { bytes } from '../lib/format';
   import { ltr, menuLeft, type MessageKey, t } from '../lib/i18n';
   import {
@@ -49,7 +50,7 @@
   let updatesLoading = $state(true);
   let extras = $state.raw<Partial<Record<Manager, ExtraList>>>({});
 
-  const msg = (err: unknown, fallback: MessageKey) => (err instanceof ApiError ? err.message : t(fallback));
+  const msg = failure;
 
   async function loadDeb(): Promise<void> {
     try {

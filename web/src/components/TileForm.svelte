@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import Icon from './Icon.svelte';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import { BUILTIN_ICONS, builtinName, portOf, urlProblem, validPort, type TileForm } from '../lib/homepage';
   import { t } from '../lib/i18n';
 
@@ -78,7 +79,7 @@
       uploaded = r.data;
       error = '';
     } catch (err) {
-      error = err instanceof ApiError ? err.message : t('action.failed');
+      error = failure(err, 'action.failed');
     }
   }
 

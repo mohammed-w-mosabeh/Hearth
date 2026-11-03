@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { api, ApiError } from '../lib/api';
+  import { failure } from '../lib/errors';
+  import { api } from '../lib/api';
   import { CRASH_DAYS, ownerKey, peakDay, type CrashReport } from '../lib/crashes';
   import { locale, t } from '../lib/i18n';
 
@@ -21,7 +22,7 @@
         failed = '';
       })
       .catch((err: unknown) => {
-        if (!stopped) failed = err instanceof ApiError ? err.message : t('crashes.error');
+        if (!stopped) failed = failure(err, 'crashes.error');
       });
     return () => {
       stopped = true;

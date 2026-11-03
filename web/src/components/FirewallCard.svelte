@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import ConfirmDialog from './ConfirmDialog.svelte';
   import { preview, reasonKey, run, type Params, type Plan } from '../lib/actions';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import { emptyRule, ruleParams, sourceLooksValid, validPort, type FirewallRule, type FirewallState } from '../lib/firewall';
   import { t } from '../lib/i18n';
   import { toast } from '../lib/toast.svelte';
@@ -18,16 +19,16 @@
   }
 
   let fw = $state.raw<FirewallState | null>(null);
-  let failed = $state(false);
+  let failed = $state('');
   let form = $state(emptyRule());
   let pending = $state.raw<Pending | null>(null);
 
   async function load(): Promise<void> {
     try {
       fw = await api<FirewallState>('/firewall');
-      failed = false;
-    } catch {
-      failed = true;
+      failed = '';
+    } catch (err) {
+      failed = failure(err, 'fw.error');
     }
   }
 
@@ -42,7 +43,7 @@
       }
       pending = { action, params, plan, title, verb };
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     }
   }
 
@@ -60,7 +61,7 @@
         form = emptyRule();
       }
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     }
     await load();
   }
@@ -76,7 +77,7 @@
 {#if failed}
   <section class="card" aria-labelledby="fw-title">
     <h2 id="fw-title">{t('fw.title')}</h2>
-    <p class="muted" role="status">{t('fw.error')}</p>
+    <p class="muted" role="status">{failed}</p>
   </section>
 {:else if fw?.installed}
   <section class="card" aria-labelledby="fw-title">

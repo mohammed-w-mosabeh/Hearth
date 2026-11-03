@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { api, ApiError } from '../lib/api';
+  import { failure } from '../lib/errors';
+  import { api } from '../lib/api';
   import { t } from '../lib/i18n';
   import { appendEntries, entryTime, journalQuery, matches, type Journal, type JournalEntry } from '../lib/journal';
   import type { Unit } from '../lib/services';
@@ -48,7 +49,7 @@
         limited = j.limited ?? false;
         failed = '';
       } catch (err) {
-        if (!stopped) failed = err instanceof ApiError ? err.message : t('journal.error');
+        if (!stopped) failed = failure(err, 'journal.error');
       } finally {
         loading = false;
       }

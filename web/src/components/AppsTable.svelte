@@ -1,12 +1,12 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import CapDialog from './CapDialog.svelte';
   import RowSpark from './RowSpark.svelte';
   import StatusMark from './StatusMark.svelte';
   import { groupStatus, rowNav, sparks } from '../lib/rows';
   import ConfirmDialog from './ConfirmDialog.svelte';
   import { preview, reasonKey, run, type Blocked, type CapField, type Params, type Plan, type Result } from '../lib/actions';
-  import { ApiError } from '../lib/api';
-  import { bytes, pct, rate } from '../lib/format';
+    import { bytes, pct, rate } from '../lib/format';
   import { toast } from '../lib/toast.svelte';
   import { menuLeft, type MessageKey, t } from '../lib/i18n';
   import { emberRequested } from '../lib/ember';
@@ -135,7 +135,7 @@
   }
 
   function errorText(err: unknown): string {
-    return err instanceof ApiError ? err.message : t('action.failed');
+    return failure(err, 'action.failed');
   }
 
   // describe turns a result into one line: what was done, what was not.

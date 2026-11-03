@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import CapDialog from '../components/CapDialog.svelte';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import ContainerDetail from '../components/ContainerDetail.svelte';
@@ -11,7 +12,7 @@
   import DockerCleanup from '../components/DockerCleanup.svelte';
   import ImagesTable from '../components/ImagesTable.svelte';
   import { preview, reasonKey, run, type CapField, type Params, type Plan, type Result } from '../lib/actions';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import {
     available,
     imageName,
@@ -71,7 +72,7 @@
     try {
       snap = await api<Snapshot>('/docker');
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     }
   }
 
@@ -179,7 +180,7 @@
   }
 
   function errorText(err: unknown): string {
-    return err instanceof ApiError ? err.message : t('action.failed');
+    return failure(err, 'action.failed');
   }
 
   function setBusy(c: Container, on: boolean): void {

@@ -1,9 +1,9 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import ConfirmDialog from './ConfirmDialog.svelte';
   import ImageDetail from './ImageDetail.svelte';
   import { preview, reasonKey, run, type Plan, type Result } from '../lib/actions';
-  import { ApiError } from '../lib/api';
-  import { imageTitle, imageView, shortID, uniqueSize, type Container, type Image, type ImageFilter, type ImageSort } from '../lib/docker';
+    import { imageTitle, imageView, shortID, uniqueSize, type Container, type Image, type ImageFilter, type ImageSort } from '../lib/docker';
   import { bytes } from '../lib/format';
   import { locale, menuLeft, type MessageKey, t } from '../lib/i18n';
   import { toast } from '../lib/toast.svelte';
@@ -64,7 +64,7 @@
   }
 
   function errorText(err: unknown): string {
-    return err instanceof ApiError ? err.message : t('action.failed');
+    return failure(err, 'action.failed');
   }
 
   function failText(res: Result): string | null {

@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import ContainerShell from './ContainerShell.svelte';
   import Sparkline from './Sparkline.svelte';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import {
     appendLogs,
     columns,
@@ -96,7 +97,7 @@
         if (!stopped) info = r;
       })
       .catch((err: unknown) => {
-        if (!stopped) failed = err instanceof ApiError ? err.message : t('action.failed');
+        if (!stopped) failed = failure(err, 'action.failed');
       });
     return () => {
       stopped = true;

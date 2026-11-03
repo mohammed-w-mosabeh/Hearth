@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import { run, reasonKey } from '../lib/actions';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import { bytes, celsius, pct } from '../lib/format';
   import { locale, t } from '../lib/i18n';
   import { days, pollMs, statusKeys, verdict, verdictKeys, worrying, type Health, type SmartDisk } from '../lib/smart';
@@ -25,7 +26,7 @@
       const ms = pollMs(h.disks);
       if (ms !== null) timer = setTimeout(() => void load(), ms);
     } catch (err) {
-      if (!gone) failed = err instanceof ApiError ? err.message : t('action.failed');
+      if (!gone) failed = failure(err, 'action.failed');
     }
   }
 
@@ -49,7 +50,7 @@
       }
       await load();
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     } finally {
       busy = '';
     }

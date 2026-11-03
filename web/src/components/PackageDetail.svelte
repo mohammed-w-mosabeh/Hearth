@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { api, ApiError } from '../lib/api';
+  import { failure } from '../lib/errors';
+  import { api } from '../lib/api';
   import { bytes } from '../lib/format';
   import { ltr, t } from '../lib/i18n';
   import { pkgReasonKey, type DebDetail, type Row } from '../lib/packages';
@@ -33,7 +34,7 @@
         if (!stopped) detail = d;
       })
       .catch((err: unknown) => {
-        if (!stopped) failed = err instanceof ApiError ? err.message : t('pkg.detail.error');
+        if (!stopped) failed = failure(err, 'pkg.detail.error');
       });
     return () => {
       stopped = true;

@@ -1,8 +1,9 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import SleepPower from '../components/SleepPower.svelte';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import { preview, reasonKey, run, type Blocked, type Plan, type Result } from '../lib/actions';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import type { App } from '../lib/apps';
   import { exportName, wordPlan, type Backups } from '../lib/backup';
   import { applyDensity, loadDensity, saveDensity, type Density } from '../lib/density';
@@ -34,7 +35,7 @@
   let power = $state<Power | null>(null);
   let zones = $state<string[]>([]);
   let apps = $state<App[]>([]);
-  let failed = $state(false);
+  let failed = $state('');
   let busy = $state(false);
 
   let staticName = $state('');
@@ -53,9 +54,9 @@
       info = await api<SystemInfo>('/system/info');
       staticName = info.hostname?.static ?? '';
       prettyName = info.hostname?.pretty ?? '';
-      failed = false;
-    } catch {
-      failed = true;
+      failed = '';
+    } catch (err) {
+      failed = failure(err, 'set.error');
     }
   }
   const loadNet = async () => void (net = await api<NetworkState>('/system/network').catch(() => null));
@@ -87,7 +88,7 @@
   });
 
   function errorText(err: unknown): string {
-    return err instanceof ApiError ? err.message : t('action.failed');
+    return failure(err, 'action.failed');
   }
 
   function failText(fail: Blocked): string {
@@ -276,7 +277,7 @@
 </header>
 
 {#if failed}
-  <p class="note error" role="status">{t('set.error')}</p>
+  <p class="note error" role="status">{failed}</p>
 {/if}
 
 <div class="sections" aria-busy={busy}>

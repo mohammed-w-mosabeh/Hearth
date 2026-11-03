@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import HomeHealth from '../components/HomeHealth.svelte';
   import HomeTiles from '../components/HomeTiles.svelte';
   import RestartBanner from '../components/RestartBanner.svelte';
@@ -76,7 +77,7 @@
   // Layout: loaded once, saved (debounced) after each change.
   let layout = $state<Layout>({ order: [], hidden: [] });
   let loaded = $state(false);
-  let saveFailed = $state(false);
+  let saveFailed = $state('');
   let editing = $state(false);
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -94,8 +95,8 @@
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       api('/settings/home.layout', { method: 'PUT', body: JSON.stringify($state.snapshot(layout)) })
-        .then(() => (saveFailed = false))
-        .catch(() => (saveFailed = true));
+        .then(() => (saveFailed = ''))
+        .catch((err: unknown) => (saveFailed = failure(err, 'home.saveFailed')));
     }, 400);
   }
 
@@ -135,7 +136,7 @@
 <HomeTiles {live} />
 
 {#if saveFailed}
-  <p class="error" role="status">{t('home.saveFailed')}</p>
+  <p class="error" role="status">{saveFailed}</p>
 {/if}
 
 {#if !metrics || !sample || !loaded}

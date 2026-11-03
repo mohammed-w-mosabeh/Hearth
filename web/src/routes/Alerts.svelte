@@ -1,8 +1,9 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import AlertChannels from '../components/AlertChannels.svelte';
   import RuleDialog from '../components/RuleDialog.svelte';
   import { applyEvent, blankRule, conditionText, draftOf, lasted, metricLabel, valueText, type AlertEvent, type Metric, type Rule, type RuleDraft } from '../lib/alerts';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import { locale, type MessageKey, t } from '../lib/i18n';
   import { emberRequested } from '../lib/ember';
   import { inspectHref } from '../lib/router.svelte';
@@ -22,7 +23,7 @@
   let metrics = $state.raw<Metric[]>([]);
   let events = $state.raw<AlertEvent[]>([]);
   let more = $state(false);
-  let failed = $state(false);
+  let failed = $state('');
   let draft = $state<RuleDraft | null>(null);
   let editingId = $state<number | null>(null);
   let formError = $state('');
@@ -32,15 +33,15 @@
   const sevKey: Record<string, MessageKey> = { info: 'alerts.sev.info', warning: 'alerts.sev.warning', critical: 'alerts.sev.critical' };
 
   function errorText(err: unknown): string {
-    return err instanceof ApiError ? err.message : t('action.failed');
+    return failure(err, 'action.failed');
   }
 
   async function loadRules(): Promise<void> {
     try {
       rules = (await api<{ rules: Rule[] }>('/alerts/rules')).rules;
-      failed = false;
-    } catch {
-      failed = true;
+      failed = '';
+    } catch (err) {
+      failed = failure(err, 'alerts.error');
     }
   }
 
@@ -50,8 +51,8 @@
       const got = (await api<{ events: AlertEvent[] }>(`/alerts/events${q}`)).events;
       events = before ? [...events, ...got] : got;
       more = got.length === PAGE;
-    } catch {
-      failed = true;
+    } catch (err) {
+      failed = failure(err, 'alerts.error');
     }
   }
 
@@ -159,7 +160,7 @@
   </div>
 </header>
 
-{#if failed}<p class="note error" role="status">{t('alerts.error')}</p>{/if}
+{#if failed}<p class="note error" role="status">{failed}</p>{/if}
 
 <section aria-labelledby="active-h">
   <h2 id="active-h">{t('alerts.active')}</h2>

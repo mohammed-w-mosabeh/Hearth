@@ -1,8 +1,9 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import Connectivity from '../components/Connectivity.svelte';
   import FirewallCard from '../components/FirewallCard.svelte';
   import LineageDialog from '../components/LineageDialog.svelte';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import { bytes, rate } from '../lib/format';
   import { t, type MessageKey } from '../lib/i18n';
   import {
@@ -51,7 +52,7 @@
       sockets = s;
       failed = '';
     } catch (err) {
-      failed = err instanceof ApiError ? err.message : t('net.error');
+      failed = failure(err, 'net.error');
     }
   }
   async function loadState(): Promise<void> {

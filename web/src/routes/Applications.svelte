@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import { preview, run, type Plan } from '../lib/actions';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import { CATEGORIES, SOURCES, filterApps, iconQuery, initials, rank, type App, type SourceFilter } from '../lib/apps';
   import { t } from '../lib/i18n';
   import { toast } from '../lib/toast.svelte';
@@ -13,7 +14,7 @@
   const RUNNING_MS = 5000; // how often running apps are re-read while visible
 
   let apps = $state.raw<App[] | null>(null);
-  let failed = $state(false);
+  let failed = $state('');
   let icons = $state<Record<string, string>>({});
   let favorites = $state<string[]>([]);
   let search = $state('');
@@ -27,10 +28,10 @@
     try {
       const res = await api<{ apps: App[] }>('/apps');
       apps = res.apps;
-      failed = false;
+      failed = '';
       await loadIcons(res.apps);
-    } catch {
-      failed = true;
+    } catch (err) {
+      failed = failure(err, 'apps2.error');
     }
   }
 
@@ -59,7 +60,7 @@
   }
 
   function errorText(err: unknown): string {
-    return err instanceof ApiError ? err.message : t('action.failed');
+    return failure(err, 'action.failed');
   }
 
   // Launch (ROADMAP 1.11): the server starts the app in its own systemd
@@ -209,7 +210,7 @@
 {/snippet}
 
 {#if failed}
-  <p class="note error" role="status">{t('apps2.error')}</p>
+  <p class="note error" role="status">{failed}</p>
 {:else if apps === null}
   <p class="note">{t('apps2.loading')}</p>
 {:else if shown.length === 0}

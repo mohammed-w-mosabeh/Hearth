@@ -1,9 +1,10 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import ConfirmDialog from './ConfirmDialog.svelte';
   import StatusMark from './StatusMark.svelte';
   import { preview, reasonKey, run, type Plan, type Result } from '../lib/actions';
   import { applyEvent, type AlertEvent } from '../lib/alerts';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import type { Forecasts } from '../lib/disks';
   import {
     RESERVED,
@@ -128,7 +129,7 @@
   let busy = $state.raw<ReadonlySet<string>>(new Set());
 
   function errorText(err: unknown): string {
-    return err instanceof ApiError ? err.message : t('action.failed');
+    return failure(err, 'action.failed');
   }
 
   function report(u: Unit, res: Result): void {

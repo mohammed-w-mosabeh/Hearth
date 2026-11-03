@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import { t, type MessageKey } from '../lib/i18n';
   import { loadOverride, overrideFields, restartPolicies, type Unit } from '../lib/services';
   import type { Params } from '../lib/actions';
@@ -33,7 +34,7 @@
       dialog.showModal();
       loadOverride(u)
         .then((d) => (values = { ...d }))
-        .catch((err: unknown) => (loadError = err instanceof Error ? err.message : ''))
+        .catch((err: unknown) => (loadError = failure(err, 'action.failed')))
         .finally(() => (loading = false));
     } else if (!unit && dialog.open) {
       dialog.close();

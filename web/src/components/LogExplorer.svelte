@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { api, ApiError } from '../lib/api';
+  import { failure } from '../lib/errors';
+  import { api } from '../lib/api';
   import { locale, t } from '../lib/i18n';
   import { added, logsQuery, sourceName, type LogSource } from '../lib/logs';
 
@@ -36,7 +37,7 @@
       columns = r.sources;
       error = '';
     } catch (err) {
-      if (mine === seq) error = err instanceof ApiError ? err.message : t('journal.error');
+      if (mine === seq) error = failure(err, 'journal.error');
     }
   }
 

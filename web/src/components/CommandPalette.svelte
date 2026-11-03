@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import { run } from '../lib/actions';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import type { App } from '../lib/apps';
   import { t, type MessageKey } from '../lib/i18n';
   import { appEntries, pageEntries, search, unitEntries, type Entry } from '../lib/palette';
@@ -66,7 +67,7 @@
           await run('app', 'launch', e.id);
           toast(t('apps2.opening', { name: e.title }));
         } catch (err) {
-          toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+          toast(failure(err, 'action.failed'), { tone: 'error' });
         }
         break;
     }

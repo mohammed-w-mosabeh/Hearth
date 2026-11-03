@@ -1,8 +1,9 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import ManDialog from '../components/ManDialog.svelte';
   import { preview, run, type Plan } from '../lib/actions';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import { menuLeft, type MessageKey, t } from '../lib/i18n';
   import { pkgReasonKey, removeKind } from '../lib/packages';
   import { href, router } from '../lib/router.svelte';
@@ -21,7 +22,7 @@
       list = await api<ToolList>('/tools');
       failed = '';
     } catch (err) {
-      failed = err instanceof ApiError ? err.message : t('tools.error');
+      failed = failure(err, 'tools.error');
     }
   }
   $effect(() => {
@@ -91,7 +92,7 @@
     manOf = x.name;
   }
 
-  const errText = (err: unknown) => (err instanceof ApiError ? err.message : t('action.failed'));
+  const errText = (err: unknown) => (failure(err, 'action.failed'));
 
   // Removing the owner is the Packages page's removal: previewed (with
   // everything else it takes along), then confirmed.

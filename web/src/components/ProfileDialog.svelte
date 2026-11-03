@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { api, ApiError } from '../lib/api';
+  import { failure } from '../lib/errors';
+  import { api } from '../lib/api';
   import type { App } from '../lib/apps';
   import type { Snapshot } from '../lib/docker';
   import { t } from '../lib/i18n';
@@ -77,7 +78,7 @@
       await api<Profile>(draft.id ? `/profiles/${draft.id}` : '/profiles', { method: draft.id ? 'PUT' : 'POST', body });
       onsaved();
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
       saving = false;
     }
   }

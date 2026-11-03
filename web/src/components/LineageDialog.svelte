@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import ConfirmDialog from './ConfirmDialog.svelte';
   import { preview, reasonKey, run, type Plan, type Result } from '../lib/actions';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import { imageName, type Container, type Snapshot } from '../lib/docker';
   import { t, type MessageKey } from '../lib/i18n';
   import { browserURL, containerOf, lineageQuery, ownerName, unitScope, type Lineage, type PkgRef, type Row } from '../lib/network';
@@ -37,7 +38,7 @@
           if (!stopped) lineage = l;
         })
         .catch((err: unknown) => {
-          if (!stopped) failed = err instanceof ApiError ? err.message : t('net.lineage.error');
+          if (!stopped) failed = failure(err, 'net.lineage.error');
         })
         .finally(() => {
           if (!stopped) loading = false;
@@ -98,7 +99,7 @@
       if (op.kind === 'unit' && scope === 'system') toast(t('svc.authHint'));
       report(op, await run(op.kind, op.action, op.target, {}, plan.token));
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     }
   }
 
@@ -109,7 +110,7 @@
     try {
       report(op, await run(op.kind, op.action, op.target, {}, plan.token, typed || undefined));
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     }
   }
 

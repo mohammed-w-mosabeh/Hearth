@@ -1,7 +1,7 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import { preview, reasonKey, run, type Plan, type Result } from '../lib/actions';
-  import { ApiError } from '../lib/api';
-  import { finished, projectOps, projectState, projectView, tone, type Container, type Project, type ProjectOp } from '../lib/docker';
+    import { finished, projectOps, projectState, projectView, tone, type Container, type Project, type ProjectOp } from '../lib/docker';
   import { t, type MessageKey } from '../lib/i18n';
   import { toast } from '../lib/toast.svelte';
   import ConfirmDialog from './ConfirmDialog.svelte';
@@ -53,7 +53,7 @@
     try {
       updating = { project: p, plan: await preview('project', 'update', p.name) };
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     } finally {
       busy = new Set([...busy].filter((x) => x !== p.name));
     }
@@ -71,7 +71,7 @@
       if (first) toast(t('compose.updateFailed', { name: p.name, reason: first.detail || t(reasonKey(first.reason), { detail: '', user: '' }) }), { tone: 'error' });
       else toast(t('compose.updated', { name: p.name }));
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     } finally {
       busy = new Set([...busy].filter((x) => x !== p.name));
     }
@@ -83,7 +83,7 @@
     try {
       report(op, p, await run('project', op, p.name));
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     } finally {
       busy = new Set([...busy].filter((x) => x !== p.name));
     }

@@ -1,8 +1,9 @@
 <script lang="ts">
+  import { failure } from '../../lib/errors';
   import Act from './Act.svelte';
   import Chain from './Chain.svelte';
   import MiniChart from './MiniChart.svelte';
-  import { api, ApiError } from '../../lib/api';
+  import { api } from '../../lib/api';
   import { bytes, pct } from '../../lib/format';
   import { t } from '../../lib/i18n';
   import { push, type Inspect, type Link } from '../../lib/inspect';
@@ -32,7 +33,7 @@
   function reload(): void {
     api<ServicesMsg>('/services')
       .then((m) => m.kind === 'list' && take(m.units))
-      .catch((err: unknown) => (failed = err instanceof ApiError ? err.message : t('inspect.error')));
+      .catch((err: unknown) => (failed = failure(err, 'inspect.error')));
   }
 
   $effect(() => {

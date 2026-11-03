@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import MarkerList from '../components/MarkerList.svelte';
   import AppsTable from '../components/AppsTable.svelte';
   import Chart from '../components/Chart.svelte';
@@ -33,7 +34,7 @@
   let cores = $state(prefs.cores);
   let viewMode = $state<View>(prefs.view);
   let cols = $state.raw<Columns | null>(null);
-  let failed = $state(false);
+  let failed = $state('');
   let now = $state(Date.now());
   let gpuNames = $state<Record<string, string>>({});
 
@@ -64,7 +65,7 @@
     let stopped = false;
     let busy = false;
     cols = null;
-    failed = false;
+    failed = '';
 
     async function load(since?: number): Promise<void> {
       if (busy) return;
@@ -78,9 +79,9 @@
         if (stopped) return;
         now = Date.now();
         cols = r === '10m' && cols && since !== undefined ? append(cols, got, now - span) : got;
-        failed = false;
-      } catch {
-        if (!stopped) failed = true;
+        failed = '';
+      } catch (err) {
+        if (!stopped) failed = failure(err, 'resources.error');
       } finally {
         busy = false;
       }
@@ -173,7 +174,7 @@
   <AppsTable {live} />
 {:else}
   {#if failed}
-    <p class="note error" role="status">{t('resources.error')}</p>
+    <p class="note error" role="status">{failed}</p>
   {/if}
   {#if cols === null}
     {#if !failed}<p class="note">{t('resources.loading')}</p>{/if}

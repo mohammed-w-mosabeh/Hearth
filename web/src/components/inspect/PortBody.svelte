@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { failure } from '../../lib/errors';
   import Act from './Act.svelte';
   import Chain from './Chain.svelte';
-  import { api, ApiError } from '../../lib/api';
+  import { api } from '../../lib/api';
   import { t, type MessageKey } from '../../lib/i18n';
   import type { Inspect, Link } from '../../lib/inspect';
   import { lineagePackages, lineageQuery, ownerName, rows, unitScope, type Lineage, type Row, type Sockets } from '../../lib/network';
@@ -18,7 +19,7 @@
   function reload(): void {
     api<Sockets>('/net/sockets')
       .then((s) => (found = rows(s.listeners).filter((r) => r.proto === item.proto && r.port === item.port)))
-      .catch((err: unknown) => (failed = err instanceof ApiError ? err.message : t('inspect.error')));
+      .catch((err: unknown) => (failed = failure(err, 'inspect.error')));
   }
 
   $effect(() => reload());

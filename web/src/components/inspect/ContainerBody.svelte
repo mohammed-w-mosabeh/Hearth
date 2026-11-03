@@ -1,8 +1,9 @@
 <script lang="ts">
+  import { failure } from '../../lib/errors';
   import Act from './Act.svelte';
   import Chain from './Chain.svelte';
   import MiniChart from './MiniChart.svelte';
-  import { api, ApiError } from '../../lib/api';
+  import { api } from '../../lib/api';
   import { mergeStats, imageName, type Container, type Point, type Snapshot, type StatsMsg } from '../../lib/docker';
   import { bytes, pct } from '../../lib/format';
   import { t } from '../../lib/i18n';
@@ -29,7 +30,7 @@
         c = s.containers.find((x) => x.id.startsWith(item.id) || x.name === item.id) ?? null;
         missing = c === null;
       })
-      .catch((err: unknown) => (failed = err instanceof ApiError ? err.message : t('inspect.error')));
+      .catch((err: unknown) => (failed = failure(err, 'inspect.error')));
   }
 
   $effect(() => {

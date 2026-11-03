@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import ConfirmDialog from './ConfirmDialog.svelte';
   import { preview, reasonKey, run, type Plan } from '../lib/actions';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import { networkRemovable, usedByNames, type Container, type Network, type Volume } from '../lib/docker';
   import { bytes } from '../lib/format';
   import { t } from '../lib/i18n';
@@ -36,7 +37,7 @@
   let pending = $state<{ row: Row; plan: Plan } | null>(null);
   let busy = $state('');
 
-  const problem = (err: unknown) => (err instanceof ApiError ? err.message : t('action.failed'));
+  const problem = (err: unknown) => (failure(err, 'action.failed'));
 
   async function loadSizes(): Promise<void> {
     try {
