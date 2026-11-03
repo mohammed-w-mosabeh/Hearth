@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"regexp"
 	"slices"
+	"unicode/utf8"
 )
 
 // SettingsStore persists settings (store.DB in production).
@@ -25,6 +26,7 @@ const maxSettingBytes = 16 << 10
 // each with a validator for its value.
 var settingKeys = map[string]func(json.RawMessage) error{
 	"home.layout":    validateHomeLayout,
+	"home.snoozed":   validateSnoozed,
 	"apps.favorites": validateFavorites,
 }
 
@@ -49,6 +51,36 @@ func validateHomeLayout(v json.RawMessage) error {
 	for _, id := range append(l.Order, l.Hidden...) {
 		if len(id) > 200 || !cardIDRe.MatchString(id) {
 			return errors.New("layout has an invalid card id")
+		}
+	}
+	return nil
+}
+
+// snoozeIDRe matches a Needs attention item ID (web/src/lib/health.ts):
+// a source word, then optionally ":" and a printable subject such as a
+// unit, a mount point or a listener.
+var snoozeIDRe = regexp.MustCompile(`^[a-z][a-z.]{0,31}(:[^\x00-\x1f\x7f]{1,290})?$`)
+
+// maxSnoozed bounds the snoozed items (MAX_SNOOZED in health.ts).
+const maxSnoozed = 200
+
+// validateSnoozed accepts {"until": {item id: Unix ms}}, Home's items
+// hidden from Needs attention for 24 h (ROADMAP 8.6).
+func validateSnoozed(v json.RawMessage) error {
+	var s struct {
+		Until map[string]int64 `json:"until"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(v))
+	dec.DisallowUnknownFields()
+	if t := bytes.TrimSpace(v); len(t) == 0 || t[0] != '{' || dec.Decode(&s) != nil || !atEnd(dec) || s.Until == nil {
+		return errors.New(`snoozed must be {"until": {"<item id>": <unix ms>}}`)
+	}
+	if len(s.Until) > maxSnoozed {
+		return errors.New("too many snoozed items")
+	}
+	for id, until := range s.Until {
+		if !snoozeIDRe.MatchString(id) || !utf8.ValidString(id) || until <= 0 {
+			return errors.New("snoozed has an invalid item")
 		}
 	}
 	return nil

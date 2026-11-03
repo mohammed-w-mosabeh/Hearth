@@ -57,8 +57,27 @@ A group folds from its heading, remembered per browser; the group holding the pa
 ## Page anatomy
 1. **Pulse strip:** a sticky 32 px bar with CPU, RAM, temperature, network and battery, in mono. Each value opens its chart on Resources. It reads the sampler's ring every 15 s, and follows a page already at 1 s, without raising the rate itself.
 2. **Page head:** title, one line of context, page actions at the inline end.
-3. **Content:** cards and tables on tokens. Home gains the health ring and Needs attention in task 8.6.
+3. **Content:** cards and tables on tokens. Home opens with the health ring and Needs attention, then Quick views (the card grid).
 4. **Inspector drawer:** on the inline-end side, 420 px, flipping in RTL. Task 8.7.
+
+## Home health (task 8.6)
+The ring is 100 minus the points below, never under 0. Each item takes fixed points and each kind has a cap; nothing else is weighed, and selecting the ring lists the deductions that apply and these rules. The queue holds the same items, the most serious first, eight shown until "Show more". Code: `web/src/lib/health.ts`.
+
+| Kind | Read from | Points each | Cap | Row action |
+| --- | --- | --- | --- | --- |
+| Failed unit | `GET /services` | 10 | 30 | Restart, with the Services page's preview and confirmation |
+| Critical alert firing | `GET /alerts/events` (the newest 500), live on the `alerts` topic | 15 | 30 | Open alerts |
+| Warning alert firing | same | 5 | 15 | Open alerts |
+| Info alert firing | same | 0 | 0 | Open alerts |
+| Security updates waiting | `GET /security` | 15 | 15 | Open updates |
+| Listener on every address, no active firewall | `GET /security` | 5 | 15 | Security page |
+| Restart needed (reboot or services) | `GET /security` | 5 | 5 | Security page |
+| Disk full within 7 days | `GET /forecasts` | 15 | 30 | Space advisor |
+| Disk reporting failure (SMART) | `GET /disks/health` | 25 | 50 | Disk health |
+| Hardening index lower than the run before | `GET /security/lynis` | 10 | 10 | Security page |
+| Unhealthy app, failed backup, stack needing an update, pending mode approval | Phases 9 and 10 | 0 | 0 | reserved, inactive |
+
+A listener behind an active firewall is info on the Security page and is not counted here. A source that cannot be read deducts nothing and is named as not checked. Everything is read when Home opens and every 5 minutes after; alerts also arrive as they fire. A row snoozes for 24 hours, per viewer, in the `home.snoozed` setting (at most 200 items, each `{"until": {"<item id>": <unix ms>}}`); a snoozed item still counts in the ring. On Ember, Home's restart banner gives way to the restart row.
 
 ## Components
 - Buttons: one primary per view. Danger buttons are outlined, so they never look like the safe default. A disabled button is visibly dimmed.

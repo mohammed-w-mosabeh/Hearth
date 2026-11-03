@@ -1,4 +1,5 @@
 <script lang="ts">
+  import HomeHealth from '../components/HomeHealth.svelte';
   import HomeTiles from '../components/HomeTiles.svelte';
   import RestartBanner from '../components/RestartBanner.svelte';
   import CpuCard from '../components/cards/CpuCard.svelte';
@@ -11,6 +12,7 @@
   import TempsCard from '../components/cards/TempsCard.svelte';
   import { api } from '../lib/api';
   import type { UsageMsg } from '../lib/docker';
+  import { emberRequested } from '../lib/ember';
   import { t } from '../lib/i18n';
   import { arrange, moveTo, sanitize, setHidden, step, type Layout } from '../lib/layout';
   import { LiveMetrics } from '../lib/metrics.svelte';
@@ -18,6 +20,9 @@
   import type { Live } from '../lib/ws';
 
   let { live }: { live: Live } = $props();
+
+  // The health ring and Needs attention come with the Ember redesign.
+  const ember = emberRequested(location.search);
 
   type Card =
     | { id: string; kind: 'cpu' | 'mem' | 'temps' | 'net' | 'power' | 'docker'; title: string }
@@ -121,7 +126,11 @@
   {/if}
 </header>
 
-<RestartBanner />
+{#if ember}
+  <HomeHealth {live} />
+{:else}
+  <RestartBanner />
+{/if}
 
 <HomeTiles {live} />
 
@@ -132,6 +141,7 @@
 {#if !metrics || !sample || !loaded}
   <p class="waiting">{t('home.waiting')}</p>
 {:else}
+  {#if ember}<h2 class="section">{t('home.quickViews')}</h2>{/if}
   <ul class="grid" class:editing aria-label={t('home.cards')}>
     {#each arranged.visible as id, i (id)}
       {@const card = byId.get(id)}
@@ -258,6 +268,14 @@
   }
   .error {
     color: var(--crit);
+  }
+  .section {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: var(--space-5) 0 var(--space-3);
   }
   .grid {
     list-style: none;
