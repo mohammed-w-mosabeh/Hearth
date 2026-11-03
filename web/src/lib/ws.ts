@@ -10,6 +10,7 @@ export class Live {
   #key: string;
   #ws: WebSocket | null = null;
   #handlers = new Map<string, Set<Handler>>();
+  #listeners = new Map<string, Set<Handler>>();
   #retry = 0;
   #timer: ReturnType<typeof setTimeout> | undefined;
   #closed = false;
@@ -19,6 +20,18 @@ export class Live {
     this.#key = key;
     this.#onState = onState;
     this.#connect();
+  }
+
+  /** Hears a topic someone else subscribed to, without subscribing: the
+   *  sampler runs at 1 s only for subscribers. */
+  listen(topic: string, fn: Handler): () => void {
+    let set = this.#listeners.get(topic);
+    if (!set) {
+      set = new Set();
+      this.#listeners.set(topic, set);
+    }
+    set.add(fn);
+    return () => set.delete(fn);
   }
 
   subscribe(topic: string, fn: Handler): () => void {
@@ -65,6 +78,7 @@ export class Live {
       }
       if (typeof msg.topic !== 'string') return;
       for (const fn of this.#handlers.get(msg.topic) ?? []) fn(msg.data);
+      for (const fn of this.#listeners.get(msg.topic) ?? []) fn(msg.data);
     };
     ws.onclose = () => {
       this.#ws = null;

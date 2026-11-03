@@ -7,6 +7,7 @@
   import { append, pick, RANGES, type Columns, type Range } from '../lib/history';
   import { loadMarkers, type Marker } from '../lib/markers';
   import { t } from '../lib/i18n';
+  import { router } from '../lib/router.svelte';
   import type { Sample } from '../lib/types';
   import type { Live } from '../lib/ws';
 
@@ -42,6 +43,16 @@
     } catch {
       // per-viewer convenience only
     }
+  });
+
+  // The pulse strip links to a chart with #/resources?q=<chart id>.
+  let shown = '';
+  $effect(() => {
+    const id = router.q;
+    if (!id || id === shown || cols === null) return;
+    shown = id;
+    viewMode = 'charts';
+    setTimeout(() => document.getElementById(`chart-${id}`)?.scrollIntoView({ block: 'center' }), 0);
   });
 
   // Load the range, then keep it current: 10 min grows with every live
@@ -172,17 +183,19 @@
     <MarkerList {markers} />
     <div class="grid">
       {#each charts as c (c.spec.id)}
-        <Chart
-          title={t(c.spec.title)}
-          unit={c.spec.unit}
-          keys={c.keys}
-          labels={c.labels}
-          {cols}
-          {xRange}
-          min={c.spec.min}
-          max={c.spec.max}
-          {markers}
-        />
+        <div id="chart-{c.spec.id}" class="slot">
+          <Chart
+            title={t(c.spec.title)}
+            unit={c.spec.unit}
+            keys={c.keys}
+            labels={c.labels}
+            {cols}
+            {xRange}
+            min={c.spec.min}
+            max={c.spec.max}
+            {markers}
+          />
+        </div>
       {/each}
     </div>
   {/if}
@@ -248,6 +261,9 @@
   }
   .error {
     color: var(--crit);
+  }
+  .slot {
+    min-width: 0;
   }
   .grid {
     display: grid;
