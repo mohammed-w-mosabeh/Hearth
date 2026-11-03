@@ -36,7 +36,8 @@ The ember gradient is `#F59E0B` to `#EA580C`. The light accent departs from the 
 | ● | ok |
 | ◐ | degraded |
 | ▲ | warning |
-| ■ | stopped or failed |
+| ■ | failed |
+| □ | stopped |
 
 ## Typography
 IBM Plex Sans and IBM Plex Sans Arabic for UI, JetBrains Mono with tabular figures for numbers, units and code. Bundled and subset, loaded by the browser only when drawn; `check-forbidden.sh` holds all of them to 250 KB. Sources are in `web/src/assets/fonts/README.md`.
@@ -92,6 +93,13 @@ Selecting an item in a list opens it in a drawer on the inline-end side instead 
 | Alert | Alerts | `alert:<event id>` | none | on the Alerts page |
 
 Each drawer has its facts, the chart where a live series exists (it fills while the drawer stays open, since no per-item history is stored before task 8.8), its actions through the actions registry with the same preview and confirmation as the page, a link to the full page, and the lineage as a chain (port → process → unit → package → container) in which each link opens that item in the drawer. The drawer is a modal `<dialog>`: focus stays inside, Esc closes it, and focus goes back to what opened it. A link that names no item opens and says so. Packages of other managers keep their dialog.
+
+## Lists (task 8.8)
+Services, Docker containers and Resources' processes (apps, services and containers grouped) share one pattern:
+- **Status column:** the first column holds the row's shape (see Status). Units: ● active, ◐ changing, ■ failed, □ inactive. Containers: ● running, ◐ paused or changing (▲ when unhealthy), ■ failed or exited with an error, □ stopped. Process groups: ● running, ◐ paused.
+- **CPU, 10 min:** a 64×16 SVG line per row, under a faint frame of the full 10 minutes, from 0 to the row's own peak. Plain SVG, not uPlot, so a list of 900 units stays cheap. It fills while the list follows its topic (`services`, `docker.stats`, `procs`) and lasts for the session; containers start with the 5 minutes hearthd already keeps. No other per-item history is stored. Gaps over a minute, when the list was not open, break the line. Time runs left to right in both directions.
+- **Sticky header:** the table scrolls in its own box (at most 72% of the window's height), and its header stays at the top.
+- **Keyboard:** one row is in the Tab order. ↑ ↓ Home End move between rows, Enter opens the row (the drawer on Ember; the action menu on Services and expanding on Processes in the old UI), and clicking or tabbing into a row makes it the tab stop.
 
 ## Components
 - Buttons: one primary per view. Danger buttons are outlined, so they never look like the safe default. A disabled button is visibly dimmed.

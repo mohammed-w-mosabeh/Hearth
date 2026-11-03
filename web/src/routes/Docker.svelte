@@ -2,6 +2,9 @@
   import CapDialog from '../components/CapDialog.svelte';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import ContainerDetail from '../components/ContainerDetail.svelte';
+  import RowSpark from '../components/RowSpark.svelte';
+  import StatusMark from '../components/StatusMark.svelte';
+  import { addDockerStats, containerStatus, rowNav, sparks } from '../lib/rows';
   import EmptyState from '../components/EmptyState.svelte';
   import ComposeProjects from '../components/ComposeProjects.svelte';
   import DockerObjects from '../components/DockerObjects.svelte';
@@ -43,6 +46,7 @@
 
   let snap = $state.raw<Snapshot | null>(null);
   let history = $state.raw<Record<string, Point[]>>({});
+  let spark = $state.raw(sparks.containers.snapshot());
 
   $effect(() =>
     live.subscribe('docker', (data) => {
@@ -53,7 +57,13 @@
   $effect(() =>
     live.subscribe('docker.stats', (data) => {
       const m = data as StatsMsg;
-      if (m?.kind === 'history' || m?.kind === 'sample') history = mergeStats(history, m);
+      if (m?.kind === 'history' || m?.kind === 'sample') {
+        history = mergeStats(history, m);
+        // hearthd keeps 5 minutes; the session keeps 10 for the sparkline.
+        addDockerStats(sparks.containers, m);
+        sparks.containers.prune(Date.now() / 1000);
+        spark = sparks.containers.snapshot();
+      }
     }),
   );
 
@@ -330,10 +340,11 @@
   {:else if rows.length === 0}
     <p class="note">{t('docker.noMatch')}</p>
   {:else}
-    <div class="scroll">
+    <div class="scroll table-scroll">
       <table>
         <thead>
           <tr>
+            <th class="st"><span class="visually-hidden">{t('rows.status')}</span></th>
             {#each columnsDef as col (col.label)}
               <th class:num={col.num} aria-sort={col.key && sortKey === col.key ? (desc ? 'descending' : 'ascending') : 'none'}>
                 {#if col.key}
@@ -346,22 +357,23 @@
                 {/if}
               </th>
             {/each}
+            <th><span class="th">{t('rows.spark')}</span></th>
             <th><span class="visually-hidden">{t('docker.col.actions')}</span></th>
           </tr>
         </thead>
-        <tbody>
+        <tbody use:rowNav>
           {#each rows as c (c.id)}
             {@const tn = tone(c)}
             {@const st = stats[c.id]}
             {@const up = c.state === 'running' || c.state === 'paused'}
-            <tr>
+            <tr aria-label={c.name}>
+              <td class="st"><StatusMark kind={containerStatus(tn, c.health)} label={c.state} /></td>
               <td class="name-cell">
-                <button type="button" class="link" onclick={() => openDetail(c)}>{c.name}</button>
+                <button type="button" class="link" data-primary onclick={() => openDetail(c)}>{c.name}</button>
                 {#if c.project}<span class="tag" title={t('docker.tag.project', { project: c.project })}>{c.project}</span>{/if}
               </td>
               <td class="muted image" title={c.image}>{imageName(c)}</td>
               <td>
-                <span class="dot {tn}" aria-hidden="true"></span>
                 <span class:failed={tn === 'failed'}>{c.status}</span>
                 {#if c.health && !c.status.includes(c.health)}<span class="sub">{t(healthKey[c.health] ?? 'docker.health.starting')}</span>{/if}
               </td>
@@ -378,6 +390,7 @@
               </span></td>
               <td class="num">{up && st ? pct(st.cpu, 1) : '–'}</td>
               <td class="num">{up && st ? bytes(st.mem) : '–'}</td>
+              <td><RowSpark points={spark[c.id] ?? []} /></td>
               <td class="act">
                 <button
                   type="button"
@@ -641,24 +654,6 @@
     padding: 0 6px;
     margin-inline-start: var(--space-2);
   }
-  .dot {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    margin-inline-end: var(--space-2);
-    background: var(--border);
-  }
-  .dot.running {
-    background: var(--ok);
-  }
-  .dot.failed {
-    background: var(--crit);
-  }
-  .dot.changing,
-  .dot.paused {
-    background: var(--warn);
-  }
   .failed {
     color: var(--crit);
     font-weight: 500;
@@ -728,5 +723,10 @@
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
+  }
+  .st {
+    width: 1.5em;
+    padding-inline-end: 0;
+    text-align: center;
   }
 </style>

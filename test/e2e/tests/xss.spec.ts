@@ -343,3 +343,30 @@ test('the drawer is a link, closes on Esc and gives focus back', async ({ page }
     await expect(drawer.locator('#inspect-title')).toHaveText(title ?? '');
   }
 });
+
+// ROADMAP 8.8: one row is a tab stop, the arrow keys move between rows and
+// Enter opens the row in the drawer; the header stays in view.
+test('list rows move with the keyboard and keep their header', async ({ page }) => {
+  await page.goto(`${origin}/?ui=ember#/services`);
+  await page.reload();
+  const rows = page.locator('tbody tr');
+  await expect(rows.first()).toBeVisible({ timeout: 15_000 });
+  expect(await page.locator('tbody tr[tabindex="0"]').count()).toBe(1);
+  await rows.first().focus();
+  await page.keyboard.press('ArrowDown');
+  const name = await page.evaluate(() => document.activeElement?.getAttribute('aria-label'));
+  expect(name).toBe(await rows.nth(1).getAttribute('aria-label'));
+  await page.keyboard.press('Enter');
+  await expect(page.locator('dialog.drawer[open] #inspect-title')).toHaveText(name ?? '');
+  await page.keyboard.press('Escape');
+  expect(await page.evaluate(() => document.activeElement?.getAttribute('aria-label'))).toBe(name);
+
+  const box = page.locator('.table-scroll');
+  await box.evaluate((el) => (el.scrollTop = el.scrollHeight));
+  const stuck = await page.evaluate(() => {
+    const s = document.querySelector('.table-scroll');
+    const th = s?.querySelector('thead th');
+    return !!s && !!th && Math.abs(th.getBoundingClientRect().top - s.getBoundingClientRect().top) < 2;
+  });
+  expect(stuck).toBe(true);
+});

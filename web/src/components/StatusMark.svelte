@@ -23,4 +23,7 @@
   .failed {
     color: var(--crit);
   }
+  .stopped {
+    color: var(--text-muted);
+  }
 </style>

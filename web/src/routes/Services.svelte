@@ -1,5 +1,8 @@
 <script lang="ts">
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
+  import RowSpark from '../components/RowSpark.svelte';
+  import StatusMark from '../components/StatusMark.svelte';
+  import { rowNav, sparks, unitStatus } from '../lib/rows';
   import JournalDialog from '../components/JournalDialog.svelte';
   import OverrideDialog from '../components/OverrideDialog.svelte';
   import { preview, reasonKey, run, type Params, type Plan, type Result } from '../lib/actions';
@@ -37,6 +40,8 @@
   let units = $state.raw<Unit[] | null>(null);
   let errors = $state.raw<Partial<Record<string, string>>>({});
   let stats = $state.raw<Record<string, Stat>>({});
+  // Each unit's CPU over the last 10 minutes, kept for the session.
+  let spark = $state.raw(sparks.units.snapshot());
   let filesKnown = $state(false);
 
   $effect(() =>
@@ -48,6 +53,10 @@
         filesKnown = m.units.some((u) => u.enabled);
       } else if (m?.kind === 'stats' && m.stats) {
         stats = m.stats;
+        const now = Date.now() / 1000;
+        for (const [k, s] of Object.entries(m.stats)) sparks.units.add(k, now, s.cpu);
+        sparks.units.prune(now);
+        spark = sparks.units.snapshot();
       }
     }),
   );
@@ -287,10 +296,11 @@
 {:else if rows.length === 0}
   <p class="note">{t('svc.none')}</p>
 {:else}
-  <div class="scroll">
+  <div class="scroll table-scroll">
     <table>
       <thead>
         <tr>
+          <th class="st"><span class="visually-hidden">{t('rows.status')}</span></th>
           {#each columns as c (c.label)}
             <th class:num={c.num} aria-sort={c.key && sortKey === c.key ? (desc ? 'descending' : 'ascending') : 'none'}>
               {#if c.key}
@@ -303,17 +313,19 @@
               {/if}
             </th>
           {/each}
+          <th><span class="th">{t('rows.spark')}</span></th>
           <th><span class="visually-hidden">{t('svc.col.actions')}</span></th>
         </tr>
       </thead>
-      <tbody>
+      <tbody use:rowNav>
         {#each rows as u (key(u))}
           {@const h = health(u)}
           {@const st = statOf(u)}
-          <tr>
+          <tr aria-label={u.name}>
+            <td class="st"><StatusMark kind={unitStatus(u.active)} label={u.active} /></td>
             <td class="unit">
               {#if ember}
-                <a class="name" title={u.name} href={inspectHref(`unit:${u.scope}/${u.name}`)}>{u.name}</a>
+                <a class="name" data-primary title={u.name} href={inspectHref(`unit:${u.scope}/${u.name}`)}>{u.name}</a>
               {:else}
                 <span class="name" title={u.name}>{u.name}</span>
               {/if}
@@ -322,7 +334,6 @@
               {#if u.description && u.description !== u.name}<span class="desc" title={u.description}>{u.description}</span>{/if}
             </td>
             <td>
-              <span class="dot {h}" aria-hidden="true"></span>
               <span class:failed={h === 'failed'}>{u.active}</span>
               <span class="sub">{u.sub}{u.job ? ` · ${u.job}…` : ''}</span>
               {#if u.load && u.load !== 'loaded'}<span class="sub">({u.load})</span>{/if}
@@ -330,10 +341,12 @@
             <td class="muted">{u.enabled ?? (filesKnown ? '–' : '…')}</td>
             <td class="num">{st ? bytes(st.mem) : '–'}</td>
             <td class="num">{st ? pct(st.cpu, 1) : '–'}</td>
+            <td><RowSpark points={spark[key(u)] ?? []} /></td>
             <td class="act">
               <button
                 type="button"
                 class="more-btn"
+                data-primary={ember ? undefined : true}
                 aria-label={t('svc.actionsFor', { name: u.name })}
                 aria-busy={busy.has(key(u))}
                 onclick={(e) => openMenu(e, u)}>{busy.has(key(u)) ? '…' : '⋯'}</button
@@ -529,23 +542,6 @@
     color: var(--warn);
     border-color: var(--warn);
   }
-  .dot {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    margin-inline-end: var(--space-2);
-    background: var(--border);
-  }
-  .dot.running {
-    background: var(--ok);
-  }
-  .dot.failed {
-    background: var(--crit);
-  }
-  .dot.changing {
-    background: var(--warn);
-  }
   .failed {
     color: var(--crit);
     font-weight: 500;
@@ -623,5 +619,10 @@
   a.name:hover,
   a.name:focus-visible {
     text-decoration: underline;
+  }
+  .st {
+    width: 1.5em;
+    padding-inline-end: 0;
+    text-align: center;
   }
 </style>
