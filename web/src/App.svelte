@@ -4,7 +4,6 @@
   import EmberRail from './components/EmberRail.svelte';
   import Inspector from './components/Inspector.svelte';
   import PulseStrip from './components/PulseStrip.svelte';
-  import Sidebar from './components/Sidebar.svelte';
   import EmptyState from './components/EmptyState.svelte';
   import Toaster from './components/Toaster.svelte';
   import Home from './routes/Home.svelte';
@@ -31,14 +30,12 @@
   import Services from './routes/Services.svelte';
   import ShortcutsDialog from './components/ShortcutsDialog.svelte';
   import { api, setSession } from './lib/api';
-  import { emberRequested } from './lib/ember';
   import { t } from './lib/i18n';
   import { href, pageOf, router, routes } from './lib/router.svelte';
   import { Sequence } from './lib/shortcuts';
   import { loadKey } from './lib/session';
   import { Live, type WsState } from './lib/ws';
 
-  const ember = emberRequested(location.search);
   let key = $state(loadKey({ location, history, storage: localStorage }));
   let status = $state<WsState>('connecting');
   let beat = $state(0);
@@ -102,14 +99,10 @@
   </main>
 {:else}
   <div class="shell">
-    {#if ember}
-      <EmberRail {status} {beat} onsearch={() => (palette = true)} />
-    {:else}
-      <Sidebar {status} onsearch={() => (palette = true)} />
-    {/if}
+    <EmberRail {status} {beat} onsearch={() => (palette = true)} />
     <main>
-      {#if ember && live}<PulseStrip {live} />{/if}
-      {#if ember && live}<Inspector {live} />{/if}
+      {#if live}<PulseStrip {live} />{/if}
+      {#if live}<Inspector {live} />{/if}
       {#if route?.id === 'home'}
         {#if live}<Home {live} />{/if}
       {:else if route?.id === 'apps'}

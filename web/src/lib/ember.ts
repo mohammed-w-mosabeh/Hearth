@@ -1,10 +1,7 @@
-// The Ember redesign's prototype switch and rail (ROADMAP 8.1, docs/design/
-// ember.md). `?ui=ember` turns it on for one page load; task 8.11 removes the
-// switch and the old shell.
+// The rail of the Ember design (ROADMAP 8.4, docs/design/ember.md): its
+// groups, the current item, and what the viewer folded.
 
 import type { MessageKey } from './i18n';
-
-export const emberRequested = (search: string): boolean => new URLSearchParams(search).get('ui') === 'ember';
 
 export interface RailItem {
   /** A route id of router.svelte.ts: every existing URL keeps working. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import css from '../styles/ember.css?raw';
+import css from '../styles/tokens.css?raw';
 
 // WCAG AA on the real token file: 4.5:1 for text, 3:1 for what is not text.
 
@@ -23,8 +23,8 @@ function ratio(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-const dark = tokens(":root[data-ui='ember']");
-const themes = { dark, light: { ...dark, ...tokens(":root[data-ui='ember'][data-theme='light']") } };
+const dark = tokens(':root');
+const themes = { dark, light: { ...dark, ...tokens(":root[data-theme='light']") } };
 const backgrounds = ['bg', 'surface', 'surface-2'];
 const text = ['text', 'text-muted', 'accent', 'ok', 'warn', 'crit', 'info'];
 const series = [1, 2, 3, 4, 5, 6, 7, 8].map((i) => `series-${i}`);

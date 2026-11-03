@@ -1,5 +1,5 @@
 // Dark, light or the system's choice: a choice of this browser, like density.
-// data-theme always holds the resolved theme, so ember.css writes each once.
+// data-theme always holds the resolved theme, so tokens.css writes each once.
 
 export type Theme = 'system' | 'dark' | 'light';
 export const THEME_EVENT = 'hearth-theme';

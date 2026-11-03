@@ -37,7 +37,7 @@ async function start(page: Page, theme: string, lang: string): Promise<void> {
   page.on('dialog', (d) => {
     throw new Error(`a dialog opened: ${d.message()}`);
   });
-  await page.goto(`${origin}/?ui=ember#/`);
+  await page.goto(`${origin}/#/`);
   await page.evaluate(
     ([k, th, l]) => {
       for (const name of Object.keys(localStorage)) localStorage.removeItem(name);
@@ -66,7 +66,7 @@ for (const theme of ['dark', 'light'])
       await start(page, theme, lang);
       const found: string[] = [];
       for (const r of routes) {
-        await page.goto(`${origin}/?ui=ember#/${r}`);
+        await page.goto(`${origin}/#/${r}`);
         await page.reload();
         await expect(page.locator('html')).toHaveAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr');
         await page.waitForTimeout(800);
@@ -119,7 +119,7 @@ test('the palette and the shortcuts list work from the keyboard', async ({ page 
 
 test('a confirmation is keyboard operable and Esc cancels it', async ({ page }) => {
   await start(page, 'dark', 'en');
-  await page.goto(`${origin}/?ui=ember#/scheduler`);
+  await page.goto(`${origin}/#/scheduler`);
   await page.reload();
   // The row's ⋯ menu, then Delete in it, all by keyboard.
   const more = page.getByRole('button', { name: 'Actions for a11y-probe', exact: true });

@@ -27,7 +27,6 @@
   } from '../lib/services';
   import { toast } from '../lib/toast.svelte';
   import { inspectHref, router } from '../lib/router.svelte';
-  import { emberRequested } from '../lib/ember';
   import type { Live } from '../lib/ws';
 
   // systemd units, system and user. Following the "services" topic is what
@@ -35,8 +34,6 @@
   // open.
   let { live }: { live: Live } = $props();
 
-  // On Ember a unit's name opens the inspector drawer (ROADMAP 8.7).
-  const ember = emberRequested(location.search);
 
   let units = $state.raw<Unit[] | null>(null);
   let errors = $state.raw<Partial<Record<string, string>>>({});
@@ -325,11 +322,7 @@
           <tr aria-label={u.name}>
             <td class="st"><StatusMark kind={unitStatus(u.active)} label={u.active} /></td>
             <td class="unit">
-              {#if ember}
-                <a class="name" data-primary title={u.name} href={inspectHref(`unit:${u.scope}/${u.name}`)}>{u.name}</a>
-              {:else}
-                <span class="name" title={u.name}>{u.name}</span>
-              {/if}
+              <a class="name" data-primary title={u.name} href={inspectHref(`unit:${u.scope}/${u.name}`)}>{u.name}</a>
               {#if u.scope === 'user'}<span class="tag">{t('svc.tag.user')}</span>{/if}
               {#if u.critical}<span class="tag crit" title={t('svc.criticalHint')}>{t('svc.tag.critical')}</span>{/if}
               {#if u.description && u.description !== u.name}<span class="desc" title={u.description}>{u.description}</span>{/if}
@@ -347,7 +340,6 @@
               <button
                 type="button"
                 class="more-btn"
-                data-primary={ember ? undefined : true}
                 aria-label={t('svc.actionsFor', { name: u.name })}
                 aria-busy={busy.has(key(u))}
                 onclick={(e) => openMenu(e, u)}>{busy.has(key(u)) ? '…' : '⋯'}</button

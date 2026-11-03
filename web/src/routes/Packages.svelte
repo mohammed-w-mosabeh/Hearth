@@ -26,7 +26,6 @@
     type Update,
   } from '../lib/packages';
   import { openInspect, router } from '../lib/router.svelte';
-  import { emberRequested } from '../lib/ember';
   import { toast } from '../lib/toast.svelte';
   import type { Live } from '../lib/ws';
 
@@ -35,12 +34,11 @@
   // managers and the updates when the page opens and after an action.
   let { live }: { live: Live } = $props();
 
-  // On Ember an apt package opens in the inspector drawer (ROADMAP 8.7);
-  // the other managers keep their dialog.
-  const ember = emberRequested(location.search);
+  // An apt package opens in the inspector drawer (ROADMAP 8.7); the other
+  // managers keep their dialog.
 
   function openDetail(r: Row): void {
-    if (ember && r.manager === 'apt') openInspect(`package:${r.key.slice('apt/'.length)}`);
+    if (r.manager === 'apt') openInspect(`package:${r.key.slice('apt/'.length)}`);
     else detailOf = r;
   }
 

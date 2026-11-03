@@ -2,7 +2,7 @@
 
 Visual and navigation redesign only: no new backend capability, privilege or network access. Tasks are in `docs/ROADMAP.md`, Phase 8; the source of truth is `docs/plan/phases-6-8.md` and, for the Phase 9 and 10 screens, `docs/plan/phases-9-10.md`.
 
-**Status: prototype (task 8.1).** Add `?ui=ember` to the address, before the `#`, to see it. Without it the current UI is unchanged. Task 8.11 removes the switch and the old shell.
+**Status: shipped (task 8.11).** Ember is Hearth's only UI. The `?ui=ember` switch, the old sidebar and the old tokens are gone; old links with `?ui=ember` still open, as the parameter is ignored.
 
 ## Principles
 - Calm first: a machine with nothing wrong should look quiet.
@@ -11,7 +11,7 @@ Visual and navigation redesign only: no new backend capability, privilege or net
 - Numbers line up: mono, tabular figures.
 - Every list keeps its place: details open beside it, not instead of it.
 
-## Tokens (`web/src/styles/ember.css`)
+## Tokens (`web/src/styles/tokens.css`)
 | Role | Dark (primary) | Light |
 |---|---|---|
 | Background | `#14120F` | `#F7F3EC` |
@@ -99,7 +99,7 @@ Services, Docker containers and Resources' processes (apps, services and contain
 - **Status column:** the first column holds the row's shape (see Status). Units: ● active, ◐ changing, ■ failed, □ inactive. Containers: ● running, ◐ paused or changing (▲ when unhealthy), ■ failed or exited with an error, □ stopped. Process groups: ● running, ◐ paused.
 - **CPU, 10 min:** a 64×16 SVG line per row, under a faint frame of the full 10 minutes, from 0 to the row's own peak. Plain SVG, not uPlot, so a list of 900 units stays cheap. It fills while the list follows its topic (`services`, `docker.stats`, `procs`) and lasts for the session; containers start with the 5 minutes hearthd already keeps. No other per-item history is stored. Gaps over a minute, when the list was not open, break the line. Time runs left to right in both directions.
 - **Sticky header:** the table scrolls in its own box (at most 72% of the window's height), and its header stays at the top.
-- **Keyboard:** one row is in the Tab order. ↑ ↓ Home End move between rows, Enter opens the row (the drawer on Ember; the action menu on Services and expanding on Processes in the old UI), and clicking or tabbing into a row makes it the tab stop.
+- **Keyboard:** one row is in the Tab order. ↑ ↓ Home End move between rows, Enter opens the row in the drawer, and clicking or tabbing into a row makes it the tab stop.
 
 ## Components
 - Buttons: one primary per view. Danger buttons are outlined, so they never look like the safe default. A disabled button is visibly dimmed.
@@ -132,5 +132,5 @@ Logical CSS only; the rail and drawer flip. Code, logs and charts stay left to r
 
 ## Screenshots
 `docs/design/screens/`, from `test/e2e/design/capture.mjs`, with invented data only.
-- `<page>.<theme>.<density>.<dir>.jpg`: the current UI and Ember side by side, for Home, Containers, Services, Network and Security.
+- `<page>.<theme>.<density>.<dir>.jpg`: the old UI (from 9c3b245, the last commit with it) and Ember side by side, for Home, Containers, Services, Network and Security. `capture.mjs` takes the old side from a second dev server (`BEFORE_URL`); without one it shoots Ember alone.
 - `fixture.<screen>.<theme>.<dir>.jpg`: the Phase 9 and 10 screens.

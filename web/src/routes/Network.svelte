@@ -3,7 +3,6 @@
   import { failure } from '../lib/errors';
   import Connectivity from '../components/Connectivity.svelte';
   import FirewallCard from '../components/FirewallCard.svelte';
-  import LineageDialog from '../components/LineageDialog.svelte';
   import { api } from '../lib/api';
   import { bytes, rate } from '../lib/format';
   import { t, type MessageKey } from '../lib/i18n';
@@ -20,12 +19,10 @@
     vpns,
     type Endpoint,
     type NetState,
-    type Row,
     type ScopeFilter,
     type Sockets,
   } from '../lib/network';
   import { openInspect, router } from '../lib/router.svelte';
-  import { emberRequested } from '../lib/ember';
 
   // Network & ports (SPEC 11): who listens where, current connections and
   // their throughput, addressing, Wi-Fi/VPN and the firewall. Sockets are
@@ -33,8 +30,6 @@
   const SOCKETS_MS = 5000;
   const STATE_MS = 15000;
 
-  // On Ember "What is this?" opens the inspector drawer (ROADMAP 8.7).
-  const ember = emberRequested(location.search);
 
   let sockets = $state.raw<Sockets | null>(null);
   let info = $state.raw<NetState | null>(null);
@@ -114,7 +109,6 @@
   const activeFw = $derived(info?.firewalls.filter((f) => f.active) ?? []);
   const installedFw = $derived(info?.firewalls.filter((f) => f.installed && !f.active) ?? []);
 
-  let lineageOf = $state<Row | null>(null);
 </script>
 
 <header>
@@ -263,7 +257,7 @@
               </td>
               <td>{r.user}</td>
               <td class="act">
-                <button type="button" class="what" onclick={() => (ember ? openInspect(`port:${r.proto}/${r.port}`) : (lineageOf = r))}>{t('net.whatIsThis')}</button>
+                <button type="button" class="what" onclick={() => openInspect(`port:${r.proto}/${r.port}`)}>{t('net.whatIsThis')}</button>
               </td>
             </tr>
           {/each}
@@ -311,7 +305,6 @@
   {#if sockets?.truncated}<p class="foot">{t('net.truncated')}</p>{/if}
 {/if}
 
-<LineageDialog row={lineageOf} onclose={() => (lineageOf = null)} onchanged={() => setTimeout(() => void loadSockets(), 1000)} />
 
 <style>
   header {

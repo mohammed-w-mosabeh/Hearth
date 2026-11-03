@@ -10,7 +10,6 @@
     import { bytes, pct, rate } from '../lib/format';
   import { toast } from '../lib/toast.svelte';
   import { menuLeft, type MessageKey, t } from '../lib/i18n';
-  import { emberRequested } from '../lib/ember';
   import { inspectHref } from '../lib/router.svelte';
   import { view, type KindFilter, type SortKey } from '../lib/procs';
   import type { GroupKind, ProcSnapshot } from '../lib/types';
@@ -21,8 +20,6 @@
   // table is on screen.
   let { live }: { live: Live } = $props();
 
-  // On Ember a group's name opens the inspector drawer (ROADMAP 8.7).
-  const ember = emberRequested(location.search);
 
   let snap = $state.raw<ProcSnapshot | null>(null);
   // Each group's CPU over the last 10 minutes, kept for the session.
@@ -233,16 +230,11 @@
               <button
                 type="button"
                 class="expand"
-                data-primary={ember ? undefined : true}
                 aria-expanded={open[g.id] === true}
                 aria-label={t(open[g.id] ? 'apps.collapse' : 'apps.expand', { name: g.name })}
                 onclick={() => (open[g.id] = !open[g.id])}>{open[g.id] ? '▾' : '▸'}</button
               >
-              {#if ember}
-                <a class="name" data-primary title={g.unit ?? g.name} href={inspectHref(`proc:${g.id}`)}>{g.name}</a>
-              {:else}
-                <span class="name" title={g.unit ?? g.name}>{g.name}</span>
-              {/if}
+              <a class="name" data-primary title={g.unit ?? g.name} href={inspectHref(`proc:${g.id}`)}>{g.name}</a>
               <span class="tag">{t(kindLabels[g.kind])}</span>
               <span class="user">{g.user}</span>
             </td>

@@ -251,7 +251,6 @@
 
   let density = $state<Density>(loadDensity());
   let theme = $state<Theme>(loadTheme());
-  const ember = document.documentElement.dataset['ui'] === 'ember';
 
   function setLang(l: Lang): void {
     if (l === lang()) return;
@@ -285,15 +284,13 @@
   <!-- Appearance -->
   <section aria-labelledby="s-look">
     <h2 id="s-look">{t('set.look.title')}</h2>
-    {#if ember}
-      <div class="segmented" role="radiogroup" aria-label={t('set.look.theme')}>
-        {#each ['dark', 'light', 'system'] as const as v (v)}
-          <button type="button" role="radio" aria-checked={theme === v} class:on={theme === v} onclick={() => setTheme(v)}>
-            {t(`set.look.theme.${v}`)}
-          </button>
-        {/each}
-      </div>
-    {/if}
+    <div class="segmented" role="radiogroup" aria-label={t('set.look.theme')}>
+      {#each ['dark', 'light', 'system'] as const as v (v)}
+        <button type="button" role="radio" aria-checked={theme === v} class:on={theme === v} onclick={() => setTheme(v)}>
+          {t(`set.look.theme.${v}`)}
+        </button>
+      {/each}
+    </div>
     <div class="segmented" role="radiogroup" aria-label={t('set.look.density')}>
       {#each ['comfortable', 'compact'] as const as d (d)}
         <button type="button" role="radio" aria-checked={density === d} class:on={density === d} onclick={() => setDensity(d)}>

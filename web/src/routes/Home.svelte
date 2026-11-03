@@ -2,7 +2,6 @@
   import { failure } from '../lib/errors';
   import HomeHealth from '../components/HomeHealth.svelte';
   import HomeTiles from '../components/HomeTiles.svelte';
-  import RestartBanner from '../components/RestartBanner.svelte';
   import CpuCard from '../components/cards/CpuCard.svelte';
   import DockerCard from '../components/cards/DockerCard.svelte';
   import DiskCard from '../components/cards/DiskCard.svelte';
@@ -13,7 +12,6 @@
   import TempsCard from '../components/cards/TempsCard.svelte';
   import { api } from '../lib/api';
   import type { UsageMsg } from '../lib/docker';
-  import { emberRequested } from '../lib/ember';
   import { t } from '../lib/i18n';
   import { arrange, moveTo, sanitize, setHidden, step, type Layout } from '../lib/layout';
   import { LiveMetrics } from '../lib/metrics.svelte';
@@ -21,9 +19,6 @@
   import type { Live } from '../lib/ws';
 
   let { live }: { live: Live } = $props();
-
-  // The health ring and Needs attention come with the Ember redesign.
-  const ember = emberRequested(location.search);
 
   type Card =
     | { id: string; kind: 'cpu' | 'mem' | 'temps' | 'net' | 'power' | 'docker'; title: string }
@@ -127,11 +122,7 @@
   {/if}
 </header>
 
-{#if ember}
-  <HomeHealth {live} />
-{:else}
-  <RestartBanner />
-{/if}
+<HomeHealth {live} />
 
 <HomeTiles {live} />
 
@@ -142,7 +133,7 @@
 {#if !metrics || !sample || !loaded}
   <p class="waiting">{t('home.waiting')}</p>
 {:else}
-  {#if ember}<h2 class="section">{t('home.quickViews')}</h2>{/if}
+  <h2 class="section">{t('home.quickViews')}</h2>
   <ul class="grid" class:editing aria-label={t('home.cards')}>
     {#each arranged.visible as id, i (id)}
       {@const card = byId.get(id)}

@@ -129,6 +129,11 @@ export const api = {
   '/metrics/live': { t: [], series: {} },
   '/metrics/history': { t: [], series: {} },
   '/restart': { reboot: false, services: [] },
+  // Home's health ring and Needs attention (ROADMAP 8.6).
+  '/services': services,
+  '/alerts/events': { events: [] },
+  '/disks/health': { status: 'ok', disks: [] },
+  '/settings/home.snoozed': { value: null },
   '/settings/home.layout': { value: null },
   '/net/sockets': {
     listeners: [

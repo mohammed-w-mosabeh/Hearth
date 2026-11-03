@@ -1,14 +1,19 @@
-// Screenshots for docs/design/screens (ROADMAP 8.1), from the Vite dev server
-// on fixtures only: a request with no fixture stops the run. Not part of
-// `make itest`.
+// Screenshots for docs/design/screens (ROADMAP 8.1, 8.11), from the Vite dev
+// server on fixtures only: a request with no fixture stops the run. Not part
+// of `make itest`. The old UI is gone since 8.11, so a before-and-after pair
+// takes its start side from a second dev server on a worktree of 9c3b245, the
+// last commit with it (BEFORE_URL); without one, each page is Ember alone.
 //   cd web && npx vite --port 5199
-//   cd test/e2e && BROWSER=/usr/bin/brave-browser node design/capture.mjs <outdir>
+//   git worktree add /tmp/before 9c3b245 && ln -s "$PWD/web/node_modules" /tmp/before/web/
+//   cd /tmp/before/web && npx vite --port 5198
+//   cd test/e2e && BEFORE_URL=http://127.0.0.1:5198 BROWSER=/usr/bin/brave-browser node design/capture.mjs <outdir>
 import { chromium } from 'playwright-core';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { api, sample, services, snapshot } from './fixtures.mjs';
 
 const base = process.env.DESIGN_URL ?? 'http://127.0.0.1:5199';
+const before = process.env.BEFORE_URL ?? '';
 const out = process.argv[2];
 if (!out) throw new Error('usage: capture.mjs <outdir>');
 mkdirSync(out, { recursive: true });
@@ -56,16 +61,16 @@ const pages = [
 
 async function pair(name, hash, scheme, density, lang) {
   const shots = [];
-  for (const q of ['', '?ui=ember']) {
+  for (const url of before ? [before, base] : [base]) {
     const { ctx, page } = await open(scheme, density, lang);
-    await page.goto(`${base}/${q}#/${hash}`);
+    await page.goto(`${url}/#/${hash}`);
     await page.waitForTimeout(900);
     shots.push((await page.screenshot({ type: 'jpeg', quality: 80 })).toString('base64'));
     await ctx.close();
   }
-  // Current on the start side, Ember beside it, on one image.
+  // The old UI on the start side, Ember beside it, on one image.
   const { ctx, page } = await open('dark', 'comfortable', 'en');
-  await page.setViewportSize({ width: size.width * 2 + 8, height: size.height });
+  await page.setViewportSize({ width: (size.width + 8) * shots.length - 8, height: size.height });
   await page.setContent(
     `<body style="margin:0;background:#888;display:flex;gap:8px">${shots.map((s) => `<img style="display:block" src="data:image/jpeg;base64,${s}">`).join('')}</body>`,
   );

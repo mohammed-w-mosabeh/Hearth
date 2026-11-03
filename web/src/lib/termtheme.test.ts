@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import css from '../styles/ember.css?raw';
+import css from '../styles/tokens.css?raw';
 import { lightAnsi } from './termtheme';
 
 function luminance(hex: string): number {
@@ -16,7 +16,7 @@ const ratio = (a: string, b: string): number => {
 };
 
 describe('terminal colours on the light theme', () => {
-  const block = css.slice(css.indexOf(":root[data-ui='ember'][data-theme='light'] {"));
+  const block = css.slice(css.indexOf(":root[data-theme='light'] {"));
   const bg = /--bg:\s*(#[0-9a-f]{6});/.exec(block)?.[1] ?? '';
 
   it('reads the background', () => {

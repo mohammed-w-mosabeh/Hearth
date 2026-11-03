@@ -97,8 +97,8 @@ async function check(label, url, act) {
     }
 }
 
-for (const r of routes) await check(`#/${r}`, `${base}/?ui=ember#/${r}`);
-if (all || args.includes('states')) for (const [label, hash, act] of states) await check(label, `${base}/?ui=ember${hash}`, act);
+for (const r of routes) await check(`#/${r}`, `${base}/#/${r}`);
+if (all || args.includes('states')) for (const [label, hash, act] of states) await check(label, `${base}/${hash}`, act);
 if (all) for (const s of screens) await check(`fixture ${s}`, `${base}/design.html?screen=${s}`);
 
 await browser.close();

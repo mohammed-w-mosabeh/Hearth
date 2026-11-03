@@ -1,19 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { emberRequested, loadClosedGroups, loadRailCollapsed, railCurrent, railGroups, saveClosedGroups, saveRailCollapsed } from './ember';
+import { loadClosedGroups, loadRailCollapsed, railCurrent, railGroups, saveClosedGroups, saveRailCollapsed } from './ember';
 
 // router.svelte.ts reads the page's location when it loads.
 vi.stubGlobal('location', { hash: '' });
 vi.stubGlobal('window', { addEventListener: () => {} });
 const { pageOf, routes } = await import('./router.svelte');
 
-describe('ember prototype', () => {
-  it('turns on only for ?ui=ember', () => {
-    expect(emberRequested('?ui=ember')).toBe(true);
-    expect(emberRequested('?x=1&ui=ember')).toBe(true);
-    expect(emberRequested('')).toBe(false);
-    expect(emberRequested('?ui=old')).toBe(false);
-  });
-
+describe('ember rail', () => {
   it('keeps every page in the rail, once', () => {
     const ids = railGroups.flatMap((g) => g.items.map((i) => i.id));
     expect(new Set(ids).size).toBe(ids.length);

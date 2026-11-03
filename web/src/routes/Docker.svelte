@@ -37,7 +37,6 @@
   import { bytes, pct } from '../lib/format';
   import { menuLeft, type MessageKey, t } from '../lib/i18n';
   import { openInspect, router } from '../lib/router.svelte';
-  import { emberRequested } from '../lib/ember';
   import { toast } from '../lib/toast.svelte';
   import type { Live } from '../lib/ws';
 
@@ -259,13 +258,16 @@
     }
   }
 
-  // On Ember details open in the inspector drawer (ROADMAP 8.7).
-  const ember = emberRequested(location.search);
-
+  // A name opens the inspector drawer (ROADMAP 8.7); Details in the row's
+  // menu opens everything else: logs, environment, labels, risks, inspect.
   function openDetail(c: Container): void {
     menu.hidePopover();
-    if (ember) openInspect(`container:${c.id}`);
-    else detailId = c.id;
+    openInspect(`container:${c.id}`);
+  }
+
+  function showDetail(c: Container): void {
+    menu.hidePopover();
+    detailId = c.id;
   }
 
   function showProblems(): void {
@@ -416,7 +418,7 @@
 <div bind:this={menu} popover="auto" class="menu" role="group" aria-label={subject ? t('docker.actionsFor', { name: subject.name }) : undefined}>
   {#if subject}
     {@const c = subject}
-    <button type="button" onclick={() => openDetail(c)}>{t('docker.op.details')}</button>
+    <button type="button" onclick={() => showDetail(c)}>{t('docker.op.details')}</button>
     {#if available(c).length > 0}<hr />{/if}
     {#each available(c) as op (op)}
       <button type="button" class:danger={op === 'remove'} onclick={() => act(op, c)}>{t(opLabels[op])}</button>

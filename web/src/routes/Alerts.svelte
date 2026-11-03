@@ -6,7 +6,6 @@
   import { applyEvent, blankRule, conditionText, draftOf, lasted, metricLabel, valueText, type AlertEvent, type Metric, type Rule, type RuleDraft } from '../lib/alerts';
   import { api } from '../lib/api';
   import { locale, type MessageKey, t } from '../lib/i18n';
-  import { emberRequested } from '../lib/ember';
   import { inspectHref } from '../lib/router.svelte';
   import { toast } from '../lib/toast.svelte';
   import type { Live } from '../lib/ws';
@@ -15,8 +14,6 @@
   // hearthd whether or not this page is open; it only shows them.
   let { live }: { live: Live } = $props();
 
-  // On Ember an event opens in the inspector drawer (ROADMAP 8.7).
-  const ember = emberRequested(location.search);
 
   const PAGE = 100;
 
@@ -172,7 +169,7 @@
       {#each active as e (e.id)}
         <li class={e.severity}>
           <span class="sev">{t(sevKey[e.severity] ?? 'alerts.sev.warning')}</span>
-          <strong>{#if ember}<a href={inspectHref(`alert:${e.id}`)}>{e.rule_name}</a>{:else}{e.rule_name}{/if}</strong>
+          <strong><a href={inspectHref(`alert:${e.id}`)}>{e.rule_name}</a></strong>
           <span>{eventText(e)}</span>
           <span class="muted">{t('alerts.since', { when: when(e.started_at), d: lasted(e) })}</span>
         </li>
@@ -232,7 +229,7 @@
               <td class="when">{when(e.started_at)}</td>
               <td><span class="badge {e.severity}">{t(sevKey[e.severity] ?? 'alerts.sev.warning')}</span></td>
               <td>
-                <div class="name">{#if ember}<a href={inspectHref(`alert:${e.id}`)}>{e.rule_name}</a>{:else}{e.rule_name}{/if}</div>
+                <div class="name"><a href={inspectHref(`alert:${e.id}`)}>{e.rule_name}</a></div>
                 <div class="muted">{eventText(e)}</div>
               </td>
               <td class="muted">
