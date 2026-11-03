@@ -97,6 +97,14 @@ const checks = [
 /** Answers by API path. A path missing here fails the capture. */
 export const api = {
   '/session': { ok: true },
+  '/apps': {
+    apps: [
+      { id: 'org.example.Notes', name: 'Notes', generic_name: 'Text editor', comment: 'Write plain notes', categories: ['Utility'], source: 'system', path: '/usr/share/applications/org.example.Notes.desktop', has_icon: false },
+      { id: 'org.example.Photos', name: 'Photos', generic_name: 'Image viewer', categories: ['Graphics'], source: 'flatpak', path: '/var/lib/flatpak/exports/share/applications/org.example.Photos.desktop', has_icon: false },
+    ],
+  },
+  '/apps/running': { running: ['org.example.Notes'] },
+  '/settings/apps.favorites': { value: { ids: ['org.example.Photos'] } },
   '/docker/usage': {
     available: true,
     running: [

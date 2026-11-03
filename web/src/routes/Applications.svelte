@@ -178,7 +178,6 @@
       type="button"
       class="open"
       title={a.comment ?? a.name}
-      aria-label={t('apps2.open', { name: a.name })}
       aria-busy={opening.has(a.id)}
       onclick={() => launch(a)}
     >

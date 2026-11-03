@@ -182,7 +182,7 @@
   <p class="foot">{t('jobs.footnote')}</p>
 {/if}
 
-<div bind:this={menu} popover="auto" class="menu" aria-label={subject ? t('jobs.actionsFor', { name: subject.name }) : undefined}>
+<div bind:this={menu} popover="auto" class="menu" role="group" aria-label={subject ? t('jobs.actionsFor', { name: subject.name }) : undefined}>
   {#if subject}
     {@const j = subject}
     <button type="button" onclick={() => act('run', j)} disabled={j.running}>{t('jobs.op.run')}</button>
@@ -237,7 +237,8 @@
               <span class="muted">{when(r.start)}{#if r.end} · {duration(Math.max(0, (r.end - r.start) / 1000)) || '0 s'}{/if}</span>
             </div>
             {#if r.output.length}
-              <pre>{r.output.join('\n')}{r.more ? '\n…' : ''}</pre>
+              <!-- svelte-ignore a11y_no_noninteractive_tabindex (it scrolls, so the keyboard must reach it) -->
+              <pre tabindex="0">{r.output.join('\n')}{r.more ? '\n…' : ''}</pre>
             {/if}
           </li>
         {/each}

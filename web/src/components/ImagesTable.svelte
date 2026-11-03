@@ -209,7 +209,7 @@
   <p class="foot">{t('image.footnote')}</p>
 {/if}
 
-<div bind:this={menu} popover="auto" class="menu" aria-label={subject ? t('docker.actionsFor', { name: imageTitle(subject) }) : undefined}>
+<div bind:this={menu} popover="auto" class="menu" role="group" aria-label={subject ? t('docker.actionsFor', { name: imageTitle(subject) }) : undefined}>
   {#if subject}
     {@const im = subject}
     <button type="button" onclick={() => show(im)}>{t('docker.op.details')}</button>

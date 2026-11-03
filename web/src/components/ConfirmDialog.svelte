@@ -178,7 +178,7 @@
   button.danger {
     background: var(--crit);
     border-color: var(--crit);
-    color: #fff;
+    color: var(--crit-contrast);
   }
   button:disabled {
     opacity: 0.5;

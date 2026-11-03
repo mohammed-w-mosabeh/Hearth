@@ -31,10 +31,8 @@ let jobUnit = '';
 
 test.beforeAll(async ({ browser }) => {
   const page = await browser.newPage();
-  await page.goto(base);
-  // /auth redirects to /#k=<key>; the UI stores the key and strips the hash.
-  await page.waitForFunction(() => localStorage.getItem('hearth.session') !== null);
-  key = await page.evaluate(() => localStorage.getItem('hearth.session') ?? '');
+  // Exchanged once by global-setup.ts: the launch link works only once.
+  key = process.env.HEARTH_KEY ?? '';
   expect(key).not.toBe('');
   const post = (path: string, body: unknown) =>
     page.request.post(`${origin}/api/v1/${path}`, {

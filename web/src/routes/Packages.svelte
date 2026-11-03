@@ -370,7 +370,7 @@
 {/if}
 
 <!-- Not a role="menu": a group of buttons in a popover (no arrow-key contract). -->
-<div bind:this={menu} popover="auto" class="menu" aria-label={subject ? t('pkg.actionsFor', { name: subject.name }) : undefined}>
+<div bind:this={menu} popover="auto" class="menu" role="group" aria-label={subject ? t('pkg.actionsFor', { name: subject.name }) : undefined}>
   {#if subject}
     {@const r = subject}
     <button type="button" onclick={() => details(r)}>{t('pkg.op.details')}</button>

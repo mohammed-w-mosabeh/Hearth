@@ -61,7 +61,7 @@
   }
   .toast.error {
     background: var(--crit);
-    color: #fff;
+    color: var(--crit-contrast);
   }
   button {
     font: inherit;

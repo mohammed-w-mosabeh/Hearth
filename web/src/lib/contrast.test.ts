@@ -49,6 +49,9 @@ describe('Ember contrast', () => {
       pair('text', 'accent-soft', 4.5);
       pair('accent', 'accent-soft', 4.5);
     });
+    it(`${name}: text on a critical fill (error toasts)`, () => {
+      pair('crit-contrast', 'crit', 4.5);
+    });
     it(`${name}: focus ring and chart lines`, () => {
       for (const bg of backgrounds) pair('focus', bg, 3);
       for (const s of series) pair(s, 'surface', 3);

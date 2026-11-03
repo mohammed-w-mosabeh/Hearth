@@ -116,6 +116,14 @@ Transitions of at most 150 ms, all through `--motion`. The live dot at the foot 
 - Empty: `EmptyState`. A whole page uses it centred. A list with nothing in it yet uses it inline, with an icon, a dashed edge, why it is empty and how to fill it, plus an action where one exists (New job).
 - Error: what failed, then what to do next. `failure()` in `src/lib/errors.ts` takes the server's message and adds a next step by HTTP status: 400, 413 and 422 check the input; 403 group membership; 404 reload; 409 wait and reload; 429 wait; 502 to 504 the service Hearth relies on; anything else hearthd's log. When no answer came at all, it says to check that Hearth is running. `src/lib/errors.test.ts` refuses a bare server message or a load error rendered without its next step.
 
+## Accessibility
+- axe-core, with no serious or critical violation, on every page, dark and light, left to right and right to left. `test/e2e/tests/a11y.spec.ts` runs it in `make itest` on the real hearthd, with the hostile strings seeded. `test/e2e/design/a11y.mjs` runs it on fixtures, with the drawer, the palette, the shortcuts list and a row menu open, and on every Phase 9 and 10 screen. axe is injected through the DevTools protocol, so the CSP stays as it is.
+- Focus: a 2 px ring in `--focus` on `:focus-visible`, held to 3:1 on every background in both themes. The palette's search field shows it as an underline. Nothing removes a ring without a replacement.
+- Dialogs are native modal `<dialog>`s, so focus stays inside and Esc closes. Focus goes back where it was, and from a row menu that is the row's ⋯ button, because a closing popover hands focus back. The drawer's keys are tested in `xss.spec.ts`.
+- Terminal tabs follow the WAI-ARIA tabs pattern. Only the current tab is in the Tab order, the arrow keys move (flipped right to left), and Home, End and Delete work. The × beside a tab is for the mouse and sits outside the tab list's tree.
+- The keyboard reaches every region that scrolls: a `<pre>` takes focus itself, and a table box is reached through its rows.
+- Fills that carry text use a matching `-contrast` token: `--accent-contrast` on the accent, `--crit-contrast` on critical (error toasts, the confirm button of a destructive action).
+
 ## Right to left
 Logical CSS only; the rail and drawer flip. Code, logs and charts stay left to right. A value inside an Arabic sentence is isolated so it keeps its own order.
 

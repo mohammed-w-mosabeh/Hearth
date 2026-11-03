@@ -362,7 +362,7 @@
 {/if}
 
 <!-- Not a role="menu": a group of buttons in a popover (no arrow-key contract). -->
-<div bind:this={menu} popover="auto" class="menu" aria-label={subject ? t('svc.actionsFor', { name: subject.name }) : undefined}>
+<div bind:this={menu} popover="auto" class="menu" role="group" aria-label={subject ? t('svc.actionsFor', { name: subject.name }) : undefined}>
   {#if subject}
     {@const u = subject}
     {#each available(u) as op (op)}

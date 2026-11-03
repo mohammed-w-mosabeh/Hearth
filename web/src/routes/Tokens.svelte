@@ -109,7 +109,8 @@
   <section class="card" aria-labelledby="tokens-cli">
     <h2 id="tokens-cli">{t('tokens.cli')}</h2>
     <p class="muted">{t(hasCli ? 'tokens.cliReady' : 'tokens.cliNeeds')}</p>
-    <pre dir="ltr">hearth status
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex (it scrolls, so the keyboard must reach it) -->
+    <pre tabindex="0" dir="ltr">hearth status
 hearth ports
 hearth alerts
 hearth units
@@ -125,7 +126,8 @@ hearth containers --json</pre>
     </label>
     {#if view.metrics}
       <p class="muted">{t('tokens.metricsHow')}</p>
-      <pre dir="ltr">{scrapeConfig(view.port, view.tokens[0]?.file ?? '/path/to/name.token')}</pre>
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex (it scrolls, so the keyboard must reach it) -->
+      <pre tabindex="0" dir="ltr">{scrapeConfig(view.port, view.tokens[0]?.file ?? '/path/to/name.token')}</pre>
     {/if}
   </section>
 {/if}

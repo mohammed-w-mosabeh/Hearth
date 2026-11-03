@@ -202,7 +202,7 @@
   }
   button.primary {
     background: var(--accent);
-    color: var(--on-accent, #fff);
+    color: var(--accent-contrast);
     border-color: var(--accent);
   }
 </style>

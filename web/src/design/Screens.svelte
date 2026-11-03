@@ -48,7 +48,8 @@
   <div class="d-danger">▲ {tr('Reachable from the network: 0.0.0.0:8102', 'يمكن الوصول إليه من الشبكة: 0.0.0.0:8102')}</div>
   <section>
     <h2>{tr('Logs', 'السجلات')}</h2>
-    <pre class="d-pre">worker  job 41 finished in 1.2 s
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex (it scrolls, so the keyboard must reach it) -->
+    <pre tabindex="0" class="d-pre">worker  job 41 finished in 1.2 s
 worker  job 42 failed: database is busy, retrying</pre>
   </section>
   <section>
@@ -121,7 +122,8 @@ worker  job 42 failed: database is busy, retrying</pre>
             <p class="d-sub">{tr('Project name kept. Containers are recreated once, after you confirm.', 'يبقى اسم المشروع، وتُعاد الحاويات مرة واحدة بعد تأكيدك.')}</p>
           </section>
           <section class="d-card"><h2>{tr('Converted spec', 'المواصفة المحوّلة')}</h2>
-            <pre class="d-pre">{`{ "name": "photos",
+            <!-- svelte-ignore a11y_no_noninteractive_tabindex (it scrolls, so the keyboard must reach it) -->
+            <pre tabindex="0" class="d-pre">{`{ "name": "photos",
   "services": { "web": {
     "image": "example/photos:2.4",
     "ports": ["127.0.0.1:8102:8080"],

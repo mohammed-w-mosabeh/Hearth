@@ -59,7 +59,8 @@
     {:else if !text}
       <Skeleton label={t('tools.man.loading')} rows={2} />
     {:else}
-      <pre>{shown}</pre>
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex (it scrolls, so the keyboard must reach it) -->
+      <pre tabindex="0">{shown}</pre>
     {/if}
   {/if}
 </dialog>

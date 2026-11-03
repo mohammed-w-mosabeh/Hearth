@@ -107,7 +107,8 @@
               {:else if diff.note}
                 <p class="muted">{t(`integrity.note.${diff.note}`)}</p>
               {:else}
-                <pre class="diff" dir="ltr">{#each diff.lines as l, i (i)}{#if l.gap}<span class="gap">…
+                <!-- svelte-ignore a11y_no_noninteractive_tabindex (it scrolls, so the keyboard must reach it) -->
+                <pre tabindex="0" class="diff" dir="ltr">{#each diff.lines as l, i (i)}{#if l.gap}<span class="gap">…
 </span>{:else}<span class={l.op === '+' ? 'add' : l.op === '-' ? 'del' : ''}>{l.op} {l.text}
 </span>{/if}{/each}</pre>
                 {#if diff.truncated}<p class="muted">{t('integrity.diffCut')}</p>{/if}

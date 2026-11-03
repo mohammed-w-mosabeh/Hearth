@@ -166,6 +166,11 @@
     padding: var(--space-3) var(--space-4);
     outline: none;
   }
+  /* Its ring is a 2 px underline in the focus colour, inside the dialog's edge. */
+  input:focus-visible {
+    border-bottom-color: var(--focus);
+    box-shadow: inset 0 -1px 0 var(--focus);
+  }
   ul {
     list-style: none;
     margin: 0;

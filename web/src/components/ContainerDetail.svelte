@@ -351,7 +351,8 @@
           <Skeleton label={t('detail.loading')} />
         {:else}
           <div class="bar"><button type="button" class="plain" onclick={copy}>{t('detail.inspect.copy')}</button></div>
-          <pre>{JSON.stringify(ins, null, 2)}</pre>
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex (it scrolls, so the keyboard must reach it) -->
+          <pre tabindex="0">{JSON.stringify(ins, null, 2)}</pre>
         {/if}
       {/if}
     </div>
