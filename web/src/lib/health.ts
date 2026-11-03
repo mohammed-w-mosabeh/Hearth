@@ -3,31 +3,21 @@
 // points per item, each source capped, with nothing else weighed in. The
 // table is documented in docs/design/ember.md.
 
-import type { AlertEvent } from "./alerts";
-import type { Forecasts } from "./disks";
-import type { LynisView } from "./lynis";
-import type { Report } from "./security";
-import type { Unit } from "./services";
-import type { Health } from "./smart";
+import type { AlertEvent } from './alerts';
+import type { Forecasts } from './disks';
+import type { LynisView } from './lynis';
+import type { Report } from './security';
+import type { Unit } from './services';
+import type { Health } from './smart';
 
-export type Source =
-  | "unit"
-  | "alert.critical"
-  | "alert.warning"
-  | "alert.info"
-  | "updates"
-  | "listener"
-  | "forecast"
-  | "restart"
-  | "smart"
-  | "lynis";
+export type Source = 'unit' | 'alert.critical' | 'alert.warning' | 'alert.info' | 'updates' | 'listener' | 'forecast' | 'restart' | 'smart' | 'lynis';
 
 /** Points per item and the most one source can take. */
 export const RULES: Record<Source, { each: number; cap: number }> = {
   unit: { each: 10, cap: 30 },
-  "alert.critical": { each: 15, cap: 30 },
-  "alert.warning": { each: 5, cap: 15 },
-  "alert.info": { each: 0, cap: 0 },
+  'alert.critical': { each: 15, cap: 30 },
+  'alert.warning': { each: 5, cap: 15 },
+  'alert.info': { each: 0, cap: 0 },
   updates: { each: 15, cap: 15 },
   listener: { each: 5, cap: 15 },
   forecast: { each: 15, cap: 30 },
@@ -37,23 +27,21 @@ export const RULES: Record<Source, { each: number; cap: number }> = {
 };
 
 /** Sources of Phases 9 and 10: listed, inactive, deducting nothing. */
-export const RESERVED = ["apps", "backups", "stacks", "approvals"] as const;
+export const RESERVED = ['apps', 'backups', 'stacks', 'approvals'] as const;
 
 /** Which endpoint feeds which sources: one that failed is "not checked". */
-export type Feed =
-  "units" | "alerts" | "security" | "forecasts" | "smart" | "lynis";
+export type Feed = 'units' | 'alerts' | 'security' | 'forecasts' | 'smart' | 'lynis';
 
 export const FEED_SOURCES: Record<Feed, Source[]> = {
-  units: ["unit"],
-  alerts: ["alert.critical", "alert.warning", "alert.info"],
-  security: ["updates", "listener", "restart"],
-  forecasts: ["forecast"],
-  smart: ["smart"],
-  lynis: ["lynis"],
+  units: ['unit'],
+  alerts: ['alert.critical', 'alert.warning', 'alert.info'],
+  security: ['updates', 'listener', 'restart'],
+  forecasts: ['forecast'],
+  smart: ['smart'],
+  lynis: ['lynis'],
 };
 
-export type Action =
-  { kind: "unit"; unit: Unit } | { kind: "open"; route: string; q?: string };
+export type Action = { kind: 'unit'; unit: Unit } | { kind: 'open'; route: string; q?: string };
 
 export interface Item {
   /** Stable across reads, so a snooze keeps applying. */
@@ -82,12 +70,12 @@ export const FORECAST_DAYS = 7;
 export function collect(inp: Inputs): Item[] {
   const out: Item[] = [];
   for (const u of inp.units ?? []) {
-    if (u.active === "failed")
+    if (u.active === 'failed')
       out.push({
         id: `unit:${u.scope}/${u.name}`,
-        source: "unit",
+        source: 'unit',
         subject: u.name,
-        action: { kind: "unit", unit: u },
+        action: { kind: 'unit', unit: u },
       });
   }
   for (const e of inp.alerts ?? []) {
@@ -97,75 +85,68 @@ export function collect(inp: Inputs): Item[] {
       id: `alert:${e.id}`,
       source: `alert.${e.severity}`,
       subject,
-      action: { kind: "open", route: "alerts" },
+      action: { kind: 'open', route: 'alerts' },
     });
   }
   const checks = inp.security?.checks ?? [];
   for (const c of checks) {
     for (const f of c.findings) {
-      if (f.code === "updates.security") {
+      if (f.code === 'updates.security') {
         out.push({
-          id: "updates.security",
-          source: "updates",
-          subject: f.subject ?? "",
-          action: { kind: "open", route: "packages" },
+          id: 'updates.security',
+          source: 'updates',
+          subject: f.subject ?? '',
+          action: { kind: 'open', route: 'packages' },
         });
-      } else if (f.code === "listener.exposed" && f.severity !== "info") {
+      } else if (f.code === 'listener.exposed' && f.severity !== 'info') {
         // Behind an active firewall the Security page calls it info, and
         // so does this: only the firewall's rules let anyone reach it.
-        const s = f.subject ?? "";
+        const s = f.subject ?? '';
         out.push({
           id: `listener:${s}`,
-          source: "listener",
+          source: 'listener',
           subject: s,
-          action: { kind: "open", route: "security" },
+          action: { kind: 'open', route: 'security' },
         });
       }
     }
   }
-  const restart = checks.find((c) => c.id === "restart");
+  const restart = checks.find((c) => c.id === 'restart');
   const codes = new Set(restart?.findings.map((f) => f.code));
-  if (
-    codes.has("restart.reboot") ||
-    codes.has("restart.kernel") ||
-    codes.has("restart.services")
-  ) {
-    const subject =
-      codes.has("restart.reboot") || codes.has("restart.kernel")
-        ? "reboot"
-        : "services";
+  if (codes.has('restart.reboot') || codes.has('restart.kernel') || codes.has('restart.services')) {
+    const subject = codes.has('restart.reboot') || codes.has('restart.kernel') ? 'reboot' : 'services';
     out.push({
-      id: "restart",
-      source: "restart",
+      id: 'restart',
+      source: 'restart',
       subject,
-      action: { kind: "open", route: "security" },
+      action: { kind: 'open', route: 'security' },
     });
   }
   for (const d of inp.forecasts?.disks ?? []) {
     if (d.days < FORECAST_DAYS)
       out.push({
         id: `forecast:${d.mount}`,
-        source: "forecast",
+        source: 'forecast',
         subject: d.mount,
-        action: { kind: "open", route: "space" },
+        action: { kind: 'open', route: 'space' },
       });
   }
   for (const d of inp.smart?.disks ?? []) {
     if (d.failing)
       out.push({
         id: `smart:${d.device}`,
-        source: "smart",
+        source: 'smart',
         subject: d.model ? `${d.device} (${d.model})` : d.device,
-        action: { kind: "open", route: "disks" },
+        action: { kind: 'open', route: 'disks' },
       });
   }
   const [now, before] = inp.lynis?.history ?? [];
   if (now && before && now.index < before.index) {
     out.push({
       id: `lynis:${now.time}`,
-      source: "lynis",
+      source: 'lynis',
       subject: `${before.index} → ${now.index}`,
-      action: { kind: "open", route: "security" },
+      action: { kind: 'open', route: 'security' },
     });
   }
   return out;
@@ -183,8 +164,7 @@ export function score(items: Item[]): {
   deductions: Deduction[];
 } {
   const counts = new Map<Source, number>();
-  for (const it of items)
-    counts.set(it.source, (counts.get(it.source) ?? 0) + 1);
+  for (const it of items) counts.set(it.source, (counts.get(it.source) ?? 0) + 1);
   const deductions: Deduction[] = [];
   for (const source of Object.keys(RULES) as Source[]) {
     const count = counts.get(source) ?? 0;
@@ -202,17 +182,10 @@ export function unchecked(inp: Inputs): Feed[] {
 }
 
 /** critical first, then warning, then the rest; stable otherwise. */
-export function severity(s: Source): "failed" | "warning" | "degraded" {
-  if (
-    s === "unit" ||
-    s === "alert.critical" ||
-    s === "smart" ||
-    s === "updates" ||
-    s === "forecast"
-  )
-    return "failed";
-  if (s === "alert.info" || s === "restart") return "degraded";
-  return "warning";
+export function severity(s: Source): 'failed' | 'warning' | 'degraded' {
+  if (s === 'unit' || s === 'alert.critical' || s === 'smart' || s === 'updates' || s === 'forecast') return 'failed';
+  if (s === 'alert.info' || s === 'restart') return 'degraded';
+  return 'warning';
 }
 
 const rank = { failed: 0, warning: 1, degraded: 2 };
@@ -229,16 +202,9 @@ export type Snoozed = Record<string, number>;
 export function readSnoozed(v: unknown, now: number): Snoozed {
   const until = (v as { until?: unknown } | null)?.until;
   const out: Snoozed = {};
-  if (!until || typeof until !== "object" || Array.isArray(until)) return out;
+  if (!until || typeof until !== 'object' || Array.isArray(until)) return out;
   for (const [id, t] of Object.entries(until as Record<string, unknown>)) {
-    if (
-      typeof t === "number" &&
-      Number.isInteger(t) &&
-      t > now &&
-      id.length > 0 &&
-      id.length <= 300
-    )
-      out[id] = t;
+    if (typeof t === 'number' && Number.isInteger(t) && t > now && id.length > 0 && id.length <= 300) out[id] = t;
   }
   return out;
 }
@@ -257,9 +223,6 @@ export function queue(items: Item[], s: Snoozed, now: number): Item[] {
   return items
     .filter((it) => !((s[it.id] ?? 0) > now))
     .map((it, i) => ({ it, i }))
-    .sort(
-      (a, b) =>
-        rank[severity(a.it.source)] - rank[severity(b.it.source)] || a.i - b.i,
-    )
+    .sort((a, b) => rank[severity(a.it.source)] - rank[severity(b.it.source)] || a.i - b.i)
     .map((x) => x.it);
 }
