@@ -277,3 +277,69 @@ test('the language switch goes back to English', async ({ page }) => {
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
   await expect(page.locator('main h1')).toHaveText('Settings');
 });
+
+// ROADMAP 8.7: the Ember inspector drawer shows the same strings as text,
+// survives a reload, closes on Esc and gives focus back.
+test('the drawer shows a listener, its process and a package as text', async ({ page }) => {
+  await page.goto(`${origin}/?ui=ember#/network?q=7778`);
+  await page.reload();
+  const what = page.locator('button.what').first();
+  await what.click();
+  const drawer = page.locator('dialog.drawer[open]');
+  await expect(drawer.getByText(COMM).first()).toBeVisible({ timeout: 15_000 });
+  await noScriptRan(page);
+
+  await page.goto(`${origin}/?ui=ember#/packages?inspect=package:hearth-xss-probe`);
+  await page.reload();
+  await expect(drawer.getByText(PAYLOAD).first()).toBeVisible({ timeout: 15_000 });
+  await page.waitForTimeout(500);
+  await noScriptRan(page);
+});
+
+test('the drawer shows a container as text', async ({ page }) => {
+  await page.goto(`${origin}/?ui=ember#/docker`);
+  await page.reload();
+  await page.getByRole('button', { name: PAYLOAD }).first().click();
+  await expect(page.locator('dialog.drawer[open] #inspect-title')).toHaveText(PAYLOAD, { timeout: 15_000 });
+  await noScriptRan(page);
+});
+
+test('the drawer is a link, closes on Esc and gives focus back', async ({ page }) => {
+  await page.goto(`${origin}/?ui=ember#/network?q=7778`);
+  await page.reload();
+  const what = page.locator('button.what').first();
+  await what.focus();
+  await page.keyboard.press('Enter');
+  const drawer = page.locator('dialog.drawer[open]');
+  await expect(drawer).toBeVisible();
+  expect(page.url()).toContain('inspect=port');
+  const title = await drawer.locator('#inspect-title').textContent();
+
+  // Focus stays in the drawer.
+  for (let i = 0; i < 12; i++) await page.keyboard.press('Tab');
+  expect(await page.evaluate(() => !!document.activeElement?.closest('dialog.drawer'))).toBe(true);
+
+  await page.reload();
+  await expect(drawer.locator('#inspect-title')).toHaveText(title ?? '');
+
+  await page.keyboard.press('Escape');
+  await expect(drawer).toHaveCount(0);
+  expect(page.url()).not.toContain('inspect=');
+
+  await what.focus();
+  await page.keyboard.press('Enter');
+  await expect(drawer).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(drawer).toHaveCount(0);
+  expect(await page.evaluate(() => document.activeElement?.classList.contains('what'))).toBe(true);
+
+  // A lineage link opens that item in the drawer; Back returns.
+  await what.click();
+  const link = drawer.locator('.chain a').first();
+  if ((await link.count()) > 0) {
+    await link.click();
+    await expect(drawer.locator('#inspect-title')).not.toHaveText(title ?? '');
+    await page.goBack();
+    await expect(drawer.locator('#inspect-title')).toHaveText(title ?? '');
+  }
+});

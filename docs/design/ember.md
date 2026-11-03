@@ -58,7 +58,7 @@ A group folds from its heading, remembered per browser; the group holding the pa
 1. **Pulse strip:** a sticky 32 px bar with CPU, RAM, temperature, network and battery, in mono. Each value opens its chart on Resources. It reads the sampler's ring every 15 s, and follows a page already at 1 s, without raising the rate itself.
 2. **Page head:** title, one line of context, page actions at the inline end.
 3. **Content:** cards and tables on tokens. Home opens with the health ring and Needs attention, then Quick views (the card grid).
-4. **Inspector drawer:** on the inline-end side, 420 px, flipping in RTL. Task 8.7.
+4. **Inspector drawer:** on the inline-end side, 420 px, flipping in RTL. See below.
 
 ## Home health (task 8.6)
 The ring is 100 minus the points below, never under 0. Each item takes fixed points and each kind has a cap; nothing else is weighed, and selecting the ring lists the deductions that apply and these rules. The queue holds the same items, the most serious first, eight shown until "Show more". Code: `web/src/lib/health.ts`.
@@ -78,6 +78,20 @@ The ring is 100 minus the points below, never under 0. Each item takes fixed poi
 | Unhealthy app, failed backup, stack needing an update, pending mode approval | Phases 9 and 10 | 0 | 0 | reserved, inactive |
 
 A listener behind an active firewall is info on the Security page and is not counted here. A source that cannot be read deducts nothing and is named as not checked. Everything is read when Home opens and every 5 minutes after; alerts also arrive as they fire. A row snoozes for 24 hours, per viewer, in the `home.snoozed` setting (at most 200 items, each `{"until": {"<item id>": <unix ms>}}`); a snoozed item still counts in the ring. On Ember, Home's restart banner gives way to the restart row.
+
+## Inspector drawer (task 8.7)
+Selecting an item in a list opens it in a drawer on the inline-end side instead of leaving the page. The hash carries it, `#/<page>?inspect=<kind>:<id>`, so a drawer can be linked, survives a reload, and Back returns to the previous item. Code: `web/src/components/Inspector.svelte`, `web/src/components/inspect/`, ids in `web/src/lib/inspect.ts`.
+
+| Kind | Opened from | Id | Mini chart | Actions |
+| --- | --- | --- | --- | --- |
+| Unit | Services | `unit:<system\|user>/<name>` | CPU and memory from `services` | start, stop, restart |
+| Container | Docker, Compose | `container:<id>` | CPU and memory from `docker.stats` | start, stop, restart |
+| Package | Packages (apt) | `package:<name>[:<arch>]` | none | on the Packages page |
+| Port | Network, "What is this?" | `port:<tcp\|udp>/<port>` | none | stop the unit or container, or end the process |
+| Process group | Resources, Processes view | `proc:<group id>` | CPU and memory from `procs` | end |
+| Alert | Alerts | `alert:<event id>` | none | on the Alerts page |
+
+Each drawer has its facts, the chart where a live series exists (it fills while the drawer stays open, since no per-item history is stored before task 8.8), its actions through the actions registry with the same preview and confirmation as the page, a link to the full page, and the lineage as a chain (port → process → unit → package → container) in which each link opens that item in the drawer. The drawer is a modal `<dialog>`: focus stays inside, Esc closes it, and focus goes back to what opened it. A link that names no item opens and says so. Packages of other managers keep their dialog.
 
 ## Components
 - Buttons: one primary per view. Danger buttons are outlined, so they never look like the safe default. A disabled button is visibly dimmed.

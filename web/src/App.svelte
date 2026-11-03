@@ -2,6 +2,7 @@
   import Hardware from './routes/Hardware.svelte';
   import CommandPalette from './components/CommandPalette.svelte';
   import EmberRail from './components/EmberRail.svelte';
+  import Inspector from './components/Inspector.svelte';
   import PulseStrip from './components/PulseStrip.svelte';
   import Sidebar from './components/Sidebar.svelte';
   import EmptyState from './components/EmptyState.svelte';
@@ -103,6 +104,7 @@
     {/if}
     <main>
       {#if ember && live}<PulseStrip {live} />{/if}
+      {#if ember && live}<Inspector {live} />{/if}
       {#if route?.id === 'home'}
         {#if live}<Home {live} />{/if}
       {:else if route?.id === 'apps'}

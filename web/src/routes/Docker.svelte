@@ -31,7 +31,8 @@
   } from '../lib/docker';
   import { bytes, pct } from '../lib/format';
   import { menuLeft, type MessageKey, t } from '../lib/i18n';
-  import { router } from '../lib/router.svelte';
+  import { openInspect, router } from '../lib/router.svelte';
+  import { emberRequested } from '../lib/ember';
   import { toast } from '../lib/toast.svelte';
   import type { Live } from '../lib/ws';
 
@@ -246,9 +247,13 @@
     }
   }
 
+  // On Ember details open in the inspector drawer (ROADMAP 8.7).
+  const ember = emberRequested(location.search);
+
   function openDetail(c: Container): void {
     menu.hidePopover();
-    detailId = c.id;
+    if (ember) openInspect(`container:${c.id}`);
+    else detailId = c.id;
   }
 
   function showProblems(): void {
@@ -297,7 +302,7 @@
     {:else if section === 'volumes'}
       <DockerObjects kind="volume" networks={snap.networks} volumes={snap.volumes} {containers} />
     {:else}
-      <ComposeProjects projects={snap.projects} {containers} onopen={(c) => (detailId = c.id)} />
+      <ComposeProjects projects={snap.projects} {containers} onopen={(c) => openDetail(c)} />
     {/if}
   {:else}
   {#if problems > 0}

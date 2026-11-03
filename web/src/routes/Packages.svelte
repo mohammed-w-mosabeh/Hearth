@@ -23,7 +23,8 @@
     type SortKey,
     type Update,
   } from '../lib/packages';
-  import { router } from '../lib/router.svelte';
+  import { openInspect, router } from '../lib/router.svelte';
+  import { emberRequested } from '../lib/ember';
   import { toast } from '../lib/toast.svelte';
   import type { Live } from '../lib/ws';
 
@@ -31,6 +32,15 @@
   // again when the "pkgs" topic says its database changed; the other
   // managers and the updates when the page opens and after an action.
   let { live }: { live: Live } = $props();
+
+  // On Ember an apt package opens in the inspector drawer (ROADMAP 8.7);
+  // the other managers keep their dialog.
+  const ember = emberRequested(location.search);
+
+  function openDetail(r: Row): void {
+    if (ember && r.manager === 'apt') openInspect(`package:${r.key.slice('apt/'.length)}`);
+    else detailOf = r;
+  }
 
   let deb = $state.raw<DebPackage[] | null>(null);
   let debError = $state('');
@@ -248,7 +258,7 @@
 
   function details(r: Row): void {
     menu.hidePopover();
-    detailOf = r;
+    openDetail(r);
   }
 
 </script>
@@ -325,7 +335,7 @@
         {#each shown.slice(0, limit) as r (r.key)}
           <tr>
             <td class="pname">
-              <button type="button" class="link" onclick={() => (detailOf = r)}>{r.name}</button>
+              <button type="button" class="link" onclick={() => openDetail(r)}>{r.name}</button>
               {#if r.update?.security}<span class="tag sec">{t('pkg.tag.security')}</span>{/if}
               {#if r.held}<span class="tag">{t('pkg.tag.held')}</span>{/if}
               {#if r.auto}<span class="tag" title={t('pkg.tag.autoHint')}>{t('pkg.tag.auto')}</span>{/if}

@@ -22,13 +22,17 @@
     type UnitOp,
   } from '../lib/services';
   import { toast } from '../lib/toast.svelte';
-  import { router } from '../lib/router.svelte';
+  import { inspectHref, router } from '../lib/router.svelte';
+  import { emberRequested } from '../lib/ember';
   import type { Live } from '../lib/ws';
 
   // systemd units, system and user. Following the "services" topic is what
   // makes hearthd talk to systemd, so it happens only while this page is
   // open.
   let { live }: { live: Live } = $props();
+
+  // On Ember a unit's name opens the inspector drawer (ROADMAP 8.7).
+  const ember = emberRequested(location.search);
 
   let units = $state.raw<Unit[] | null>(null);
   let errors = $state.raw<Partial<Record<string, string>>>({});
@@ -308,7 +312,11 @@
           {@const st = statOf(u)}
           <tr>
             <td class="unit">
-              <span class="name" title={u.name}>{u.name}</span>
+              {#if ember}
+                <a class="name" title={u.name} href={inspectHref(`unit:${u.scope}/${u.name}`)}>{u.name}</a>
+              {:else}
+                <span class="name" title={u.name}>{u.name}</span>
+              {/if}
               {#if u.scope === 'user'}<span class="tag">{t('svc.tag.user')}</span>{/if}
               {#if u.critical}<span class="tag crit" title={t('svc.criticalHint')}>{t('svc.tag.critical')}</span>{/if}
               {#if u.description && u.description !== u.name}<span class="desc" title={u.description}>{u.description}</span>{/if}
@@ -607,5 +615,13 @@
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
+  }
+  a.name {
+    color: inherit;
+    text-decoration: none;
+  }
+  a.name:hover,
+  a.name:focus-visible {
+    text-decoration: underline;
   }
 </style>

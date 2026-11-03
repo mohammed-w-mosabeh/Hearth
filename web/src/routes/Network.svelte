@@ -22,13 +22,17 @@
     type ScopeFilter,
     type Sockets,
   } from '../lib/network';
-  import { router } from '../lib/router.svelte';
+  import { openInspect, router } from '../lib/router.svelte';
+  import { emberRequested } from '../lib/ember';
 
   // Network & ports (SPEC 11): who listens where, current connections and
   // their throughput, addressing, Wi-Fi/VPN and the firewall. Sockets are
   // read every few seconds while the page is visible.
   const SOCKETS_MS = 5000;
   const STATE_MS = 15000;
+
+  // On Ember "What is this?" opens the inspector drawer (ROADMAP 8.7).
+  const ember = emberRequested(location.search);
 
   let sockets = $state.raw<Sockets | null>(null);
   let info = $state.raw<NetState | null>(null);
@@ -257,7 +261,7 @@
               </td>
               <td>{r.user}</td>
               <td class="act">
-                <button type="button" class="what" onclick={() => (lineageOf = r)}>{t('net.whatIsThis')}</button>
+                <button type="button" class="what" onclick={() => (ember ? openInspect(`port:${r.proto}/${r.port}`) : (lineageOf = r))}>{t('net.whatIsThis')}</button>
               </td>
             </tr>
           {/each}

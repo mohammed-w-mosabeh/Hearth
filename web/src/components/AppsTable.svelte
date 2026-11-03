@@ -6,6 +6,8 @@
   import { bytes, pct, rate } from '../lib/format';
   import { toast } from '../lib/toast.svelte';
   import { menuLeft, type MessageKey, t } from '../lib/i18n';
+  import { emberRequested } from '../lib/ember';
+  import { inspectHref } from '../lib/router.svelte';
   import { view, type KindFilter, type SortKey } from '../lib/procs';
   import type { GroupKind, ProcSnapshot } from '../lib/types';
   import type { Live } from '../lib/ws';
@@ -14,6 +16,9 @@
   // topic is what makes hearthd scan /proc, so it happens only while this
   // table is on screen.
   let { live }: { live: Live } = $props();
+
+  // On Ember a group's name opens the inspector drawer (ROADMAP 8.7).
+  const ember = emberRequested(location.search);
 
   let snap = $state.raw<ProcSnapshot | null>(null);
   $effect(() =>
@@ -216,7 +221,11 @@
                 aria-label={t(open[g.id] ? 'apps.collapse' : 'apps.expand', { name: g.name })}
                 onclick={() => (open[g.id] = !open[g.id])}>{open[g.id] ? '▾' : '▸'}</button
               >
-              <span class="name" title={g.unit ?? g.name}>{g.name}</span>
+              {#if ember}
+                <a class="name" title={g.unit ?? g.name} href={inspectHref(`proc:${g.id}`)}>{g.name}</a>
+              {:else}
+                <span class="name" title={g.unit ?? g.name}>{g.name}</span>
+              {/if}
               <span class="tag">{t(kindLabels[g.kind])}</span>
               <span class="user">{g.user}</span>
             </td>
@@ -522,5 +531,13 @@
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
+  }
+  a.name {
+    color: inherit;
+    text-decoration: none;
+  }
+  a.name:hover,
+  a.name:focus-visible {
+    text-decoration: underline;
   }
 </style>
