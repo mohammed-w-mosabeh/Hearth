@@ -49,6 +49,24 @@ async function start(page: Page, theme: string, lang: string): Promise<void> {
   );
 }
 
+/** Tab never reaches the page behind an open modal dialog. Past the last
+ *  control Chromium hands focus to the browser's own UI, where activeElement
+ *  is <body>; that is allowed, any page element outside the dialog is not. */
+async function tabStaysInDialog(page: Page): Promise<void> {
+  let inside = 0;
+  for (let i = 0; i < 8; i++) {
+    await page.keyboard.press('Tab');
+    const where = await page.evaluate(() => {
+      const el = document.activeElement;
+      if (!el || el === document.body) return 'browser';
+      return el.closest('dialog[open]') ? 'dialog' : `page: ${el.outerHTML.slice(0, 80)}`;
+    });
+    expect(where, `Tab ${i + 1} stays out of the page`).toMatch(/^(dialog|browser)$/);
+    if (where === 'dialog') inside++;
+  }
+  expect(inside, 'Tab cycles through the dialog').toBeGreaterThan(0);
+}
+
 /** Serious and critical axe violations, one line each. */
 async function violations(page: Page): Promise<string[]> {
   // Through the DevTools protocol, so the page's CSP (S6) stays as it is.
@@ -111,8 +129,7 @@ test('the palette and the shortcuts list work from the keyboard', async ({ page 
   await page.keyboard.press('?');
   const keys = page.locator('dialog[open]');
   await expect(keys).toBeVisible();
-  for (let i = 0; i < 8; i++) await page.keyboard.press('Tab');
-  expect(await page.evaluate(() => !!document.activeElement?.closest('dialog[open]')), 'focus stays in the dialog').toBe(true);
+  await tabStaysInDialog(page);
   await page.keyboard.press('Escape');
   await expect(keys).toHaveCount(0);
 });
@@ -132,8 +149,7 @@ test('a confirmation is keyboard operable and Esc cancels it', async ({ page }) 
   await page.keyboard.press('Enter');
   const dialog = page.locator('dialog[open]');
   await expect(dialog).toBeVisible();
-  for (let i = 0; i < 8; i++) await page.keyboard.press('Tab');
-  expect(await page.evaluate(() => !!document.activeElement?.closest('dialog[open]')), 'focus stays in the dialog').toBe(true);
+  await tabStaysInDialog(page);
   expect(await violations(page)).toEqual([]);
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
