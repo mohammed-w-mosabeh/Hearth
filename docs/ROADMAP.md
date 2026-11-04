@@ -159,7 +159,7 @@ Gate 8 result (2026-11-04): **passed.** `make itest`: all checks passed, with 39
 
 ## Phase 9 — v1.5: Apps
 Each app is a Compose stack stored root-owned in `/var/lib/hearth/stacks/<name>/`. Deliberately relaxes S12 (owner decision); S12a does not change. The UI implements the Phase 8 screens, with no new visual design. Details are in `docs/plan/phases-9-10.md`.
-- [ ] 9.0 Preparation: strip `hearthd` (`-s -w`) and record the size saved; add `*_URL`, `*_URI`, `*_DSN` and URLs holding user info to S19 masking, on every page
+- [x] 9.0 Preparation: strip `hearthd` (`-s -w`) and record the size saved; add `*_URL`, `*_URI`, `*_DSN` and URLs holding user info to S19 masking, on every page (all three binaries are stripped: hearthd 29.5 → 20.6 MB, 8.9 MB or 30% saved; hearth-broker 11.9 → 8.1 MB; hearth 9.9 → 6.7 MB; build info stays, so `govulncheck` and the version still work. S19 is now one package, `internal/secret`, used by the broker's container and image inspect, which every page showing an environment reads, and by the integrity watch's lines; the broker's names were narrower than S19 and now match it, adding `auth`, `cred`, `pwd` and `pass`; a value is masked when it holds `scheme://user@`, whatever its name; fuzzed)
 - [ ] 9.1 Stack spec: versioned JSON, strict decoding, closed key lists, bounds, name rules; no YAML, anchors, extends, include, profiles, interpolation, build or env_file (fuzzed)
 - [ ] 9.2 Canonical compose generated only from the spec; `hearth-stack@.service` with a fixed argv; atomic root-owned writes; `stack.validate`
 - [ ] 9.3 Path checks: `hearth-pathcheck.service` resolves binds without following links, before polkit and again before `up`; live mounts verified after `up`

@@ -28,7 +28,7 @@ DEB      = dist/hearth_$(VERSION)_amd64.deb
 
 # Reproducible, static builds (SECURITY S25).
 export CGO_ENABLED := 0
-GO_BUILD_FLAGS = -trimpath -buildvcs=true -ldflags '-X main.buildVersion=$(VERSION)'
+GO_BUILD_FLAGS = -trimpath -buildvcs=true -ldflags '-s -w -X main.buildVersion=$(VERSION)'
 
 GO_PKGS = $(shell $(GO) list ./... 2>/dev/null)
 

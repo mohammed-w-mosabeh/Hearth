@@ -1,9 +1,10 @@
 package integrity
 
 import (
-	"regexp"
 	"strings"
 	"unicode"
+
+	"github.com/mohammed-w-mosabeh/hearth/internal/secret"
 )
 
 const (
@@ -16,18 +17,10 @@ const (
 	context3     = 3
 )
 
-var (
-	// The words of SECURITY S19, plus "passwd" by way of "pass".
-	secretWord = regexp.MustCompile(`(?i)pass|pwd|token|secret|key|auth|cred`)
-	// A long base64 run is not read for those words: an SSH public key holds
-	// "key" by chance, and that is the very line to show. A name beside such
-	// a run (API_KEY=...) still hides the line.
-	longBlob = regexp.MustCompile(`[A-Za-z0-9+/]{64,}={0,2}`)
-)
-
-// maskLine hides a line that names a secret.
+// maskLine hides a line that names a secret or holds a URL with user info
+// (SECURITY S19).
 func maskLine(s string) string {
-	if secretWord.MatchString(longBlob.ReplaceAllString(s, "")) {
+	if secret.Line(s) {
 		return Hidden
 	}
 	return s

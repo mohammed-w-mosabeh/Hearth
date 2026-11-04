@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mohammed-w-mosabeh/hearth/internal/secret"
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
 )
 
@@ -451,7 +452,7 @@ func FuzzMaskAndDiff(f *testing.F) {
 			if len([]rune(l.Text)) > maxLineRunes {
 				t.Fatalf("line too long: %d", len(l.Text))
 			}
-			if secretWord.MatchString(longBlob.ReplaceAllString(l.Text, "")) && l.Text != Hidden && !strings.Contains(l.Text, "�") {
+			if secret.Line(l.Text) && l.Text != Hidden && !strings.Contains(l.Text, "�") {
 				// Cutting a line to length or dropping a control character
 				// can only remove text, except by joining what it split.
 				if !strings.ContainsAny(a+b, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x0b\x0c\r\x0e\x0f\x7f") {

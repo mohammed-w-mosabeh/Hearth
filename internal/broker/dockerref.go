@@ -2,7 +2,8 @@ package broker
 
 import (
 	"regexp"
-	"strings"
+
+	"github.com/mohammed-w-mosabeh/hearth/internal/secret"
 )
 
 // Validators for the names and references Docker methods take (SECURITY
@@ -66,23 +67,10 @@ func ParseImageRef(s string) (name, tag, digest string, ok bool) {
 	return m[1], m[2], m[3], true
 }
 
-// secretEnvKey matches environment variable names whose values are
-// masked (CLAUDE.md invariant 7).
-var secretEnvKey = regexp.MustCompile(`(?i)PASSWORD|PASSWD|TOKEN|KEY|SECRET`)
-
 // EnvMask replaces a masked value.
-const EnvMask = "********"
+const EnvMask = secret.Mask
 
-// MaskEnv returns env ("KEY=value" entries) with the values of secret-
-// looking keys replaced by EnvMask.
-func MaskEnv(env []string) []string {
-	out := make([]string, len(env))
-	for i, e := range env {
-		k, _, found := strings.Cut(e, "=")
-		if found && secretEnvKey.MatchString(k) {
-			e = k + "=" + EnvMask
-		}
-		out[i] = e
-	}
-	return out
-}
+// MaskEnv returns env ("KEY=value" entries) with the values SECURITY S19
+// masks replaced by EnvMask: secret-looking names, names ending _URL, _URI
+// or _DSN, and values holding a URL with user info.
+func MaskEnv(env []string) []string { return secret.Env(env) }
