@@ -1,8 +1,10 @@
 <script lang="ts">
+  import Skeleton from '../components/Skeleton.svelte';
+  import { failure } from '../lib/errors';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import ProfileDialog from '../components/ProfileDialog.svelte';
   import { preview, reasonKey, run, type Plan, type Result } from '../lib/actions';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import { locale, t } from '../lib/i18n';
   import { TEMPLATES, doKey, draftFrom, kindKey, templateKey, type Do, type Draft, type Profile } from '../lib/profiles';
   import { toast } from '../lib/toast.svelte';
@@ -14,7 +16,7 @@
   const REFRESH = 15_000;
 
   let profiles = $state.raw<Profile[] | null>(null);
-  let failed = $state(false);
+  let failed = $state('');
   let busy = $state<number | null>(null);
   let draft = $state<Draft | null>(null);
   let pending = $state<{ profile: Profile; plan: Plan } | null>(null);
@@ -23,9 +25,9 @@
   async function load(): Promise<void> {
     try {
       profiles = (await api<{ profiles: Profile[] }>('/profiles')).profiles;
-      failed = false;
-    } catch {
-      failed = true;
+      failed = '';
+    } catch (err) {
+      failed = failure(err, 'profiles.error');
     }
   }
 
@@ -44,8 +46,8 @@
     }
   }
 
-  function failure(err: unknown): void {
-    toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+  function toastFailure(err: unknown): void {
+    toast(failure(err, 'action.failed'), { tone: 'error' });
   }
 
   /** Shows what will really change; starting things alone needs no dialog. */
@@ -61,7 +63,7 @@
       report(p.name, await run('profile', 'activate', String(p.id)));
       await load();
     } catch (err) {
-      failure(err);
+      toastFailure(err);
     } finally {
       busy = null;
     }
@@ -76,7 +78,7 @@
       report(c.profile.name, await run('profile', 'activate', String(c.profile.id), {}, c.plan.token));
       await load();
     } catch (err) {
-      failure(err);
+      toastFailure(err);
     } finally {
       busy = null;
     }
@@ -88,7 +90,7 @@
       report(p.name, await run('profile', 'deactivate', String(p.id)));
       await load();
     } catch (err) {
-      failure(err);
+      toastFailure(err);
     } finally {
       busy = null;
     }
@@ -102,7 +104,7 @@
       await api(`/profiles/${c.profile.id}`, { method: 'DELETE' });
       await load();
     } catch (err) {
-      failure(err);
+      toastFailure(err);
     }
   }
 
@@ -122,9 +124,9 @@
 </header>
 
 {#if failed}
-  <p class="note error" role="status">{t('profiles.error')}</p>
+  <p class="note error" role="status">{failed}</p>
 {:else if profiles === null}
-  <p class="note">{t('profiles.loading')}</p>
+  <Skeleton label={t('profiles.loading')} />
 {:else if profiles.length === 0}
   <p class="note">{t('profiles.none')}</p>
   <div class="templates">

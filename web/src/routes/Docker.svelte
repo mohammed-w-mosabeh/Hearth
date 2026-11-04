@@ -1,14 +1,19 @@
 <script lang="ts">
+  import Skeleton from '../components/Skeleton.svelte';
+  import { failure } from '../lib/errors';
   import CapDialog from '../components/CapDialog.svelte';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import ContainerDetail from '../components/ContainerDetail.svelte';
+  import RowSpark from '../components/RowSpark.svelte';
+  import StatusMark from '../components/StatusMark.svelte';
+  import { addDockerStats, containerStatus, rowNav, sparks } from '../lib/rows';
   import EmptyState from '../components/EmptyState.svelte';
   import ComposeProjects from '../components/ComposeProjects.svelte';
   import DockerObjects from '../components/DockerObjects.svelte';
   import DockerCleanup from '../components/DockerCleanup.svelte';
   import ImagesTable from '../components/ImagesTable.svelte';
   import { preview, reasonKey, run, type CapField, type Params, type Plan, type Result } from '../lib/actions';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import {
     available,
     imageName,
@@ -31,7 +36,7 @@
   } from '../lib/docker';
   import { bytes, pct } from '../lib/format';
   import { menuLeft, type MessageKey, t } from '../lib/i18n';
-  import { router } from '../lib/router.svelte';
+  import { openInspect, router } from '../lib/router.svelte';
   import { toast } from '../lib/toast.svelte';
   import type { Live } from '../lib/ws';
 
@@ -42,6 +47,7 @@
 
   let snap = $state.raw<Snapshot | null>(null);
   let history = $state.raw<Record<string, Point[]>>({});
+  let spark = $state.raw(sparks.containers.snapshot());
 
   $effect(() =>
     live.subscribe('docker', (data) => {
@@ -52,7 +58,13 @@
   $effect(() =>
     live.subscribe('docker.stats', (data) => {
       const m = data as StatsMsg;
-      if (m?.kind === 'history' || m?.kind === 'sample') history = mergeStats(history, m);
+      if (m?.kind === 'history' || m?.kind === 'sample') {
+        history = mergeStats(history, m);
+        // hearthd keeps 5 minutes; the session keeps 10 for the sparkline.
+        addDockerStats(sparks.containers, m);
+        sparks.containers.prune(Date.now() / 1000);
+        spark = sparks.containers.snapshot();
+      }
     }),
   );
 
@@ -60,12 +72,12 @@
     try {
       snap = await api<Snapshot>('/docker');
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     }
   }
 
   type Section = 'containers' | 'compose' | 'images' | 'networks' | 'volumes' | 'cleanup';
-  let section = $state<Section>('containers');
+  let section = $state<Section>(router.id === 'stacks' ? 'compose' : 'containers');
   const sections: { id: Section; label: MessageKey }[] = [
     { id: 'containers', label: 'docker.section.containers' },
     { id: 'compose', label: 'docker.section.compose' },
@@ -168,7 +180,7 @@
   }
 
   function errorText(err: unknown): string {
-    return err instanceof ApiError ? err.message : t('action.failed');
+    return failure(err, 'action.failed');
   }
 
   function setBusy(c: Container, on: boolean): void {
@@ -246,7 +258,14 @@
     }
   }
 
+  // A name opens the inspector drawer (ROADMAP 8.7); Details in the row's
+  // menu opens everything else: logs, environment, labels, risks, inspect.
   function openDetail(c: Container): void {
+    menu.hidePopover();
+    openInspect(`container:${c.id}`);
+  }
+
+  function showDetail(c: Container): void {
     menu.hidePopover();
     detailId = c.id;
   }
@@ -289,7 +308,7 @@
     <DockerCleanup />
   {:else if section === 'images' || section === 'compose' || section === 'networks' || section === 'volumes'}
     {#if snap === null}
-      <p class="note">{t('docker.loading')}</p>
+      <Skeleton label={t('docker.loading')} />
     {:else if section === 'images'}
       <ImagesTable images={snap.images} {containers} />
     {:else if section === 'networks'}
@@ -297,7 +316,7 @@
     {:else if section === 'volumes'}
       <DockerObjects kind="volume" networks={snap.networks} volumes={snap.volumes} {containers} />
     {:else}
-      <ComposeProjects projects={snap.projects} {containers} onopen={(c) => (detailId = c.id)} />
+      <ComposeProjects projects={snap.projects} {containers} onopen={(c) => openDetail(c)} />
     {/if}
   {:else}
   {#if problems > 0}
@@ -319,16 +338,17 @@
   </div>
 
   {#if snap === null}
-    <p class="note">{t('docker.loading')}</p>
+    <Skeleton label={t('docker.loading')} />
   {:else if containers.length === 0}
-    <p class="note">{t('docker.none')}</p>
+    <EmptyState inline icon="box" body={t('docker.none')} />
   {:else if rows.length === 0}
     <p class="note">{t('docker.noMatch')}</p>
   {:else}
-    <div class="scroll">
+    <div class="scroll table-scroll">
       <table>
         <thead>
           <tr>
+            <th class="st"><span class="visually-hidden">{t('rows.status')}</span></th>
             {#each columnsDef as col (col.label)}
               <th class:num={col.num} aria-sort={col.key && sortKey === col.key ? (desc ? 'descending' : 'ascending') : 'none'}>
                 {#if col.key}
@@ -341,22 +361,23 @@
                 {/if}
               </th>
             {/each}
+            <th><span class="th">{t('rows.spark')}</span></th>
             <th><span class="visually-hidden">{t('docker.col.actions')}</span></th>
           </tr>
         </thead>
-        <tbody>
+        <tbody use:rowNav>
           {#each rows as c (c.id)}
             {@const tn = tone(c)}
             {@const st = stats[c.id]}
             {@const up = c.state === 'running' || c.state === 'paused'}
-            <tr>
+            <tr aria-label={c.name}>
+              <td class="st"><StatusMark kind={containerStatus(tn, c.health)} label={c.state} /></td>
               <td class="name-cell">
-                <button type="button" class="link" onclick={() => openDetail(c)}>{c.name}</button>
+                <button type="button" class="link" data-primary onclick={() => openDetail(c)}>{c.name}</button>
                 {#if c.project}<span class="tag" title={t('docker.tag.project', { project: c.project })}>{c.project}</span>{/if}
               </td>
               <td class="muted image" title={c.image}>{imageName(c)}</td>
               <td>
-                <span class="dot {tn}" aria-hidden="true"></span>
                 <span class:failed={tn === 'failed'}>{c.status}</span>
                 {#if c.health && !c.status.includes(c.health)}<span class="sub">{t(healthKey[c.health] ?? 'docker.health.starting')}</span>{/if}
               </td>
@@ -373,6 +394,7 @@
               </span></td>
               <td class="num">{up && st ? pct(st.cpu, 1) : '–'}</td>
               <td class="num">{up && st ? bytes(st.mem) : '–'}</td>
+              <td><RowSpark points={spark[c.id] ?? []} /></td>
               <td class="act">
                 <button
                   type="button"
@@ -393,10 +415,10 @@
 {/if}
 
 <!-- Not a role="menu": a group of buttons in a popover (no arrow-key contract). -->
-<div bind:this={menu} popover="auto" class="menu" aria-label={subject ? t('docker.actionsFor', { name: subject.name }) : undefined}>
+<div bind:this={menu} popover="auto" class="menu" role="group" aria-label={subject ? t('docker.actionsFor', { name: subject.name }) : undefined}>
   {#if subject}
     {@const c = subject}
-    <button type="button" onclick={() => openDetail(c)}>{t('docker.op.details')}</button>
+    <button type="button" onclick={() => showDetail(c)}>{t('docker.op.details')}</button>
     {#if available(c).length > 0}<hr />{/if}
     {#each available(c) as op (op)}
       <button type="button" class:danger={op === 'remove'} onclick={() => act(op, c)}>{t(opLabels[op])}</button>
@@ -636,24 +658,6 @@
     padding: 0 6px;
     margin-inline-start: var(--space-2);
   }
-  .dot {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    margin-inline-end: var(--space-2);
-    background: var(--border);
-  }
-  .dot.running {
-    background: var(--ok);
-  }
-  .dot.failed {
-    background: var(--crit);
-  }
-  .dot.changing,
-  .dot.paused {
-    background: var(--warn);
-  }
   .failed {
     color: var(--crit);
     font-weight: 500;
@@ -723,5 +727,10 @@
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
+  }
+  .st {
+    width: 1.5em;
+    padding-inline-end: 0;
+    text-align: center;
   }
 </style>

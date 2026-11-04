@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 // The router reads location and listens on window at import time.
 vi.stubGlobal('location', { hash: '' });
 vi.stubGlobal('window', { addEventListener: () => {} });
-const { href, routeId, routeQuery } = await import('./router.svelte');
+const { href, inspectHref, routeId, routeParam, routeQuery } = await import('./router.svelte');
 
 describe('router', () => {
   it('maps hashes to route ids', () => {
@@ -21,5 +21,14 @@ describe('router', () => {
     expect(href('home')).toBe('#/');
     expect(routeQuery('#/services?x=1&q=a+b')).toBe('a b');
     expect(routeQuery('#/services?q=%E0%A4')).toBe('');
+  });
+  it('carries the inspected item beside the search', () => {
+    const h = inspectHref('unit:system/getty@tty1.service', '#/services?q=getty');
+    expect(routeId(h)).toBe('services');
+    expect(routeQuery(h)).toBe('getty');
+    expect(routeParam(h, 'inspect')).toBe('unit:system/getty@tty1.service');
+    expect(inspectHref('', h)).toBe('#/services?q=getty');
+    expect(inspectHref('port:tcp/22', '#/')).toBe('#/?inspect=port%3Atcp%2F22');
+    expect(routeParam('#/docker', 'inspect')).toBe('');
   });
 });

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -79,13 +80,34 @@ func TestSettings(t *testing.T) {
 			t.Errorf("favorites %s: %d", bad, r.code)
 		}
 	}
-	if len(st.m) != 2 {
+	if r := put("home.snoozed", `{"until": {"unit:system/a b.service": 1700000000000, "listener:tcp [::]:22": 1, "updates.security": 2}}`); r.code != 204 {
+		t.Fatalf("snoozed: %d %s", r.code, r.body)
+	}
+	for _, bad := range []string{
+		`{}`, `{"until": null}`, `{"until": []}`, `{"until": {"a": 0}}`, `{"until": {"a": -1}}`, `{"until": {"a": 1.5}}`,
+		`{"until": {"a": "1"}}`, `{"until": {"A:x": 1}}`, `{"until": {"a:\n": 1}}`, `{"until": {"a:": 1}}`, `{"until": {"": 1}}`,
+		`{"until": {"a": 1}, "x": 1}`, `{"until": {"a:` + strings.Repeat("x", 300) + `": 1}}`,
+		`{"until": {` + manyIDs(201) + `}}`,
+	} {
+		if r := put("home.snoozed", bad); r.code != 400 {
+			t.Errorf("snoozed %.50q: %d", bad, r.code)
+		}
+	}
+	if len(st.m) != 3 {
 		t.Fatalf("store %v", st.m)
 	}
 }
 
+func manyIDs(n int) string {
+	ids := make([]string, n)
+	for i := range ids {
+		ids[i] = `"alert:` + strconv.Itoa(i) + `": 1`
+	}
+	return strings.Join(ids, ", ")
+}
+
 func FuzzSettingValidators(f *testing.F) {
-	for _, s := range []string{`{"order":["cpu","tile:12"],"hidden":[]}`, `null`, `{"ids":["firefox.desktop"]}`, `{"ids":["a/b"]}`, `{"order":["x\n"]}`, `{"x":1}`} {
+	for _, s := range []string{`{"until":{"unit:system/a.service":1}}`, `{"until":{"a:\u0000":1}}`, `{"order":["cpu","tile:12"],"hidden":[]}`, `null`, `{"ids":["firefox.desktop"]}`, `{"ids":["a/b"]}`, `{"order":["x\n"]}`, `{"x":1}`} {
 		f.Add([]byte(s))
 	}
 	bad := func(ids []string, max int) bool {
@@ -101,6 +123,17 @@ func FuzzSettingValidators(f *testing.F) {
 			var l struct{ Order, Hidden []string }
 			if json.Unmarshal(b, &l) != nil || len(l.Order) > 256 || len(l.Hidden) > 256 || bad(append(l.Order, l.Hidden...), 200) {
 				t.Fatalf("layout accepted %q", b)
+			}
+		}
+		if validateSnoozed(b) == nil {
+			var v struct{ Until map[string]int64 }
+			if json.Unmarshal(b, &v) != nil || v.Until == nil || len(v.Until) > 200 {
+				t.Fatalf("snoozed accepted %q", b)
+			}
+			for id, until := range v.Until {
+				if bad([]string{id}, 300) || until <= 0 {
+					t.Fatalf("snoozed accepted %q", b)
+				}
 			}
 		}
 		if validateFavorites(b) == nil {

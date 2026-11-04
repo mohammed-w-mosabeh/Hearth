@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { lightAnsi } from '../lib/termtheme';
   import type { FitAddon } from '@xterm/addon-fit';
   import type { Terminal } from '@xterm/xterm';
   import { sessionKey } from '../lib/api';
@@ -49,11 +50,18 @@
       const color = (v: string) => css.getPropertyValue(v).trim();
       const tm = new mod.Terminal({
         convertEol: false,
-        cursorBlink: true,
+        // Blinking loops, so it stops under reduced motion (ROADMAP 8.9).
+        cursorBlink: !matchMedia('(prefers-reduced-motion: reduce)').matches,
         fontFamily: color('--font-mono'),
         fontSize: 13,
         scrollback: 5000,
-        theme: { background: color('--bg'), foreground: color('--text'), cursor: color('--accent'), selectionBackground: color('--surface-2') },
+        theme: {
+          background: color('--bg'),
+          foreground: color('--text'),
+          cursor: color('--accent'),
+          selectionBackground: color('--surface-2'),
+          ...(document.documentElement.dataset.theme === 'light' ? lightAnsi : {}),
+        },
       });
       term = tm;
       const fit: FitAddon = new mod.FitAddon();

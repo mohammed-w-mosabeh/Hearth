@@ -26,7 +26,7 @@ RUN useradd --create-home --uid 1000 --shell /bin/bash tester \
 # hashes), Debian's chromium instead of a Playwright browser download.
 COPY e2e/package.json e2e/package-lock.json /opt/e2e/
 RUN cd /opt/e2e && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm ci --ignore-scripts --no-audit --no-fund
-COPY e2e/playwright.config.ts /opt/e2e/
+COPY e2e/playwright.config.ts e2e/global-setup.ts /opt/e2e/
 COPY e2e/tests /opt/e2e/tests
 
 # gio, the launcher's fallback (a layer of its own keeps the browser's cached).

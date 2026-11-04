@@ -1,11 +1,14 @@
 <script lang="ts">
+  import Skeleton from '../components/Skeleton.svelte';
+  import { failure } from '../lib/errors';
   import SleepPower from '../components/SleepPower.svelte';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import { preview, reasonKey, run, type Blocked, type Plan, type Result } from '../lib/actions';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import type { App } from '../lib/apps';
   import { exportName, wordPlan, type Backups } from '../lib/backup';
   import { applyDensity, loadDensity, saveDensity, type Density } from '../lib/density';
+  import { applyTheme, loadTheme, saveTheme, type Theme } from '../lib/theme';
   import { bytes } from '../lib/format';
   import { lang, type Lang, locale, type MessageKey, saveLang, t } from '../lib/i18n';
   import {
@@ -33,7 +36,7 @@
   let power = $state<Power | null>(null);
   let zones = $state<string[]>([]);
   let apps = $state<App[]>([]);
-  let failed = $state(false);
+  let failed = $state('');
   let busy = $state(false);
 
   let staticName = $state('');
@@ -52,9 +55,9 @@
       info = await api<SystemInfo>('/system/info');
       staticName = info.hostname?.static ?? '';
       prettyName = info.hostname?.pretty ?? '';
-      failed = false;
-    } catch {
-      failed = true;
+      failed = '';
+    } catch (err) {
+      failed = failure(err, 'set.error');
     }
   }
   const loadNet = async () => void (net = await api<NetworkState>('/system/network').catch(() => null));
@@ -86,7 +89,7 @@
   });
 
   function errorText(err: unknown): string {
-    return err instanceof ApiError ? err.message : t('action.failed');
+    return failure(err, 'action.failed');
   }
 
   function failText(fail: Blocked): string {
@@ -247,11 +250,18 @@
   const backupNow = () => act('hearth', 'backup', 'database', {}, t('set.backup.made'), loadBackups);
 
   let density = $state<Density>(loadDensity());
+  let theme = $state<Theme>(loadTheme());
 
   function setLang(l: Lang): void {
     if (l === lang()) return;
     saveLang(l);
     location.reload(); // every page reads its messages as it is built
+  }
+
+  function setTheme(v: Theme): void {
+    theme = v;
+    applyTheme(v);
+    saveTheme(v);
   }
 
   function setDensity(d: Density): void {
@@ -267,13 +277,20 @@
 </header>
 
 {#if failed}
-  <p class="note error" role="status">{t('set.error')}</p>
+  <p class="note error" role="status">{failed}</p>
 {/if}
 
 <div class="sections" aria-busy={busy}>
   <!-- Appearance -->
   <section aria-labelledby="s-look">
     <h2 id="s-look">{t('set.look.title')}</h2>
+    <div class="segmented" role="radiogroup" aria-label={t('set.look.theme')}>
+      {#each ['dark', 'light', 'system'] as const as v (v)}
+        <button type="button" role="radio" aria-checked={theme === v} class:on={theme === v} onclick={() => setTheme(v)}>
+          {t(`set.look.theme.${v}`)}
+        </button>
+      {/each}
+    </div>
     <div class="segmented" role="radiogroup" aria-label={t('set.look.density')}>
       {#each ['comfortable', 'compact'] as const as d (d)}
         <button type="button" role="radio" aria-checked={density === d} class:on={density === d} onclick={() => setDensity(d)}>
@@ -295,7 +312,7 @@
   <section aria-labelledby="s-net">
     <h2 id="s-net">{t('set.net.title')}</h2>
     {#if net === null}
-      <p class="note">{t('set.loading')}</p>
+      <Skeleton label={t('set.loading')} />
     {:else if !net.available}
       <p class="note">{t('set.net.unavailable')}</p>
     {:else}
@@ -366,7 +383,7 @@
   <section aria-labelledby="s-sound">
     <h2 id="s-sound">{t('set.sound.title')}</h2>
     {#if audio === null}
-      <p class="note">{t('set.loading')}</p>
+      <Skeleton label={t('set.loading')} />
     {:else if !audio.available}
       <p class="note">{t('set.sound.unavailable')}</p>
     {:else}
@@ -553,7 +570,7 @@
   <section aria-labelledby="s-auto" class="wide">
     <h2 id="s-auto">{t('set.auto.title')}</h2>
     {#if autostart === null}
-      <p class="note">{t('set.loading')}</p>
+      <Skeleton label={t('set.loading')} />
     {:else}
       <ul class="list">
         {#each autostart as e (e.id)}

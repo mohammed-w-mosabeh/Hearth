@@ -238,3 +238,10 @@ export function vpns(nm: NetState['nm']): NMConn[] {
 export function mainInterfaces(list: Interface[]): Interface[] {
   return list.filter((i) => i.up && i.kind !== 'loopback' && i.addrs.length > 0 && !i.name.startsWith('veth'));
 }
+
+/** The packages of a lineage: the program's first, then the unit file's when it differs. */
+export function lineagePackages(l: Lineage | null | undefined): PkgRef[] {
+  const out: PkgRef[] = [];
+  for (const p of [l?.exe_package, l?.unit_package]) if (p && !out.some((q) => q.id === p.id)) out.push(p);
+  return out;
+}

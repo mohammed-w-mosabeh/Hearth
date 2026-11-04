@@ -1,6 +1,9 @@
 <script lang="ts">
+  import EmptyState from '../components/EmptyState.svelte';
+  import Skeleton from '../components/Skeleton.svelte';
+  import { failure } from '../lib/errors';
   import { run } from '../lib/actions';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import { bytes, duration } from '../lib/format';
   import {
     GAME_SORTS,
@@ -23,7 +26,7 @@
   const LAUNCHERS: Record<string, string> = { steam: 'Steam', lutris: 'Lutris', heroic: 'Heroic Games Launcher' };
 
   let games = $state.raw<Game[] | null>(null);
-  let failed = $state(false);
+  let failed = $state('');
   let covers = $state<Record<string, string>>({});
   let search = $state('');
   let source = $state<GameFilter>('all');
@@ -35,10 +38,10 @@
     try {
       const res = await api<{ games: Game[] }>('/games');
       games = res.games;
-      failed = false;
+      failed = '';
       await loadCovers(res.games);
-    } catch {
-      failed = true;
+    } catch (err) {
+      failed = failure(err, 'games.error');
     }
   }
 
@@ -64,7 +67,7 @@
       await run('game', 'launch', g.id);
       toast(t('games.starting', { name: g.name }));
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     } finally {
       starting = new Set([...starting].filter((id) => id !== g.id));
     }
@@ -106,11 +109,11 @@
 </div>
 
 {#if failed}
-  <p class="note error" role="status">{t('games.error')}</p>
+  <p class="note error" role="status">{failed}</p>
 {:else if games === null}
-  <p class="note">{t('games.loading')}</p>
+  <Skeleton label={t('games.loading')} />
 {:else if games.length === 0}
-  <p class="note">{t('games.empty')}</p>
+  <EmptyState inline icon="gamepad" body={t('games.empty')} />
 {:else if shown.length === 0}
   <p class="note">{t('games.none')}</p>
 {:else}

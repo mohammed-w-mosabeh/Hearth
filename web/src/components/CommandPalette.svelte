@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import { run } from '../lib/actions';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import type { App } from '../lib/apps';
   import { t, type MessageKey } from '../lib/i18n';
   import { appEntries, pageEntries, search, unitEntries, type Entry } from '../lib/palette';
@@ -20,7 +21,9 @@
   let apps = $state.raw<App[]>([]);
   let units = $state.raw<Unit[]>([]);
 
-  const pages = $derived(pageEntries(routes.map((r) => ({ id: r.id, title: t(r.label) }))));
+  // The rail also names Apps and Modes, which open existing pages for now.
+  const extra = [{ id: 'stacks', label: 'nav.stacks' }, { id: 'modes', label: 'nav.modes' }] as const;
+  const pages = $derived(pageEntries([...routes, ...extra].map((r) => ({ id: r.id, title: t(r.label) }))));
   const entries = $derived([...pages, ...appEntries(apps), ...unitEntries(units)]);
   const results = $derived(search(entries, query));
 
@@ -64,7 +67,7 @@
           await run('app', 'launch', e.id);
           toast(t('apps2.opening', { name: e.title }));
         } catch (err) {
-          toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+          toast(failure(err, 'action.failed'), { tone: 'error' });
         }
         break;
     }
@@ -162,6 +165,11 @@
     border-bottom: 1px solid var(--border);
     padding: var(--space-3) var(--space-4);
     outline: none;
+  }
+  /* Its ring is a 2 px underline in the focus colour, inside the dialog's edge. */
+  input:focus-visible {
+    border-bottom-color: var(--focus);
+    box-shadow: inset 0 -1px 0 var(--focus);
   }
   ul {
     list-style: none;

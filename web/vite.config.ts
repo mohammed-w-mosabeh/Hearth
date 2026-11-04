@@ -34,5 +34,7 @@ export default defineConfig({
   },
   test: {
     include: ['src/**/*.test.ts'],
+    // contrast.test.ts and motion.test.ts read the real stylesheets.
+    css: { include: [/\.css(\?|$)/] },
   },
 });

@@ -1,7 +1,9 @@
 <script lang="ts">
   import Hardware from './routes/Hardware.svelte';
   import CommandPalette from './components/CommandPalette.svelte';
-  import Sidebar from './components/Sidebar.svelte';
+  import EmberRail from './components/EmberRail.svelte';
+  import Inspector from './components/Inspector.svelte';
+  import PulseStrip from './components/PulseStrip.svelte';
   import EmptyState from './components/EmptyState.svelte';
   import Toaster from './components/Toaster.svelte';
   import Home from './routes/Home.svelte';
@@ -29,13 +31,14 @@
   import ShortcutsDialog from './components/ShortcutsDialog.svelte';
   import { api, setSession } from './lib/api';
   import { t } from './lib/i18n';
-  import { href, router, routes } from './lib/router.svelte';
+  import { href, pageOf, router, routes } from './lib/router.svelte';
   import { Sequence } from './lib/shortcuts';
   import { loadKey } from './lib/session';
   import { Live, type WsState } from './lib/ws';
 
   let key = $state(loadKey({ location, history, storage: localStorage }));
   let status = $state<WsState>('connecting');
+  let beat = $state(0);
   let live = $state.raw<Live | null>(null);
 
   setSession(
@@ -48,7 +51,11 @@
     // A stored key dies when hearthd restarts; a 401 here clears it and
     // shows the "open from the launcher" screen.
     api('/session').catch(() => {});
-    const l = new Live(key, (s) => (status = s));
+    const l = new Live(
+      key,
+      (s) => (status = s),
+      () => beat++,
+    );
     live = l;
     return () => {
       l.close();
@@ -56,7 +63,7 @@
     };
   });
 
-  const route = $derived(routes.find((r) => r.id === router.id));
+  const route = $derived(routes.find((r) => r.id === pageOf(router.id)));
 
   // The Terminal page stays mounted once visited, so its shells survive
   // a visit to another page.
@@ -92,8 +99,10 @@
   </main>
 {:else}
   <div class="shell">
-    <Sidebar {status} onsearch={() => (palette = true)} />
+    <EmberRail {status} {beat} onsearch={() => (palette = true)} />
     <main>
+      {#if live}<PulseStrip {live} />{/if}
+      {#if live}<Inspector {live} />{/if}
       {#if route?.id === 'home'}
         {#if live}<Home {live} />{/if}
       {:else if route?.id === 'apps'}

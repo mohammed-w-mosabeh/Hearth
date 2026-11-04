@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import ConfirmDialog from './ConfirmDialog.svelte';
   import { preview, reasonKey, run, type Plan } from '../lib/actions';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import { pruneTotal, type KindSummary, type PruneKind } from '../lib/docker';
   import { bytes } from '../lib/format';
   import { t, type MessageKey } from '../lib/i18n';
@@ -22,7 +23,7 @@
       kinds = (await api<{ kinds: KindSummary[] }>('/docker/cleanup')).kinds;
       failed = '';
     } catch (err) {
-      failed = err instanceof ApiError ? err.message : t('action.failed');
+      failed = failure(err, 'action.failed');
     } finally {
       loading = false;
     }
@@ -53,7 +54,7 @@
       }
       pending = { kind, plan };
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     } finally {
       busy = null;
     }
@@ -75,7 +76,7 @@
         toast(t('cleanup.done', { n: res.done, kept: res.failed.length }));
       }
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     } finally {
       busy = null;
       await load();

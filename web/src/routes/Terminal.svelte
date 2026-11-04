@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import TermPane from '../components/TermPane.svelte';
   import { execURL } from '../lib/docker';
-  import { t } from '../lib/i18n';
+  import { isRTL, t } from '../lib/i18n';
   import { router } from '../lib/router.svelte';
   import { parseOpen, shellURL, tabTitle, type Open, type Phase } from '../lib/shell';
 
@@ -66,6 +67,28 @@
     return o.kind === 'container' ? (c, r) => execURL(location.href, o.id, c, r) : (c, r) => shellURL(location.href, c, r, o.dir);
   }
 
+  // The tab list's own keys (WAI-ARIA tabs): arrows and Home/End move,
+  // Delete closes; only the current tab is in the Tab order.
+  function tabKey(e: KeyboardEvent, key: number): void {
+    const i = tabs.findIndex((x) => x.key === key);
+    const focus = (k: number): void => void tick().then(() => document.getElementById(`term-tab-${k}`)?.focus());
+    if (e.key === 'Delete') {
+      e.preventDefault();
+      close(key);
+      const next = tabs[Math.min(i, tabs.length - 1)];
+      if (next) focus(next.key);
+      return;
+    }
+    const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+    const to =
+      step !== undefined ? (i + (isRTL() ? -step : step) + tabs.length) % tabs.length : e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : -1;
+    const target = tabs[to];
+    if (!target) return;
+    e.preventDefault();
+    current = target.key;
+    focus(target.key);
+  }
+
   function onkeydown(e: KeyboardEvent): void {
     // Ctrl+Shift+T: a new shell (Ctrl+T belongs to the browser).
     if (active && e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 't') {
@@ -78,7 +101,8 @@
 <svelte:window {onkeydown} />
 
 <div class="page">
-  <div class="tabs" role="tablist" aria-label={t('term.tabs')}>
+  <div class="tabs">
+    <div class="list" role="tablist" aria-label={t('term.tabs')}>
     {#each tabs as tab (tab.key)}
       <div class="tab" class:on={tab.key === current}>
         <button
@@ -87,6 +111,9 @@
           id="term-tab-{tab.key}"
           aria-selected={tab.key === current}
           aria-controls="term-panel-{tab.key}"
+          aria-describedby="term-tab-hint"
+          tabindex={tab.key === current ? 0 : -1}
+          onkeydown={(e) => tabKey(e, tab.key)}
           title={tab.open.kind === 'shell' ? tab.open.dir || '~' : t('term.container', { name: tab.title })}
           onclick={() => (current = tab.key)}
         >
@@ -94,9 +121,13 @@
           {tab.title}
           {#if tab.phase === 'exit'}<span class="ended">· {t('term.ended')}</span>{/if}
         </button>
-        <button type="button" class="x" aria-label={t('term.close', { name: tab.title })} onclick={() => close(tab.key)}>×</button>
+        <!-- Out of the tab list's tree, as a tab list holds only tabs; Delete
+             on the tab does the same, as does Close tab once the shell ends. -->
+        <button type="button" class="x" aria-hidden="true" tabindex="-1" title={t('term.close', { name: tab.title })} onclick={() => close(tab.key)}>×</button>
       </div>
     {/each}
+    </div>
+    <span id="term-tab-hint" class="visually-hidden">{t('term.tabHint')}</span>
     <button type="button" class="new" title={t('term.newHint')} onclick={() => add({ kind: 'shell', dir: '', prefill: '' })}>+ {t('term.new')}</button>
   </div>
 
@@ -141,6 +172,9 @@
     gap: var(--space-1);
     align-items: center;
     margin-bottom: var(--space-2);
+  }
+  .list {
+    display: contents;
   }
   .tab {
     display: inline-flex;

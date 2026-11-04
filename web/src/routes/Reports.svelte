@@ -1,7 +1,10 @@
 <script lang="ts">
+  import EmptyState from '../components/EmptyState.svelte';
+  import Skeleton from '../components/Skeleton.svelte';
+  import { failure } from '../lib/errors';
   import { loadMarkers, type Marker } from '../lib/markers';
   import Chart from '../components/Chart.svelte';
-  import { api, apiBlob, ApiError } from '../lib/api';
+  import { api, apiBlob } from '../lib/api';
   import { eventDetail, eventKey } from '../lib/changes';
   import { format } from '../lib/charts';
   import { bytes, duration, pct } from '../lib/format';
@@ -54,7 +57,7 @@
   let items = $state.raw<ItemTotal[] | null>(null);
   let itemId = $state('');
   let itemSearch = $state('');
-  let failed = $state(false);
+  let failed = $state('');
   let loading = $state(false);
   let weekly = $state.raw<WeeklyState | null>(null);
   let savingWeekly = $state(false);
@@ -69,9 +72,9 @@
       const r = await api<unknown>(path);
       if (mine !== seq) return;
       done(r);
-      failed = false;
-    } catch {
-      if (mine === seq) failed = true;
+      failed = '';
+    } catch (err) {
+      if (mine === seq) failed = failure(err, 'reports.error');
     } finally {
       if (mine === seq) loading = false;
     }
@@ -140,7 +143,7 @@
       const { blob, disposition } = await apiBlob(path);
       save(blob, attachmentName(disposition, `hearth-report.${fmt}`));
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('reports.exportFailed'), { tone: 'error' });
+      toast(failure(err, 'reports.exportFailed'), { tone: 'error' });
     }
   }
 
@@ -149,7 +152,7 @@
       const { blob, disposition } = await apiBlob(`/reports/saved/${encodeURIComponent(name)}`);
       save(blob, attachmentName(disposition, 'hearth-week.html'));
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('reports.exportFailed'), { tone: 'error' });
+      toast(failure(err, 'reports.exportFailed'), { tone: 'error' });
     }
   }
 
@@ -161,7 +164,7 @@
       // The first report is written right after it is turned on.
       setTimeout(() => void loadWeekly(), enabled ? 1500 : 0);
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     } finally {
       savingWeekly = false;
     }
@@ -270,10 +273,10 @@
 {/if}
 
 {#if failed}
-  <p class="note error" role="status">{t('reports.error')}</p>
+  <p class="note error" role="status">{failed}</p>
 {:else if view === 'machine'}
   {#if machine === null}
-    <p class="note">{t('reports.loading')}</p>
+    <Skeleton label={t('reports.loading')} />
   {:else}
     {@const m = machine}
     <section aria-busy={loading}>
@@ -395,9 +398,9 @@
     </section>
   {/if}
 {:else if items !== null && items.length === 0}
-  <p class="note">{t('reports.items.none')}</p>
+  <EmptyState inline icon="report" body={t('reports.items.none')} />
 {:else if item === null}
-  <p class="note">{t('reports.loading')}</p>
+  <Skeleton label={t('reports.loading')} />
 {:else}
   {@const it = item}
   <section aria-busy={loading}>

@@ -1,9 +1,10 @@
 <script lang="ts">
+  import EmptyState from './EmptyState.svelte';
+  import { failure } from '../lib/errors';
   import ConfirmDialog from './ConfirmDialog.svelte';
   import ImageDetail from './ImageDetail.svelte';
   import { preview, reasonKey, run, type Plan, type Result } from '../lib/actions';
-  import { ApiError } from '../lib/api';
-  import { imageTitle, imageView, shortID, uniqueSize, type Container, type Image, type ImageFilter, type ImageSort } from '../lib/docker';
+    import { imageTitle, imageView, shortID, uniqueSize, type Container, type Image, type ImageFilter, type ImageSort } from '../lib/docker';
   import { bytes } from '../lib/format';
   import { locale, menuLeft, type MessageKey, t } from '../lib/i18n';
   import { toast } from '../lib/toast.svelte';
@@ -64,7 +65,7 @@
   }
 
   function errorText(err: unknown): string {
-    return err instanceof ApiError ? err.message : t('action.failed');
+    return failure(err, 'action.failed');
   }
 
   function failText(res: Result): string | null {
@@ -158,7 +159,7 @@
 </div>
 
 {#if images.length === 0}
-  <p class="note">{t('image.none')}</p>
+  <EmptyState inline icon="layers" body={t('image.none')} />
 {:else if rows.length === 0}
   <p class="note">{t('docker.noMatch')}</p>
 {:else}
@@ -208,7 +209,7 @@
   <p class="foot">{t('image.footnote')}</p>
 {/if}
 
-<div bind:this={menu} popover="auto" class="menu" aria-label={subject ? t('docker.actionsFor', { name: imageTitle(subject) }) : undefined}>
+<div bind:this={menu} popover="auto" class="menu" role="group" aria-label={subject ? t('docker.actionsFor', { name: imageTitle(subject) }) : undefined}>
   {#if subject}
     {@const im = subject}
     <button type="button" onclick={() => show(im)}>{t('docker.op.details')}</button>

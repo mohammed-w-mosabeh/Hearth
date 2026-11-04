@@ -108,18 +108,6 @@ export function riskKey(risk: string): { key: MessageKey; path?: string } {
   return { key: `security.risk.${k}` as MessageKey };
 }
 
-/** GET /api/v1/restart. */
-export interface Restart {
-  reboot: boolean;
-  services: string[];
-}
-
-/** Home's reminder for r, null when nothing waits. */
-export function restartKey(r: Restart): MessageKey | null {
-  if (r.reboot) return 'home.restart.reboot';
-  return r.services.length > 0 ? 'home.restart.services' : null;
-}
-
 /** The overall verdict: the worst status among the checks that ran. */
 export function overall(r: Report): Status {
   const order: Status[] = ['critical', 'warning', 'unknown', 'ok'];

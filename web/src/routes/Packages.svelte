@@ -1,8 +1,10 @@
 <script lang="ts">
+  import Skeleton from '../components/Skeleton.svelte';
+  import { failure } from '../lib/errors';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import PackageDetail from '../components/PackageDetail.svelte';
   import { preview, run, type Plan, type Result } from '../lib/actions';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import { bytes } from '../lib/format';
   import { ltr, menuLeft, type MessageKey, t } from '../lib/i18n';
   import {
@@ -23,7 +25,7 @@
     type SortKey,
     type Update,
   } from '../lib/packages';
-  import { router } from '../lib/router.svelte';
+  import { openInspect, router } from '../lib/router.svelte';
   import { toast } from '../lib/toast.svelte';
   import type { Live } from '../lib/ws';
 
@@ -32,6 +34,14 @@
   // managers and the updates when the page opens and after an action.
   let { live }: { live: Live } = $props();
 
+  // An apt package opens in the inspector drawer (ROADMAP 8.7); the other
+  // managers keep their dialog.
+
+  function openDetail(r: Row): void {
+    if (r.manager === 'apt') openInspect(`package:${r.key.slice('apt/'.length)}`);
+    else detailOf = r;
+  }
+
   let deb = $state.raw<DebPackage[] | null>(null);
   let debError = $state('');
   let updates = $state.raw<Update[]>([]);
@@ -39,7 +49,7 @@
   let updatesLoading = $state(true);
   let extras = $state.raw<Partial<Record<Manager, ExtraList>>>({});
 
-  const msg = (err: unknown, fallback: MessageKey) => (err instanceof ApiError ? err.message : t(fallback));
+  const msg = failure;
 
   async function loadDeb(): Promise<void> {
     try {
@@ -248,7 +258,7 @@
 
   function details(r: Row): void {
     menu.hidePopover();
-    detailOf = r;
+    openDetail(r);
   }
 
 </script>
@@ -298,7 +308,7 @@
 </div>
 
 {#if deb === null && !debError}
-  <p class="note">{t('pkg.loading')}</p>
+  <Skeleton label={t('pkg.loading')} />
 {:else if shown.length === 0}
   <p class="note">{t('pkg.none')}</p>
 {:else}
@@ -325,7 +335,7 @@
         {#each shown.slice(0, limit) as r (r.key)}
           <tr>
             <td class="pname">
-              <button type="button" class="link" onclick={() => (detailOf = r)}>{r.name}</button>
+              <button type="button" class="link" onclick={() => openDetail(r)}>{r.name}</button>
               {#if r.update?.security}<span class="tag sec">{t('pkg.tag.security')}</span>{/if}
               {#if r.held}<span class="tag">{t('pkg.tag.held')}</span>{/if}
               {#if r.auto}<span class="tag" title={t('pkg.tag.autoHint')}>{t('pkg.tag.auto')}</span>{/if}
@@ -358,7 +368,7 @@
 {/if}
 
 <!-- Not a role="menu": a group of buttons in a popover (no arrow-key contract). -->
-<div bind:this={menu} popover="auto" class="menu" aria-label={subject ? t('pkg.actionsFor', { name: subject.name }) : undefined}>
+<div bind:this={menu} popover="auto" class="menu" role="group" aria-label={subject ? t('pkg.actionsFor', { name: subject.name }) : undefined}>
   {#if subject}
     {@const r = subject}
     <button type="button" onclick={() => details(r)}>{t('pkg.op.details')}</button>

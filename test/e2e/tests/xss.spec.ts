@@ -31,10 +31,8 @@ let jobUnit = '';
 
 test.beforeAll(async ({ browser }) => {
   const page = await browser.newPage();
-  await page.goto(base);
-  // /auth redirects to /#k=<key>; the UI stores the key and strips the hash.
-  await page.waitForFunction(() => localStorage.getItem('hearth.session') !== null);
-  key = await page.evaluate(() => localStorage.getItem('hearth.session') ?? '');
+  // Exchanged once by global-setup.ts: the launch link works only once.
+  key = process.env.HEARTH_KEY ?? '';
   expect(key).not.toBe('');
   const post = (path: string, body: unknown) =>
     page.request.post(`${origin}/api/v1/${path}`, {
@@ -276,4 +274,108 @@ test('the language switch goes back to English', async ({ page }) => {
   await page.getByTestId('lang-en').click();
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
   await expect(page.locator('main h1')).toHaveText('Settings');
+});
+
+// ROADMAP 8.7: the Ember inspector drawer shows the same strings as text,
+// survives a reload, closes on Esc and gives focus back.
+test('the drawer shows a listener, its process and a package as text', async ({ page }) => {
+  await page.goto(`${origin}/#/network?q=7778`);
+  await page.reload();
+  const what = page.locator('button.what').first();
+  await what.click();
+  const drawer = page.locator('dialog.drawer[open]');
+  await expect(drawer.getByText(COMM).first()).toBeVisible({ timeout: 15_000 });
+  await noScriptRan(page);
+
+  await page.goto(`${origin}/#/packages?inspect=package:hearth-xss-probe`);
+  await page.reload();
+  await expect(drawer.getByText(PAYLOAD).first()).toBeVisible({ timeout: 15_000 });
+  await page.waitForTimeout(500);
+  await noScriptRan(page);
+});
+
+test('the drawer shows a container as text', async ({ page }) => {
+  await page.goto(`${origin}/#/docker`);
+  await page.reload();
+  await page.getByRole('button', { name: PAYLOAD }).first().click();
+  await expect(page.locator('dialog.drawer[open] #inspect-title')).toHaveText(PAYLOAD, { timeout: 15_000 });
+  await noScriptRan(page);
+});
+
+test("a container's details show it as text", async ({ page }) => {
+  // Details in the row's menu: logs, environment, labels and inspect.
+  await page.goto(`${origin}/#/docker`);
+  await page.reload();
+  await page.getByRole('button', { name: `Actions for ${PAYLOAD}`, exact: true }).first().click();
+  await page.locator('[popover]:popover-open').getByRole('button', { name: 'Details' }).click();
+  await expect(page.locator('dialog[open] #detail-title')).toHaveText(PAYLOAD, { timeout: 15_000 });
+  await page.waitForTimeout(500);
+  await noScriptRan(page);
+});
+
+test('the drawer is a link, closes on Esc and gives focus back', async ({ page }) => {
+  await page.goto(`${origin}/#/network?q=7778`);
+  await page.reload();
+  const what = page.locator('button.what').first();
+  await what.focus();
+  await page.keyboard.press('Enter');
+  const drawer = page.locator('dialog.drawer[open]');
+  await expect(drawer).toBeVisible();
+  expect(page.url()).toContain('inspect=port');
+  const title = await drawer.locator('#inspect-title').textContent();
+
+  // Focus stays in the drawer.
+  for (let i = 0; i < 12; i++) await page.keyboard.press('Tab');
+  expect(await page.evaluate(() => !!document.activeElement?.closest('dialog.drawer'))).toBe(true);
+
+  await page.reload();
+  await expect(drawer.locator('#inspect-title')).toHaveText(title ?? '');
+
+  await page.keyboard.press('Escape');
+  await expect(drawer).toHaveCount(0);
+  expect(page.url()).not.toContain('inspect=');
+
+  await what.focus();
+  await page.keyboard.press('Enter');
+  await expect(drawer).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(drawer).toHaveCount(0);
+  expect(await page.evaluate(() => document.activeElement?.classList.contains('what'))).toBe(true);
+
+  // A lineage link opens that item in the drawer; Back returns.
+  await what.click();
+  const link = drawer.locator('.chain a').first();
+  if ((await link.count()) > 0) {
+    await link.click();
+    await expect(drawer.locator('#inspect-title')).not.toHaveText(title ?? '');
+    await page.goBack();
+    await expect(drawer.locator('#inspect-title')).toHaveText(title ?? '');
+  }
+});
+
+// ROADMAP 8.8: one row is a tab stop, the arrow keys move between rows and
+// Enter opens the row in the drawer; the header stays in view.
+test('list rows move with the keyboard and keep their header', async ({ page }) => {
+  await page.goto(`${origin}/#/services`);
+  await page.reload();
+  const rows = page.locator('tbody tr');
+  await expect(rows.first()).toBeVisible({ timeout: 15_000 });
+  expect(await page.locator('tbody tr[tabindex="0"]').count()).toBe(1);
+  await rows.first().focus();
+  await page.keyboard.press('ArrowDown');
+  const name = await page.evaluate(() => document.activeElement?.getAttribute('aria-label'));
+  expect(name).toBe(await rows.nth(1).getAttribute('aria-label'));
+  await page.keyboard.press('Enter');
+  await expect(page.locator('dialog.drawer[open] #inspect-title')).toHaveText(name ?? '');
+  await page.keyboard.press('Escape');
+  expect(await page.evaluate(() => document.activeElement?.getAttribute('aria-label'))).toBe(name);
+
+  const box = page.locator('.table-scroll');
+  await box.evaluate((el) => (el.scrollTop = el.scrollHeight));
+  const stuck = await page.evaluate(() => {
+    const s = document.querySelector('.table-scroll');
+    const th = s?.querySelector('thead th');
+    return !!s && !!th && Math.abs(th.getBoundingClientRect().top - s.getBoundingClientRect().top) < 2;
+  });
+  expect(stuck).toBe(true);
 });

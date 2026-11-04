@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
+  import HomeHealth from '../components/HomeHealth.svelte';
   import HomeTiles from '../components/HomeTiles.svelte';
-  import RestartBanner from '../components/RestartBanner.svelte';
   import CpuCard from '../components/cards/CpuCard.svelte';
   import DockerCard from '../components/cards/DockerCard.svelte';
   import DiskCard from '../components/cards/DiskCard.svelte';
@@ -71,7 +72,7 @@
   // Layout: loaded once, saved (debounced) after each change.
   let layout = $state<Layout>({ order: [], hidden: [] });
   let loaded = $state(false);
-  let saveFailed = $state(false);
+  let saveFailed = $state('');
   let editing = $state(false);
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -89,8 +90,8 @@
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       api('/settings/home.layout', { method: 'PUT', body: JSON.stringify($state.snapshot(layout)) })
-        .then(() => (saveFailed = false))
-        .catch(() => (saveFailed = true));
+        .then(() => (saveFailed = ''))
+        .catch((err: unknown) => (saveFailed = failure(err, 'home.saveFailed')));
     }, 400);
   }
 
@@ -121,17 +122,18 @@
   {/if}
 </header>
 
-<RestartBanner />
+<HomeHealth {live} />
 
 <HomeTiles {live} />
 
 {#if saveFailed}
-  <p class="error" role="status">{t('home.saveFailed')}</p>
+  <p class="error" role="status">{saveFailed}</p>
 {/if}
 
 {#if !metrics || !sample || !loaded}
   <p class="waiting">{t('home.waiting')}</p>
 {:else}
+  <h2 class="section">{t('home.quickViews')}</h2>
   <ul class="grid" class:editing aria-label={t('home.cards')}>
     {#each arranged.visible as id, i (id)}
       {@const card = byId.get(id)}
@@ -258,6 +260,14 @@
   }
   .error {
     color: var(--crit);
+  }
+  .section {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: var(--space-5) 0 var(--space-3);
   }
   .grid {
     list-style: none;

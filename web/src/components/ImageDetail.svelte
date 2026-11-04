@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { api, ApiError } from '../lib/api';
+  import Skeleton from './Skeleton.svelte';
+  import { failure } from '../lib/errors';
+  import { api } from '../lib/api';
   import {
     envPairs,
     imageTitle,
@@ -102,7 +104,7 @@
         layers = Array.isArray(d.history) ? d.history : [];
       })
       .catch((err: unknown) => {
-        if (!stopped) failed = err instanceof ApiError ? err.message : t('action.failed');
+        if (!stopped) failed = failure(err, 'action.failed');
       });
     return () => {
       stopped = true;
@@ -121,7 +123,7 @@
     try {
       updates = (await api<{ tags: TagUpdate[] }>(`${path}/updates`)).tags;
     } catch (err) {
-      failed = err instanceof ApiError ? err.message : t('action.failed');
+      failed = failure(err, 'action.failed');
     } finally {
       checking = false;
     }
@@ -133,7 +135,7 @@
     try {
       scan = await api<Scan>(`${path}/scan`, { method: 'POST' });
     } catch (err) {
-      scanError = err instanceof ApiError ? err.message : t('action.failed');
+      scanError = failure(err, 'action.failed');
     } finally {
       scanning = false;
     }
@@ -174,7 +176,7 @@
     <div class="body" role="tabpanel">
       {#if tab === 'overview'}
         {#if !inspect}
-          <p class="note">{t('detail.loading')}</p>
+          <Skeleton label={t('detail.loading')} />
         {:else}
           {@const cfg = inspect.Config ?? {}}
           <dl>
@@ -285,7 +287,7 @@
         {/if}
       {:else if tab === 'scan'}
         {#if !trivy}
-          <p class="note">{t('detail.loading')}</p>
+          <Skeleton label={t('detail.loading')} />
         {:else if !trivy.installed}
           <p class="note">{t('image.scan.missing')}</p>
         {:else}

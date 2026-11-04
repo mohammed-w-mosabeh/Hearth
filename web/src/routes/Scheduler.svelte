@@ -1,8 +1,11 @@
 <script lang="ts">
+  import EmptyState from '../components/EmptyState.svelte';
+  import Skeleton from '../components/Skeleton.svelte';
+  import { failure } from '../lib/errors';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import JobDialog from '../components/JobDialog.svelte';
   import { preview, reasonKey, run, type Plan, type Result } from '../lib/actions';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import { duration } from '../lib/format';
   import { locale, menuLeft, type MessageKey, t } from '../lib/i18n';
   import { blank, describe, order, type Job, type Listed, type Run, type Scope } from '../lib/jobs';
@@ -21,7 +24,7 @@
       jobs = order((await api<{ jobs: Listed[] }>('/jobs')).jobs);
       failed = '';
     } catch (err) {
-      failed = err instanceof ApiError ? err.message : t('jobs.error');
+      failed = failure(err, 'jobs.error');
     }
   }
   $effect(() => {
@@ -40,7 +43,7 @@
     try {
       editing = { scope: j.scope, job: await api<Job>(`/jobs/${j.scope}/${j.id}`) };
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('jobs.error'), { tone: 'error' });
+      toast(failure(err, 'jobs.error'), { tone: 'error' });
     }
   }
 
@@ -73,7 +76,7 @@
       }
       report(op, j, await run('job', op, target));
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     }
   }
 
@@ -84,7 +87,7 @@
     try {
       report('delete', j, await run('job', 'delete', `${j.scope}/${j.id}`, {}, plan.token, typed || undefined));
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
     }
   }
 
@@ -140,12 +143,11 @@
 {#if failed}<p class="note error" role="status">{failed}</p>{/if}
 
 {#if jobs === null && !failed}
-  <p class="note">{t('jobs.loading')}</p>
+  <Skeleton label={t('jobs.loading')} />
 {:else if jobs && jobs.length === 0}
-  <div class="empty">
-    <p>{t('jobs.empty')}</p>
+  <EmptyState inline icon="calendar" body={t('jobs.empty')}>
     <button type="button" class="btn" onclick={() => (editing = { scope: 'user', job: blank() })}>{t('jobs.new')}</button>
-  </div>
+  </EmptyState>
 {:else if jobs}
   <div class="scroll">
     <table>
@@ -180,7 +182,7 @@
   <p class="foot">{t('jobs.footnote')}</p>
 {/if}
 
-<div bind:this={menu} popover="auto" class="menu" aria-label={subject ? t('jobs.actionsFor', { name: subject.name }) : undefined}>
+<div bind:this={menu} popover="auto" class="menu" role="group" aria-label={subject ? t('jobs.actionsFor', { name: subject.name }) : undefined}>
   {#if subject}
     {@const j = subject}
     <button type="button" onclick={() => act('run', j)} disabled={j.running}>{t('jobs.op.run')}</button>
@@ -221,7 +223,7 @@
     </header>
     {#if limited}<p class="note warn">{t('jobs.historyLimited')}</p>{/if}
     {#if runs === null}
-      <p class="note">{t('jobs.loading')}</p>
+      <Skeleton label={t('jobs.loading')} />
     {:else if runs.length === 0}
       <p class="note">{t('jobs.noRuns')}</p>
     {:else}
@@ -235,7 +237,8 @@
               <span class="muted">{when(r.start)}{#if r.end} · {duration(Math.max(0, (r.end - r.start) / 1000)) || '0 s'}{/if}</span>
             </div>
             {#if r.output.length}
-              <pre>{r.output.join('\n')}{r.more ? '\n…' : ''}</pre>
+              <!-- svelte-ignore a11y_no_noninteractive_tabindex (it scrolls, so the keyboard must reach it) -->
+              <pre tabindex="0">{r.output.join('\n')}{r.more ? '\n…' : ''}</pre>
             {/if}
           </li>
         {/each}
@@ -277,14 +280,6 @@
   .foot {
     font-size: 12px;
     margin-top: var(--space-2);
-  }
-  .empty {
-    padding: var(--space-6);
-    text-align: center;
-    color: var(--text-muted);
-    background: var(--surface);
-    border: 1px dashed var(--border);
-    border-radius: var(--radius-m);
   }
   .btn {
     font: inherit;

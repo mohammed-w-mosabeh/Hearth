@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Skeleton from './Skeleton.svelte';
+  import { failure } from '../lib/errors';
   import { api, ApiError } from '../lib/api';
   import { t } from '../lib/i18n';
 
@@ -26,7 +28,7 @@
         if (!stopped) text = r.text;
       })
       .catch((err: unknown) => {
-        if (!stopped) failed = err instanceof ApiError && err.status === 404 ? t('tools.man.none') : t('tools.man.error');
+        if (!stopped) failed = err instanceof ApiError && err.status === 404 ? t('tools.man.none') : failure(err, 'tools.man.error');
       });
     return () => {
       stopped = true;
@@ -55,9 +57,10 @@
     {#if failed}
       <p class="note">{failed}</p>
     {:else if !text}
-      <p class="note">{t('tools.man.loading')}</p>
+      <Skeleton label={t('tools.man.loading')} rows={2} />
     {:else}
-      <pre>{shown}</pre>
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex (it scrolls, so the keyboard must reach it) -->
+      <pre tabindex="0">{shown}</pre>
     {/if}
   {/if}
 </dialog>

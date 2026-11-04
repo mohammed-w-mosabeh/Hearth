@@ -1,8 +1,10 @@
 <script lang="ts">
+  import Skeleton from '../components/Skeleton.svelte';
+  import { failure } from '../lib/errors';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import ManDialog from '../components/ManDialog.svelte';
   import { preview, run, type Plan } from '../lib/actions';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import { menuLeft, type MessageKey, t } from '../lib/i18n';
   import { pkgReasonKey, removeKind } from '../lib/packages';
   import { href, router } from '../lib/router.svelte';
@@ -21,7 +23,7 @@
       list = await api<ToolList>('/tools');
       failed = '';
     } catch (err) {
-      failed = err instanceof ApiError ? err.message : t('tools.error');
+      failed = failure(err, 'tools.error');
     }
   }
   $effect(() => {
@@ -91,7 +93,7 @@
     manOf = x.name;
   }
 
-  const errText = (err: unknown) => (err instanceof ApiError ? err.message : t('action.failed'));
+  const errText = (err: unknown) => (failure(err, 'action.failed'));
 
   // Removing the owner is the Packages page's removal: previewed (with
   // everything else it takes along), then confirmed.
@@ -153,7 +155,7 @@
 </div>
 
 {#if list === null && !failed}
-  <p class="note">{t('tools.loading')}</p>
+  <Skeleton label={t('tools.loading')} />
 {:else if shown.length === 0}
   <p class="note">{t('tools.none')}</p>
 {:else}
@@ -212,7 +214,7 @@
 {/if}
 
 <!-- Not a role="menu": a group of buttons in a popover (no arrow-key contract). -->
-<div bind:this={menu} popover="auto" class="menu" aria-label={subject ? t('tools.actionsFor', { name: subject.name }) : undefined}>
+<div bind:this={menu} popover="auto" class="menu" role="group" aria-label={subject ? t('tools.actionsFor', { name: subject.name }) : undefined}>
   {#if subject}
     {@const x = subject}
     <a href={href('terminal', openTool(x.name))} onclick={() => menu.hidePopover()}>{t('tools.op.terminal')}</a>
@@ -292,6 +294,10 @@
   .n {
     font-size: 11px;
     opacity: 0.75;
+  }
+  /* Full strength on the accent, where a faded count falls under AA. */
+  .on .n {
+    opacity: 1;
   }
   .note,
   .foot,

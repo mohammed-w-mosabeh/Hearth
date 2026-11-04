@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import en from './i18n/en.json';
-import { CHECKS, FINDINGS, checkHint, noneKey, statusLabel, verdictKey, checkTitle, cveRows, findingKey, overall, riskKey, trackerURL, type CVEs, type Report, restartKey } from './security';
+import { CHECKS, FINDINGS, checkHint, noneKey, statusLabel, verdictKey, checkTitle, cveRows, findingKey, overall, riskKey, trackerURL, type CVEs, type Report } from './security';
 
 const report = (statuses: Report['checks'][number]['status'][]): Report => ({
   time: 0,
@@ -46,15 +46,5 @@ describe('security', () => {
     expect(trackerURL('CVE-2024-12345')).toBe('https://security-tracker.debian.org/tracker/CVE-2024-12345');
     expect(trackerURL('TEMP-0000000-ABCDEF')).not.toBeNull();
     expect(trackerURL('javascript:alert(1)')).toBeNull();
-  });
-});
-
-describe('restart reminder', () => {
-  it('stays quiet when nothing waits', () => {
-    expect(restartKey({ reboot: false, services: [] })).toBeNull();
-  });
-  it('puts a reboot before services', () => {
-    expect(restartKey({ reboot: true, services: ['a.service'] })).toBe('home.restart.reboot');
-    expect(restartKey({ reboot: false, services: ['a.service'] })).toBe('home.restart.services');
   });
 });

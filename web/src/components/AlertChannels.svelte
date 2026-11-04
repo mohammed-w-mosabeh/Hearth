@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import { channelBody, channelForm, type ChannelForm, type ChannelView } from '../lib/alerts';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import { t } from '../lib/i18n';
   import { toast } from '../lib/toast.svelte';
 
@@ -10,7 +11,7 @@
   let form = $state<ChannelForm | null>(null);
   let busy = $state(false);
 
-  const problem = (err: unknown) => (err instanceof ApiError ? err.message : t('action.failed'));
+  const problem = (err: unknown) => (failure(err, 'action.failed'));
 
   function show(v: ChannelView): void {
     view = v;
@@ -201,7 +202,7 @@
   }
   button.primary {
     background: var(--accent);
-    color: var(--on-accent, #fff);
+    color: var(--accent-contrast);
     border-color: var(--accent);
   }
 </style>

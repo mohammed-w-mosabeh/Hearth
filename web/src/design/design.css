@@ -1,0 +1,35 @@
+/* Fixture screens only. Task 9.9 and 10.9 move what they keep into components. */
+.d-page { display: grid; gap: var(--space-4); max-width: 1100px; }
+.d-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.d-head h1 { font-size: 20px; }
+.d-sub { color: var(--text-muted); margin: 0; }
+.d-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-m); padding: var(--space-4); }
+.d-card h2 { font-size: 14px; margin-block-end: var(--space-2); }
+.d-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--space-4); }
+.d-table { width: 100%; border-collapse: collapse; }
+.d-table th { text-align: start; color: var(--text-muted); font-weight: 400; font-size: 12px; }
+.d-table th, .d-table td { padding: var(--space-2); border-block-end: 1px solid var(--border); height: var(--row-h); }
+.d-btn { font: inherit; min-height: 32px; padding: 0 var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-s); background: var(--surface-2); color: var(--text); cursor: pointer; }
+.d-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); font-weight: 600; }
+.d-btn.danger { border-color: var(--crit); color: var(--crit); background: none; }
+.d-row { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
+.d-chip { display: inline-flex; gap: var(--space-1); align-items: center; padding: 0 var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-s); font-size: 12px; }
+.d-chip.warn { border-color: var(--warn); color: var(--warn); }
+.d-chip.crit { border-color: var(--crit); color: var(--crit); }
+.d-ok { color: var(--ok); } .d-warn { color: var(--warn); } .d-crit { color: var(--crit); } .d-muted { color: var(--text-muted); }
+.d-list { margin: 0; padding-inline-start: var(--space-4); display: grid; gap: var(--space-1); }
+.d-dl { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-4); margin: 0; }
+.d-dl dt { color: var(--text-muted); } .d-dl dd { margin: 0; }
+.d-danger { border-inline-start: 3px solid var(--crit); padding: var(--space-2) var(--space-3); background: var(--surface-2); border-radius: var(--radius-s); }
+.d-input { font: inherit; min-height: 32px; padding: 0 var(--space-2); background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-s); }
+.d-split { position: relative; display: grid; grid-template-columns: 1fr 420px; gap: var(--space-4); align-items: start; }
+.d-drawer { background: var(--surface); border-inline-start: 1px solid var(--border); padding: var(--space-4); display: grid; gap: var(--space-3); box-shadow: var(--shadow); min-height: 640px; }
+.d-toast { max-width: 420px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-m); padding: var(--space-3); box-shadow: var(--shadow); display: grid; gap: var(--space-2); }
+.d-shell { display: flex; height: 100%; }
+.d-shell > main { flex: 1; overflow: auto; padding: var(--space-5) var(--space-6); }
+.d-drawer h1 { font-size: 18px; }
+.d-drawer h2 { font-size: 13px; margin-block-end: var(--space-1); }
+.d-drawer > * { min-width: 0; }
+.d-pre { margin: 0; padding: var(--space-2); overflow-x: auto; background: var(--bg); border-radius: var(--radius-s); font-family: var(--font-mono); font-size: 12px; }
+.d-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.d-page > .d-list, .d-card .d-list + .d-sub { margin-block-start: var(--space-2); }

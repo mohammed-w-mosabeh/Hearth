@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { api, ApiError } from '../lib/api';
+  import Skeleton from './Skeleton.svelte';
+  import { failure } from '../lib/errors';
+  import { api } from '../lib/api';
   import { locale, t } from '../lib/i18n';
   import { lynisPage, lynisPoints, lynisTrend, type LynisFinding, type LynisSchedule, type LynisView } from '../lib/lynis';
   import { toast } from '../lib/toast.svelte';
@@ -7,16 +9,16 @@
   // Lynis on the Security page (ROADMAP 7.1). Nothing here runs an audit
   // until the button is pressed or a schedule is chosen.
   let view = $state.raw<LynisView | null>(null);
-  let failed = $state(false);
+  let failed = $state('');
   let running = $state(false);
   let saving = $state(false);
 
   async function load(): Promise<void> {
     try {
       view = await api<LynisView>('/security/lynis');
-      failed = false;
-    } catch {
-      failed = true;
+      failed = '';
+    } catch (err) {
+      failed = failure(err, 'lynis.error');
     }
   }
 
@@ -25,7 +27,7 @@
     try {
       view = await api<LynisView>('/security/lynis/run', { method: 'POST' });
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
       await load();
     } finally {
       running = false;
@@ -37,7 +39,7 @@
     try {
       view = await api<LynisView>('/security/lynis/schedule', { method: 'PUT', body: JSON.stringify({ every }) });
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
       await load();
     } finally {
       saving = false;
@@ -74,9 +76,9 @@
 <section class="card" aria-labelledby="lynis-title">
   <h2 id="lynis-title">{t('lynis.title')}</h2>
   {#if failed}
-    <p class="muted" role="status">{t('lynis.error')}</p>
+    <p class="muted" role="status">{failed}</p>
   {:else if view === null}
-    <p class="muted">{t('security.loading')}</p>
+    <Skeleton label={t('security.loading')} rows={2} />
   {:else if !view.installed}
     <p class="muted">{t('lynis.install')} <code>sudo apt install lynis</code></p>
   {:else}

@@ -124,7 +124,7 @@ export interface Point {
 }
 
 export type StatsMsg =
-  | { kind: 'history'; history: Record<string, Point[]> }
+  | { kind: 'history'; history?: Record<string, Point[]> } // left out when nothing has samples
   | { kind: 'sample'; sample?: Record<string, Point> }; // left out when nothing runs
 
 /** Samples kept per container (internal/docker HistoryLen). */

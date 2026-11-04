@@ -1,7 +1,9 @@
 <script lang="ts">
+  import Skeleton from './Skeleton.svelte';
+  import { failure } from '../lib/errors';
   import ContainerShell from './ContainerShell.svelte';
   import Sparkline from './Sparkline.svelte';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import {
     appendLogs,
     columns,
@@ -96,7 +98,7 @@
         if (!stopped) info = r;
       })
       .catch((err: unknown) => {
-        if (!stopped) failed = err instanceof ApiError ? err.message : t('action.failed');
+        if (!stopped) failed = failure(err, 'action.failed');
       });
     return () => {
       stopped = true;
@@ -193,7 +195,7 @@
     <div class="body" role="tabpanel">
       {#if tab === 'overview'}
         {#if !ins}
-          <p class="note">{t('detail.loading')}</p>
+          <Skeleton label={t('detail.loading')} />
         {:else}
           {#if info && info.risks.length > 0}
             <div class="risks" role="note">
@@ -340,16 +342,17 @@
         <p class="note small">{t('detail.logs.foot', { n: lines.length })}</p>
       {:else if tab === 'shell'}
         {#if !info}
-          <p class="note">{t('detail.loading')}</p>
+          <Skeleton label={t('detail.loading')} />
         {:else}
           <ContainerShell id={c.id} name={c.name} refused={info.risks.map(riskText)} />
         {/if}
       {:else if tab === 'inspect'}
         {#if !ins}
-          <p class="note">{t('detail.loading')}</p>
+          <Skeleton label={t('detail.loading')} />
         {:else}
           <div class="bar"><button type="button" class="plain" onclick={copy}>{t('detail.inspect.copy')}</button></div>
-          <pre>{JSON.stringify(ins, null, 2)}</pre>
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex (it scrolls, so the keyboard must reach it) -->
+          <pre tabindex="0">{JSON.stringify(ins, null, 2)}</pre>
         {/if}
       {/if}
     </div>

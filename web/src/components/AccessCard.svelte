@@ -1,18 +1,20 @@
 <script lang="ts">
+  import Skeleton from './Skeleton.svelte';
+  import { failure } from '../lib/errors';
   import { sessionPlace, type AccessReport } from '../lib/access';
   import { api } from '../lib/api';
   import { locale, t } from '../lib/i18n';
 
   // Access on the Security page (ROADMAP 7.4). Read-only: nothing here acts.
   let report = $state.raw<AccessReport | null>(null);
-  let failed = $state(false);
+  let failed = $state('');
 
   async function load(): Promise<void> {
     try {
       report = await api<AccessReport>('/security/access');
-      failed = false;
-    } catch {
-      failed = true;
+      failed = '';
+    } catch (err) {
+      failed = failure(err, 'access.error');
     }
   }
 
@@ -26,9 +28,9 @@
 <section class="card" aria-labelledby="access-title">
   <h2 id="access-title">{t('access.title')}</h2>
   {#if failed}
-    <p class="muted" role="status">{t('access.error')}</p>
+    <p class="muted" role="status">{failed}</p>
   {:else if report === null}
-    <p class="muted">{t('security.loading')}</p>
+    <Skeleton label={t('security.loading')} rows={2} />
   {:else}
     <p class="muted">{t('access.intro')}</p>
 

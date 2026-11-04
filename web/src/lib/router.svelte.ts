@@ -35,6 +35,13 @@ export const routes: Route[] = [
   { id: 'settings', label: 'nav.settings', icon: 'sliders' },
 ];
 
+/** Names of pages that open another page for now: Apps opens the Docker
+ *  page's Compose tab until Phase 9, Modes the Profiles page until Phase 10. */
+export const aliases: Readonly<Record<string, string>> = { stacks: 'docker', modes: 'profiles' };
+
+/** The page a route id shows. */
+export const pageOf = (id: string): string => aliases[id] ?? id;
+
 export function routeId(hash: string): string {
   const id = hash.replace(/^#\/?/, '').replace(/\?.*$/, '');
   // "#k=<key>" is the session hand-off from /auth (session.ts strips it with
@@ -53,14 +60,40 @@ export function routeQuery(hash: string): string {
   }
 }
 
-export const router = $state({ id: routeId(location.hash), q: routeQuery(location.hash) });
+/** A parameter of a hash's query ("#/docker?inspect=x" -> "x"), or "". */
+export function routeParam(hash: string, name: string): string {
+  const i = hash.indexOf('?');
+  if (i < 0) return '';
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity -- parsed once, never kept
+  return new URLSearchParams(hash.slice(i + 1)).get(name) ?? '';
+}
+
+export const router = $state({ id: routeId(location.hash), q: routeQuery(location.hash), inspect: routeParam(location.hash, 'inspect') });
 
 window.addEventListener('hashchange', () => {
   router.id = routeId(location.hash);
   router.q = routeQuery(location.hash);
+  router.inspect = routeParam(location.hash, 'inspect');
 });
 
 export function href(id: string, q = ''): string {
   const base = id === 'home' ? '#/' : `#/${id}`;
   return q ? `${base}?q=${encodeURIComponent(q)}` : base;
+}
+
+/** The current page with the inspector drawer on item ("" closes it),
+ *  keeping the page's search (ROADMAP 8.7). */
+export function inspectHref(item: string, hash = location.hash): string {
+  const id = routeId(hash);
+  const parts: string[] = [];
+  const q = routeQuery(hash);
+  if (q) parts.push(`q=${encodeURIComponent(q)}`);
+  if (item) parts.push(`inspect=${encodeURIComponent(item)}`);
+  const base = id === 'home' ? '#/' : `#/${id}`;
+  return parts.length > 0 ? `${base}?${parts.join('&')}` : base;
+}
+
+/** Opens the inspector drawer on item, on the current page. */
+export function openInspect(item: string): void {
+  location.hash = inspectHref(item);
 }

@@ -1,6 +1,8 @@
 <script lang="ts">
+  import Skeleton from './Skeleton.svelte';
+  import { failure } from '../lib/errors';
   import type { Plan } from '../lib/actions';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import { locale, t } from '../lib/i18n';
   import { acceptBody, diffUrl, type IntegrityChange, type IntegrityDiff, type IntegrityView } from '../lib/integrity';
   import { toast } from '../lib/toast.svelte';
@@ -9,18 +11,18 @@
   // Integrity watch on the Security page (ROADMAP 7.3). Opening the page scans;
   // only "Accept" changes anything, and it names each change as shown here.
   let view = $state.raw<IntegrityView | null>(null);
-  let failed = $state(false);
+  let failed = $state('');
   let open = $state<string | null>(null);
   let diff = $state.raw<IntegrityDiff | null>(null);
-  let diffFailed = $state(false);
+  let diffFailed = $state('');
   let pending = $state.raw<IntegrityChange[] | null>(null);
 
   async function load(): Promise<void> {
     try {
       view = await api<IntegrityView>('/security/integrity');
-      failed = false;
-    } catch {
-      failed = true;
+      failed = '';
+    } catch (err) {
+      failed = failure(err, 'integrity.error');
     }
   }
 
@@ -31,12 +33,12 @@
     }
     open = c.path;
     diff = null;
-    diffFailed = false;
+    diffFailed = '';
     try {
       const d = await api<IntegrityDiff>(diffUrl(c.path));
       if (open === c.path) diff = d;
-    } catch {
-      if (open === c.path) diffFailed = true;
+    } catch (err) {
+      if (open === c.path) diffFailed = failure(err, 'integrity.diffError');
     }
   }
 
@@ -50,7 +52,7 @@
         toast(t('integrity.moved'), { tone: 'error' });
       }
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : t('action.failed'), { tone: 'error' });
+      toast(failure(err, 'action.failed'), { tone: 'error' });
       await load();
     } finally {
       pending = null;
@@ -70,9 +72,9 @@
 <section class="card" aria-labelledby="integrity-title">
   <h2 id="integrity-title">{t('integrity.title')}</h2>
   {#if failed}
-    <p class="muted" role="status">{t('integrity.error')}</p>
+    <p class="muted" role="status">{failed}</p>
   {:else if view === null}
-    <p class="muted">{t('security.loading')}</p>
+    <Skeleton label={t('security.loading')} rows={2} />
   {:else}
     <p class="muted">{t('integrity.intro')}</p>
     {#if view.error}<p class="muted" role="status">{t('integrity.failed')}</p>{/if}
@@ -99,13 +101,14 @@
             </div>
             {#if open === c.path}
               {#if diffFailed}
-                <p class="muted" role="status">{t('integrity.diffError')}</p>
+                <p class="muted" role="status">{diffFailed}</p>
               {:else if diff === null}
-                <p class="muted">{t('security.loading')}</p>
+                <Skeleton label={t('security.loading')} rows={2} />
               {:else if diff.note}
                 <p class="muted">{t(`integrity.note.${diff.note}`)}</p>
               {:else}
-                <pre class="diff" dir="ltr">{#each diff.lines as l, i (i)}{#if l.gap}<span class="gap">…
+                <!-- svelte-ignore a11y_no_noninteractive_tabindex (it scrolls, so the keyboard must reach it) -->
+                <pre tabindex="0" class="diff" dir="ltr">{#each diff.lines as l, i (i)}{#if l.gap}<span class="gap">…
 </span>{:else}<span class={l.op === '+' ? 'add' : l.op === '-' ? 'del' : ''}>{l.op} {l.text}
 </span>{/if}{/each}</pre>
                 {#if diff.truncated}<p class="muted">{t('integrity.diffCut')}</p>{/if}

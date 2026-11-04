@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { api, ApiError } from '../lib/api';
+  import Skeleton from './Skeleton.svelte';
+  import { failure } from '../lib/errors';
+  import { api } from '../lib/api';
   import { bytes } from '../lib/format';
   import { ltr, t } from '../lib/i18n';
   import { pkgReasonKey, type DebDetail, type Row } from '../lib/packages';
@@ -33,7 +35,7 @@
         if (!stopped) detail = d;
       })
       .catch((err: unknown) => {
-        if (!stopped) failed = err instanceof ApiError ? err.message : t('pkg.detail.error');
+        if (!stopped) failed = failure(err, 'pkg.detail.error');
       });
     return () => {
       stopped = true;
@@ -94,7 +96,7 @@
       {#if failed}
         <p class="note error" role="status">{failed}</p>
       {:else if !detail}
-        <p class="note">{t('pkg.detail.loading')}</p>
+        <Skeleton label={t('pkg.detail.loading')} />
       {:else}
         <section>
           <h3>{t('pkg.detail.deps', { n: detail.deps.length })}</h3>

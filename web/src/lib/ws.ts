@@ -10,15 +10,31 @@ export class Live {
   #key: string;
   #ws: WebSocket | null = null;
   #handlers = new Map<string, Set<Handler>>();
+  #listeners = new Map<string, Set<Handler>>();
   #retry = 0;
   #timer: ReturnType<typeof setTimeout> | undefined;
   #closed = false;
   #onState: (s: WsState) => void;
+  #onBeat: () => void;
 
-  constructor(key: string, onState: (s: WsState) => void) {
+  /** onBeat runs once per update received, for the live dot's pulse. */
+  constructor(key: string, onState: (s: WsState) => void, onBeat: () => void = () => {}) {
     this.#key = key;
     this.#onState = onState;
+    this.#onBeat = onBeat;
     this.#connect();
+  }
+
+  /** Hears a topic someone else subscribed to, without subscribing: the
+   *  sampler runs at 1 s only for subscribers. */
+  listen(topic: string, fn: Handler): () => void {
+    let set = this.#listeners.get(topic);
+    if (!set) {
+      set = new Set();
+      this.#listeners.set(topic, set);
+    }
+    set.add(fn);
+    return () => set.delete(fn);
   }
 
   subscribe(topic: string, fn: Handler): () => void {
@@ -64,7 +80,9 @@ export class Live {
         return;
       }
       if (typeof msg.topic !== 'string') return;
+      this.#onBeat();
       for (const fn of this.#handlers.get(msg.topic) ?? []) fn(msg.data);
+      for (const fn of this.#listeners.get(msg.topic) ?? []) fn(msg.data);
     };
     ws.onclose = () => {
       this.#ws = null;

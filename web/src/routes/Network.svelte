@@ -1,8 +1,9 @@
 <script lang="ts">
+  import Skeleton from '../components/Skeleton.svelte';
+  import { failure } from '../lib/errors';
   import Connectivity from '../components/Connectivity.svelte';
   import FirewallCard from '../components/FirewallCard.svelte';
-  import LineageDialog from '../components/LineageDialog.svelte';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import { bytes, rate } from '../lib/format';
   import { t, type MessageKey } from '../lib/i18n';
   import {
@@ -18,17 +19,17 @@
     vpns,
     type Endpoint,
     type NetState,
-    type Row,
     type ScopeFilter,
     type Sockets,
   } from '../lib/network';
-  import { router } from '../lib/router.svelte';
+  import { openInspect, router } from '../lib/router.svelte';
 
   // Network & ports (SPEC 11): who listens where, current connections and
   // their throughput, addressing, Wi-Fi/VPN and the firewall. Sockets are
   // read every few seconds while the page is visible.
   const SOCKETS_MS = 5000;
   const STATE_MS = 15000;
+
 
   let sockets = $state.raw<Sockets | null>(null);
   let info = $state.raw<NetState | null>(null);
@@ -47,7 +48,7 @@
       sockets = s;
       failed = '';
     } catch (err) {
-      failed = err instanceof ApiError ? err.message : t('net.error');
+      failed = failure(err, 'net.error');
     }
   }
   async function loadState(): Promise<void> {
@@ -108,7 +109,6 @@
   const activeFw = $derived(info?.firewalls.filter((f) => f.active) ?? []);
   const installedFw = $derived(info?.firewalls.filter((f) => f.installed && !f.active) ?? []);
 
-  let lineageOf = $state<Row | null>(null);
 </script>
 
 <header>
@@ -218,7 +218,7 @@
 </div>
 
 {#if sockets === null && !failed}
-  <p class="note">{t('net.loading')}</p>
+  <Skeleton label={t('net.loading')} />
 {:else if tab === 'listening'}
   {#if shown.length === 0}
     <p class="note">{t('net.noneMatch')}</p>
@@ -257,7 +257,7 @@
               </td>
               <td>{r.user}</td>
               <td class="act">
-                <button type="button" class="what" onclick={() => (lineageOf = r)}>{t('net.whatIsThis')}</button>
+                <button type="button" class="what" onclick={() => openInspect(`port:${r.proto}/${r.port}`)}>{t('net.whatIsThis')}</button>
               </td>
             </tr>
           {/each}
@@ -305,7 +305,6 @@
   {#if sockets?.truncated}<p class="foot">{t('net.truncated')}</p>{/if}
 {/if}
 
-<LineageDialog row={lineageOf} onclose={() => (lineageOf = null)} onchanged={() => setTimeout(() => void loadSockets(), 1000)} />
 
 <style>
   header {

@@ -1,10 +1,14 @@
 <script lang="ts">
+  import Skeleton from '../components/Skeleton.svelte';
+  import { failure } from '../lib/errors';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
+  import RowSpark from '../components/RowSpark.svelte';
+  import StatusMark from '../components/StatusMark.svelte';
+  import { rowNav, sparks, unitStatus } from '../lib/rows';
   import JournalDialog from '../components/JournalDialog.svelte';
   import OverrideDialog from '../components/OverrideDialog.svelte';
   import { preview, reasonKey, run, type Params, type Plan, type Result } from '../lib/actions';
-  import { ApiError } from '../lib/api';
-  import { bytes, pct } from '../lib/format';
+    import { bytes, pct } from '../lib/format';
   import { menuLeft, type MessageKey, t } from '../lib/i18n';
   import {
     available,
@@ -22,7 +26,7 @@
     type UnitOp,
   } from '../lib/services';
   import { toast } from '../lib/toast.svelte';
-  import { router } from '../lib/router.svelte';
+  import { inspectHref, router } from '../lib/router.svelte';
   import type { Live } from '../lib/ws';
 
   // systemd units, system and user. Following the "services" topic is what
@@ -30,9 +34,12 @@
   // open.
   let { live }: { live: Live } = $props();
 
+
   let units = $state.raw<Unit[] | null>(null);
   let errors = $state.raw<Partial<Record<string, string>>>({});
   let stats = $state.raw<Record<string, Stat>>({});
+  // Each unit's CPU over the last 10 minutes, kept for the session.
+  let spark = $state.raw(sparks.units.snapshot());
   let filesKnown = $state(false);
 
   $effect(() =>
@@ -44,6 +51,10 @@
         filesKnown = m.units.some((u) => u.enabled);
       } else if (m?.kind === 'stats' && m.stats) {
         stats = m.stats;
+        const now = Date.now() / 1000;
+        for (const [k, s] of Object.entries(m.stats)) sparks.units.add(k, now, s.cpu);
+        sparks.units.prune(now);
+        spark = sparks.units.snapshot();
       }
     }),
   );
@@ -160,7 +171,7 @@
   }
 
   function errorText(err: unknown): string {
-    return err instanceof ApiError ? err.message : t('action.failed');
+    return failure(err, 'action.failed');
   }
 
   function setBusy(u: Unit, on: boolean): void {
@@ -279,14 +290,15 @@
 </div>
 
 {#if units === null}
-  <p class="note">{t('svc.loading')}</p>
+  <Skeleton label={t('svc.loading')} />
 {:else if rows.length === 0}
   <p class="note">{t('svc.none')}</p>
 {:else}
-  <div class="scroll">
+  <div class="scroll table-scroll">
     <table>
       <thead>
         <tr>
+          <th class="st"><span class="visually-hidden">{t('rows.status')}</span></th>
           {#each columns as c (c.label)}
             <th class:num={c.num} aria-sort={c.key && sortKey === c.key ? (desc ? 'descending' : 'ascending') : 'none'}>
               {#if c.key}
@@ -299,22 +311,23 @@
               {/if}
             </th>
           {/each}
+          <th><span class="th">{t('rows.spark')}</span></th>
           <th><span class="visually-hidden">{t('svc.col.actions')}</span></th>
         </tr>
       </thead>
-      <tbody>
+      <tbody use:rowNav>
         {#each rows as u (key(u))}
           {@const h = health(u)}
           {@const st = statOf(u)}
-          <tr>
+          <tr aria-label={u.name}>
+            <td class="st"><StatusMark kind={unitStatus(u.active)} label={u.active} /></td>
             <td class="unit">
-              <span class="name" title={u.name}>{u.name}</span>
+              <a class="name" data-primary title={u.name} href={inspectHref(`unit:${u.scope}/${u.name}`)}>{u.name}</a>
               {#if u.scope === 'user'}<span class="tag">{t('svc.tag.user')}</span>{/if}
               {#if u.critical}<span class="tag crit" title={t('svc.criticalHint')}>{t('svc.tag.critical')}</span>{/if}
               {#if u.description && u.description !== u.name}<span class="desc" title={u.description}>{u.description}</span>{/if}
             </td>
             <td>
-              <span class="dot {h}" aria-hidden="true"></span>
               <span class:failed={h === 'failed'}>{u.active}</span>
               <span class="sub">{u.sub}{u.job ? ` · ${u.job}…` : ''}</span>
               {#if u.load && u.load !== 'loaded'}<span class="sub">({u.load})</span>{/if}
@@ -322,6 +335,7 @@
             <td class="muted">{u.enabled ?? (filesKnown ? '–' : '…')}</td>
             <td class="num">{st ? bytes(st.mem) : '–'}</td>
             <td class="num">{st ? pct(st.cpu, 1) : '–'}</td>
+            <td><RowSpark points={spark[key(u)] ?? []} /></td>
             <td class="act">
               <button
                 type="button"
@@ -340,7 +354,7 @@
 {/if}
 
 <!-- Not a role="menu": a group of buttons in a popover (no arrow-key contract). -->
-<div bind:this={menu} popover="auto" class="menu" aria-label={subject ? t('svc.actionsFor', { name: subject.name }) : undefined}>
+<div bind:this={menu} popover="auto" class="menu" role="group" aria-label={subject ? t('svc.actionsFor', { name: subject.name }) : undefined}>
   {#if subject}
     {@const u = subject}
     {#each available(u) as op (op)}
@@ -521,23 +535,6 @@
     color: var(--warn);
     border-color: var(--warn);
   }
-  .dot {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    margin-inline-end: var(--space-2);
-    background: var(--border);
-  }
-  .dot.running {
-    background: var(--ok);
-  }
-  .dot.failed {
-    background: var(--crit);
-  }
-  .dot.changing {
-    background: var(--warn);
-  }
   .failed {
     color: var(--crit);
     font-weight: 500;
@@ -607,5 +604,18 @@
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
+  }
+  a.name {
+    color: inherit;
+    text-decoration: none;
+  }
+  a.name:hover,
+  a.name:focus-visible {
+    text-decoration: underline;
+  }
+  .st {
+    width: 1.5em;
+    padding-inline-end: 0;
+    text-align: center;
   }
 </style>

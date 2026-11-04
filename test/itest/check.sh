@@ -578,7 +578,7 @@ check "terminal: its unit is gone" test -z "$(asuser systemctl --user list-units
 check "terminal: a relative folder is refused" test "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/terminal?dir=tmp")" = 400
 check "terminal: a foreign Origin is refused" grep -q 'refused: 403' <<<"$(asuser hearth-termprobe -url "ws://127.0.0.1:$port/api/v1/terminal" -origin http://evil.test -key "$key" || true)"
 
-echo "== e2e: XSS (Playwright, Debian's chromium)"
+echo "== e2e: XSS and accessibility (Playwright, Debian's chromium)"
 # Hostile strings wherever the UI shows system-derived text: a container
 # (name, image, status, compose project), a package description, a
 # listening process's name, and a tile, a job and an alert rule.
@@ -748,14 +748,16 @@ printf '"AppState"\n{\n\t"appid"\t"9"\n\t"name"\t"%s"\n\t"StateFlags"\t"4"\n}\n'
 game_listed() { grep -q '"id":"steam.9"' <<<"$(pkgs_api games)"; }
 wait_until 90 game_listed || true
 check "hostile game listed" game_listed
-e2e=$(cd /opt/e2e && HEARTH_VERSION="$HEARTH_VERSION" HEARTH_URL="http://127.0.0.1:$port/auth?t=$(cat /home/$user/.config/hearth/token)" timeout 300 npx playwright test 2>&1) || true
+e2e=$(cd /opt/e2e && HEARTH_VERSION="$HEARTH_VERSION" HEARTH_URL="http://127.0.0.1:$port/auth?t=$(cat /home/$user/.config/hearth/token)" timeout 900 npx playwright test 2>&1) || true
 if grep -qE '[0-9]+ passed' <<<"$e2e" && ! grep -qE '[0-9]+ (failed|flaky)' <<<"$e2e"; then
-	echo "$e2e" | grep -E '✓|passed' | head -20 | sed 's/^/  | /'
+	echo "$e2e" | grep -E '✓|passed' | head -40 | sed 's/^/  | /'
 else
 	echo "$e2e" | tail -120 | sed 's/^/  | /'
 fi
 check "e2e XSS: every page shows the strings as text, nothing ran" grep -qE '^ *[0-9]+ passed' <<<"$e2e"
 check "e2e XSS: no test failed" not grep -qE '[0-9]+ failed' <<<"$e2e"
+check "e2e a11y: axe finds nothing serious on any page, both themes, LTR and RTL" grep -qE '✓.*a11y\.spec\.ts.*axe: every page, light, right to left' <<<"$e2e"
+check "e2e a11y: focus rings, palette, shortcuts and a confirmation work by keyboard" grep -qE '✓.*a11y\.spec\.ts.*a confirmation is keyboard operable' <<<"$e2e"
 pkill -f '/tmp/<svg onload>' || true
 dpkg -r hearth-xss-probe >/dev/null
 rm -r "/home/$user/.local/share/Steam"

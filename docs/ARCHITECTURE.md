@@ -87,13 +87,13 @@ hearth/
 - **Database**: migrations in `internal/store/migrations/NNNN_*.sql`, applied at start. Tables: `items_override`, `homepage_tiles`, `alert_rules`, `alert_events`, `metrics_1m`, `metrics_1h`, `audit_log`, `jobs`, `profiles`, `settings`. In v1.6 `profiles` migrates to modes: definitions move to TOML files in `~/.config/hearth/modes/`, and the database keeps arming, active mode, snapshots and approvals.
 - **Sampling**: 1 s while a UI client subscribes to live metrics; 15 s otherwise (alerts only). Process sampling only while the processes page is open (or for alert rules that need it).
 - **Discovery**: full scan at start, then incremental via fsnotify / D-Bus signals / Docker `/events`. Debounce bursts (500 ms).
-- **Frontend**: Svelte 5 runes, TypeScript strict. No `{@html}`. All data rendered as text. Route-level code splitting; xterm.js and uPlot lazy-loaded. CSS tokens in `styles/tokens.css`, light/dark via `prefers-color-scheme`.
+- **Frontend**: Svelte 5 runes, TypeScript strict. No `{@html}`. All data rendered as text. Route-level code splitting; xterm.js and uPlot lazy-loaded. CSS tokens in `styles/tokens.css` (the Ember design, `docs/design/ember.md`): dark by default, light, or the system's, chosen per browser; `theme.ts` resolves the choice into `data-theme` on `<html>`.
 - **i18n**: `en.json` and `ar.json` with the same keys and placeholders (tested); only the chosen one is loaded, before the app mounts, and `applyLang` sets `lang` and `dir` on `<html>`. The choice lives in localStorage, per browser, and a change reloads the page, because pages read messages as they are built. Numbers use tabular figures, and Arabic keeps Western digits and the Gregorian calendar (`locale()`). Right to left: CSS uses logical properties (`check-forbidden.sh`; the one physical rule is marked `rtl-physical`). `t()` isolates every value, format functions and `ltr()` keep sizes and `a → b` whole (they survive `t()` and attributes, which `<bdi>` does not), inline elements and text cells take `unicode-bidi: plaintext`, and an Arabic message opening with a Latin word starts with U+200F so that auto-direction reads it as Arabic. Charts, code, logs and the terminal stay left to right. What the daemon words stays English: reasons in `detail`, errors, exported reports and the default rule names.
 
 ## Design direction
 - Calm dashboard, not a crowded admin panel. One accent color (warm amber), status colors only for status.
-- Fonts: system UI and mono stacks; Arabic uses bundled IBM Plex Sans Arabic (no CDN), fetched only when Arabic is drawn.
-- Narrow icon sidebar + wide content; draggable card grid on Home.
+- Fonts: bundled IBM Plex Sans, IBM Plex Sans Arabic and JetBrains Mono (no CDN); the Arabic face is fetched only when Arabic is drawn.
+- A collapsible grouped rail, a pulse strip on every page, and an inspector drawer beside every list; health ring, Needs attention and a draggable card grid on Home.
 - Motion ≤ 150 ms, respect `prefers-reduced-motion`. Comfortable / compact density toggle.
 - Keyboard first: Ctrl+K palette, `g d` → Docker, etc.
 - Empty states explain and offer the next step (e.g. "Docker is not installed").

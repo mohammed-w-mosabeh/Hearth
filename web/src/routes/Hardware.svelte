@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { failure } from '../lib/errors';
   import { api } from '../lib/api';
   import { bytes } from '../lib/format';
   import { deviceName, updatable, type FirmwareReport, type Inventory } from '../lib/hardware';
@@ -9,14 +10,14 @@
   // plain text, escaped by Svelte. Firmware is asked for by a click, so
   // fwupd is not started on its own (SECURITY S21g).
   let inv = $state.raw<Inventory | null>(null);
-  let failed = $state(false);
+  let failed = $state('');
   let firmware = $state.raw<FirmwareReport | null>(null);
   let checking = $state(false);
 
   $effect(() => {
     api<Inventory>('/hardware')
       .then((r) => (inv = r))
-      .catch(() => (failed = true));
+      .catch((err: unknown) => (failed = failure(err, 'hw.error')));
   });
 
   async function check(): Promise<void> {
@@ -36,7 +37,7 @@
   <p>{t('hw.intro')}</p>
 </header>
 
-{#if failed}<p class="error" role="status">{t('hw.error')}</p>{/if}
+{#if failed}<p class="error" role="status">{failed}</p>{/if}
 {#if inv}
   {@const i = inv}
   <dl>

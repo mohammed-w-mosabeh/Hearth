@@ -1,4 +1,7 @@
 <script lang="ts">
+  import EmptyState from '../components/EmptyState.svelte';
+  import Skeleton from '../components/Skeleton.svelte';
+  import { failure } from '../lib/errors';
   import MarkerList from '../components/MarkerList.svelte';
   import AppsTable from '../components/AppsTable.svelte';
   import Chart from '../components/Chart.svelte';
@@ -7,6 +10,7 @@
   import { append, pick, RANGES, type Columns, type Range } from '../lib/history';
   import { loadMarkers, type Marker } from '../lib/markers';
   import { t } from '../lib/i18n';
+  import { router } from '../lib/router.svelte';
   import type { Sample } from '../lib/types';
   import type { Live } from '../lib/ws';
 
@@ -32,7 +36,7 @@
   let cores = $state(prefs.cores);
   let viewMode = $state<View>(prefs.view);
   let cols = $state.raw<Columns | null>(null);
-  let failed = $state(false);
+  let failed = $state('');
   let now = $state(Date.now());
   let gpuNames = $state<Record<string, string>>({});
 
@@ -44,6 +48,16 @@
     }
   });
 
+  // The pulse strip links to a chart with #/resources?q=<chart id>.
+  let shown = '';
+  $effect(() => {
+    const id = router.q;
+    if (!id || id === shown || cols === null) return;
+    shown = id;
+    viewMode = 'charts';
+    setTimeout(() => document.getElementById(`chart-${id}`)?.scrollIntoView({ block: 'center' }), 0);
+  });
+
   // Load the range, then keep it current: 10 min grows with every live
   // sample (fetching only what is new); longer ranges refresh each minute.
   $effect(() => {
@@ -53,7 +67,7 @@
     let stopped = false;
     let busy = false;
     cols = null;
-    failed = false;
+    failed = '';
 
     async function load(since?: number): Promise<void> {
       if (busy) return;
@@ -67,9 +81,9 @@
         if (stopped) return;
         now = Date.now();
         cols = r === '10m' && cols && since !== undefined ? append(cols, got, now - span) : got;
-        failed = false;
-      } catch {
-        if (!stopped) failed = true;
+        failed = '';
+      } catch (err) {
+        if (!stopped) failed = failure(err, 'resources.error');
       } finally {
         busy = false;
       }
@@ -162,27 +176,29 @@
   <AppsTable {live} />
 {:else}
   {#if failed}
-    <p class="note error" role="status">{t('resources.error')}</p>
+    <p class="note error" role="status">{failed}</p>
   {/if}
   {#if cols === null}
-    {#if !failed}<p class="note">{t('resources.loading')}</p>{/if}
+    {#if !failed}<Skeleton label={t('resources.loading')} />{/if}
   {:else if charts.length === 0}
-    <p class="note">{t('resources.empty')}</p>
+    <EmptyState inline icon="chart" body={t('resources.empty')} />
   {:else}
     <MarkerList {markers} />
     <div class="grid">
       {#each charts as c (c.spec.id)}
-        <Chart
-          title={t(c.spec.title)}
-          unit={c.spec.unit}
-          keys={c.keys}
-          labels={c.labels}
-          {cols}
-          {xRange}
-          min={c.spec.min}
-          max={c.spec.max}
-          {markers}
-        />
+        <div id="chart-{c.spec.id}" class="slot">
+          <Chart
+            title={t(c.spec.title)}
+            unit={c.spec.unit}
+            keys={c.keys}
+            labels={c.labels}
+            {cols}
+            {xRange}
+            min={c.spec.min}
+            max={c.spec.max}
+            {markers}
+          />
+        </div>
       {/each}
     </div>
   {/if}
@@ -248,6 +264,9 @@
   }
   .error {
     color: var(--crit);
+  }
+  .slot {
+    min-width: 0;
   }
   .grid {
     display: grid;

@@ -1,9 +1,12 @@
 <script lang="ts">
+  import Skeleton from '../components/Skeleton.svelte';
+  import { failure } from '../lib/errors';
   import AlertChannels from '../components/AlertChannels.svelte';
   import RuleDialog from '../components/RuleDialog.svelte';
   import { applyEvent, blankRule, conditionText, draftOf, lasted, metricLabel, valueText, type AlertEvent, type Metric, type Rule, type RuleDraft } from '../lib/alerts';
-  import { api, ApiError } from '../lib/api';
+  import { api } from '../lib/api';
   import { locale, type MessageKey, t } from '../lib/i18n';
+  import { inspectHref } from '../lib/router.svelte';
   import { toast } from '../lib/toast.svelte';
   import type { Live } from '../lib/ws';
 
@@ -11,13 +14,14 @@
   // hearthd whether or not this page is open; it only shows them.
   let { live }: { live: Live } = $props();
 
+
   const PAGE = 100;
 
   let rules = $state.raw<Rule[] | null>(null);
   let metrics = $state.raw<Metric[]>([]);
   let events = $state.raw<AlertEvent[]>([]);
   let more = $state(false);
-  let failed = $state(false);
+  let failed = $state('');
   let draft = $state<RuleDraft | null>(null);
   let editingId = $state<number | null>(null);
   let formError = $state('');
@@ -27,15 +31,15 @@
   const sevKey: Record<string, MessageKey> = { info: 'alerts.sev.info', warning: 'alerts.sev.warning', critical: 'alerts.sev.critical' };
 
   function errorText(err: unknown): string {
-    return err instanceof ApiError ? err.message : t('action.failed');
+    return failure(err, 'action.failed');
   }
 
   async function loadRules(): Promise<void> {
     try {
       rules = (await api<{ rules: Rule[] }>('/alerts/rules')).rules;
-      failed = false;
-    } catch {
-      failed = true;
+      failed = '';
+    } catch (err) {
+      failed = failure(err, 'alerts.error');
     }
   }
 
@@ -45,8 +49,8 @@
       const got = (await api<{ events: AlertEvent[] }>(`/alerts/events${q}`)).events;
       events = before ? [...events, ...got] : got;
       more = got.length === PAGE;
-    } catch {
-      failed = true;
+    } catch (err) {
+      failed = failure(err, 'alerts.error');
     }
   }
 
@@ -154,7 +158,7 @@
   </div>
 </header>
 
-{#if failed}<p class="note error" role="status">{t('alerts.error')}</p>{/if}
+{#if failed}<p class="note error" role="status">{failed}</p>{/if}
 
 <section aria-labelledby="active-h">
   <h2 id="active-h">{t('alerts.active')}</h2>
@@ -165,7 +169,7 @@
       {#each active as e (e.id)}
         <li class={e.severity}>
           <span class="sev">{t(sevKey[e.severity] ?? 'alerts.sev.warning')}</span>
-          <strong>{e.rule_name}</strong>
+          <strong><a href={inspectHref(`alert:${e.id}`)}>{e.rule_name}</a></strong>
           <span>{eventText(e)}</span>
           <span class="muted">{t('alerts.since', { when: when(e.started_at), d: lasted(e) })}</span>
         </li>
@@ -177,7 +181,7 @@
 <section aria-labelledby="rules-h">
   <h2 id="rules-h">{t('alerts.rules')}</h2>
   {#if rules === null}
-    <p class="note">{t('alerts.loading')}</p>
+    <Skeleton label={t('alerts.loading')} />
   {:else if rules.length === 0}
     <p class="note">{t('alerts.noRules')}</p>
   {:else}
@@ -225,7 +229,7 @@
               <td class="when">{when(e.started_at)}</td>
               <td><span class="badge {e.severity}">{t(sevKey[e.severity] ?? 'alerts.sev.warning')}</span></td>
               <td>
-                <div class="name">{e.rule_name}</div>
+                <div class="name"><a href={inspectHref(`alert:${e.id}`)}>{e.rule_name}</a></div>
                 <div class="muted">{eventText(e)}</div>
               </td>
               <td class="muted">
@@ -400,5 +404,14 @@
   }
   .more {
     margin-top: var(--space-2);
+  }
+  .incidents a,
+  .name a {
+    color: inherit;
+    text-decoration: none;
+  }
+  .incidents a:hover,
+  .name a:hover {
+    text-decoration: underline;
   }
 </style>

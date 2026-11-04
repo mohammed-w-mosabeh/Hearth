@@ -1,11 +1,16 @@
 <script lang="ts">
+  import Skeleton from './Skeleton.svelte';
+  import { failure } from '../lib/errors';
   import CapDialog from './CapDialog.svelte';
+  import RowSpark from './RowSpark.svelte';
+  import StatusMark from './StatusMark.svelte';
+  import { groupStatus, rowNav, sparks } from '../lib/rows';
   import ConfirmDialog from './ConfirmDialog.svelte';
   import { preview, reasonKey, run, type Blocked, type CapField, type Params, type Plan, type Result } from '../lib/actions';
-  import { ApiError } from '../lib/api';
-  import { bytes, pct, rate } from '../lib/format';
+    import { bytes, pct, rate } from '../lib/format';
   import { toast } from '../lib/toast.svelte';
   import { menuLeft, type MessageKey, t } from '../lib/i18n';
+  import { inspectHref } from '../lib/router.svelte';
   import { view, type KindFilter, type SortKey } from '../lib/procs';
   import type { GroupKind, ProcSnapshot } from '../lib/types';
   import type { Live } from '../lib/ws';
@@ -15,11 +20,20 @@
   // table is on screen.
   let { live }: { live: Live } = $props();
 
+
   let snap = $state.raw<ProcSnapshot | null>(null);
+  // Each group's CPU over the last 10 minutes, kept for the session.
+  let spark = $state.raw(sparks.procs.snapshot());
   $effect(() =>
     live.subscribe('procs', (data) => {
       const s = data as ProcSnapshot;
-      if (s && Array.isArray(s.groups)) snap = s;
+      if (!s || !Array.isArray(s.groups)) return;
+      snap = s;
+      if (s.partial) return; // the first scan has no CPU yet
+      const now = Date.parse(s.t) / 1000 || Date.now() / 1000;
+      for (const g of s.groups) sparks.procs.add(g.id, now, g.cpu);
+      sparks.procs.prune(now);
+      spark = sparks.procs.snapshot();
     }),
   );
 
@@ -119,7 +133,7 @@
   }
 
   function errorText(err: unknown): string {
-    return err instanceof ApiError ? err.message : t('action.failed');
+    return failure(err, 'action.failed');
   }
 
   // describe turns a result into one line: what was done, what was not.
@@ -187,14 +201,15 @@
 </div>
 
 {#if !snap}
-  <p class="note">{t('apps.loading')}</p>
+  <Skeleton label={t('apps.loading')} />
 {:else if rows.length === 0}
   <p class="note">{t('apps.none')}</p>
 {:else}
-  <div class="scroll">
+  <div class="scroll table-scroll">
     <table>
       <thead>
         <tr>
+          <th class="st"><span class="visually-hidden">{t('rows.status')}</span></th>
           {#each columns as c (c.key)}
             <th class:num={c.num} aria-sort={sortKey === c.key ? (desc ? 'descending' : 'ascending') : 'none'}>
               <button type="button" onclick={() => sortBy(c.key)}>
@@ -202,12 +217,15 @@
               </button>
             </th>
           {/each}
+          <th><span class="th">{t('rows.spark')}</span></th>
           <th><span class="visually-hidden">{t('apps.col.actions')}</span></th>
         </tr>
       </thead>
-      <tbody>
+      <tbody use:rowNav>
         {#each rows as g (g.id)}
-          <tr class="group">
+          {@const gs = groupStatus(g)}
+          <tr class="group" aria-label={g.name}>
+            <td class="st"><StatusMark kind={gs} label={t(gs === 'degraded' ? 'rows.paused' : 'rows.running')} /></td>
             <td>
               <button
                 type="button"
@@ -216,7 +234,7 @@
                 aria-label={t(open[g.id] ? 'apps.collapse' : 'apps.expand', { name: g.name })}
                 onclick={() => (open[g.id] = !open[g.id])}>{open[g.id] ? '▾' : '▸'}</button
               >
-              <span class="name" title={g.unit ?? g.name}>{g.name}</span>
+              <a class="name" data-primary title={g.unit ?? g.name} href={inspectHref(`proc:${g.id}`)}>{g.name}</a>
               <span class="tag">{t(kindLabels[g.kind])}</span>
               <span class="user">{g.user}</span>
             </td>
@@ -225,6 +243,7 @@
             <td class="num" title={g.io_partial ? t('apps.ioPartial') : undefined}>{ioText(g.read_bps)}{g.io_partial ? '*' : ''}</td>
             <td class="num" title={g.io_partial ? t('apps.ioPartial') : undefined}>{ioText(g.write_bps)}{g.io_partial ? '*' : ''}</td>
             <td class="num">{g.count}</td>
+            <td><RowSpark points={spark[g.id] ?? []} /></td>
             <td class="act">
               <button
                 type="button"
@@ -239,11 +258,13 @@
           {#if open[g.id]}
             {#each g.procs as p (p.pid)}
               <tr class="proc">
+                <td></td>
                 <td><span class="pid">{p.pid}</span> {p.name} <span class="user">{p.state}</span></td>
                 <td class="num">{cpuText(p.cpu)}</td>
                 <td class="num" title={t('apps.rss')}>{bytes(p.rss)}</td>
                 <td class="num">–</td>
                 <td class="num">–</td>
+                <td></td>
                 <td></td>
                 <td class="act">
                   <button
@@ -257,7 +278,7 @@
               </tr>
             {/each}
             {#if g.count > g.procs.length}
-              <tr class="proc"><td colspan="7" class="more">{t('apps.more', { n: g.count - g.procs.length })}</td></tr>
+              <tr class="proc"><td colspan="9" class="more">{t('apps.more', { n: g.count - g.procs.length })}</td></tr>
             {/if}
           {/if}
         {/each}
@@ -268,7 +289,7 @@
 {/if}
 
 <!-- Not a role="menu": a group of buttons in a popover (no arrow-key contract). -->
-<div bind:this={menu} popover="auto" class="menu" aria-label={subject ? t('apps.actionsFor', { name: subject.name }) : undefined}>
+<div bind:this={menu} popover="auto" class="menu" role="group" aria-label={subject ? t('apps.actionsFor', { name: subject.name }) : undefined}>
   {#if subject}
     {@const s = subject}
     {#if s.stopped}
@@ -522,5 +543,18 @@
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
+  }
+  a.name {
+    color: inherit;
+    text-decoration: none;
+  }
+  a.name:hover,
+  a.name:focus-visible {
+    text-decoration: underline;
+  }
+  .st {
+    width: 1.5em;
+    padding-inline-end: 0;
+    text-align: center;
   }
 </style>
