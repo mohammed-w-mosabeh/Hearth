@@ -56,9 +56,12 @@ hearth/
     reports/      # html/md renderers
     broker/       # client (hearthd side) + server (broker side) + allowlist
     stacks/       # v1.5: Apps, import dry-run; spec validation shared with the broker
+      spec/       # the stack spec: strict JSON decoding and the S12b rules, no I/O (imported by the broker)
     modes/        # v1.6: mode files, triggers, snapshots, approvals (extends profiles/)
     dbusx/        # small helpers over godbus
     safeexec/     # the ONLY place allowed to call os/exec; validates args
+    secret/       # S19: which env names and values are masked, for hearthd and the broker
+    imageref/     # Docker image reference grammar, for the broker and the stack spec
   web/
     index.html
     src/
