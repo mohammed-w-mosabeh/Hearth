@@ -33,8 +33,9 @@ const (
 )
 
 // StackVerbs are the only argument lists the unit runs, after its fixed
-// "docker compose --project-name ... --env-file ..." prefix. Volumes are
-// never removed here: down keeps them.
+// "docker compose --project-name ... --env-file ..." prefix. down keeps
+// volumes; only down-volumes, which stack.remove runs after the stack's
+// name was typed back, deletes them.
 var StackVerbs = map[string]string{
 	"up":      "up --detach --no-build --pull missing --quiet-pull --remove-orphans",
 	"update":  "up --detach --no-build --pull always --quiet-pull --remove-orphans",
@@ -42,6 +43,8 @@ var StackVerbs = map[string]string{
 	"stop":    "stop",
 	"restart": "restart",
 	"down":    "down --remove-orphans",
+	// The stack's named volumes go too; binds are never touched.
+	"down-volumes": "down --remove-orphans --volumes",
 }
 
 // StackStore writes a stack's files.
@@ -194,6 +197,45 @@ func (s StackStore) SetVerb(name, verb string) error {
 		return errors.New("no such stack")
 	}
 	return s.Write(name, map[string][]byte{FileArgs: []byte("STACK_ARGS=" + args + "\n")})
+}
+
+// List returns the names of the stacks in the store.
+func (s StackStore) List() ([]string, error) {
+	entries, err := os.ReadDir(s.dir())
+	if errors.Is(err, os.ErrNotExist) {
+		return []string{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := []string{}
+	for _, e := range entries {
+		if e.IsDir() && spec.ValidName(e.Name()) {
+			out = append(out, e.Name())
+		}
+	}
+	return out, nil
+}
+
+// Remove deletes a stack's folder and its files, secrets.env included,
+// without following a link out of the store.
+func (s StackStore) Remove(name string) error {
+	if !spec.ValidName(name) {
+		return errors.New("not a stack name")
+	}
+	top, err := os.OpenRoot(s.dir())
+	if err != nil {
+		return err
+	}
+	defer func() { _ = top.Close() }()
+	if err := top.RemoveAll(name); err != nil {
+		return err
+	}
+	d, err := top.Open(".")
+	if err != nil {
+		return err
+	}
+	return errors.Join(d.Sync(), d.Close())
 }
 
 // StackUnit is the unit that runs a verb on name.

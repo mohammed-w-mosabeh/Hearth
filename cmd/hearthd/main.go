@@ -71,6 +71,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/settings"
 	"github.com/mohammed-w-mosabeh/hearth/internal/smart"
 	"github.com/mohammed-w-mosabeh/hearth/internal/space"
+	"github.com/mohammed-w-mosabeh/hearth/internal/stacks"
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
 	"github.com/mohammed-w-mosabeh/hearth/internal/terminal"
 	"github.com/mohammed-w-mosabeh/hearth/internal/unitctl"
@@ -526,6 +527,9 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	srv.API.HandleFunc("GET /api/v1/docker/volumes/sizes", docker.HandleVolumeSizes(brokerClient))
 	images := &docker.Images{B: brokerClient, Registry: docker.NewRegistry(), Run: safeexec.Run, CacheDir: filepath.Join(paths.DataDir, "trivy")}
 	docker.RegisterUpdate(reg, brokerClient, images.Registry, safeexec.Run)
+	stacks.Register(reg, brokerClient, images.Registry)
+	srv.API.HandleFunc("GET /api/v1/stacks", stacks.HandleList(brokerClient))
+	srv.API.HandleFunc("GET /api/v1/stacks/{name}", stacks.HandleOne(brokerClient))
 	srv.API.HandleFunc("GET /api/v1/docker/images/{id}", images.HandleDetail)
 	srv.API.HandleFunc("GET /api/v1/docker/images/{id}/updates", images.HandleUpdates)
 	srv.API.HandleFunc("POST /api/v1/docker/images/{id}/scan", images.HandleScan)

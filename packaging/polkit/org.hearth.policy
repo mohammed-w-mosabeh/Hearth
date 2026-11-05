@@ -142,4 +142,34 @@
       <allow_active>auth_admin</allow_active>
     </defaults>
   </action>
+  <action id="org.hearth.stack.deploy">
+    <description>Deploy or update an app through Hearth</description>
+    <message>Authentication is required to deploy or update this app</message>
+    <icon_name>preferences-system</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <action id="org.hearth.stack.control">
+    <description>Start, stop or restart an app through Hearth</description>
+    <message>Authentication is required to start, stop or restart this app</message>
+    <icon_name>preferences-system</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.hearth.stack.remove">
+    <description>Remove an app through Hearth</description>
+    <message>Authentication is required to remove this app</message>
+    <icon_name>preferences-system</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
 </policyconfig>

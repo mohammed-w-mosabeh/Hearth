@@ -10,6 +10,9 @@ import (
 // LabelStack marks every container of a stack with its name.
 const LabelStack = "org.hearth.stack"
 
+// DefaultRestart is the restart policy of a service whose spec names none.
+const DefaultRestart = "unless-stopped"
+
 // Compose generates the canonical compose file (ROADMAP 9.2) from a spec
 // alone: only what Check accepted reaches it, as JSON with sorted keys, so
 // the same spec always gives the same bytes. Every "$" in a value becomes
@@ -86,7 +89,12 @@ func service(stack string, svc Service) map[string]any {
 	}
 	set("pull_policy", svc.PullPolicy)
 	set("container_name", svc.ContainerName)
-	set("restart", svc.Restart)
+	// An app comes back after a reboot unless its spec says otherwise.
+	restart := svc.Restart
+	if restart == "" {
+		restart = DefaultRestart
+	}
+	set("restart", restart)
 	set("user", svc.User)
 	set("working_dir", svc.WorkingDir)
 	set("hostname", svc.Hostname)

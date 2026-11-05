@@ -157,12 +157,15 @@ func TestStackStoreNames(t *testing.T) {
 }
 
 func TestStackVerbsAreFixed(t *testing.T) {
-	want := []string{"down", "restart", "start", "stop", "up", "update"}
+	want := []string{"down", "down-volumes", "restart", "start", "stop", "up", "update"}
 	if got := slices.Sorted(maps.Keys(StackVerbs)); !slices.Equal(got, want) {
 		t.Fatalf("verbs %v", got)
 	}
 	for verb, args := range StackVerbs {
 		for _, bad := range []string{"--volumes", "-v", "--build", "build", "exec", "run", "rm"} {
+			if bad == "--volumes" && verb == "down-volumes" {
+				continue // the one verb that deletes volumes, after a typed name
+			}
 			if slices.Contains(strings.Fields(args), bad) {
 				t.Errorf("%s runs %s", verb, bad)
 			}

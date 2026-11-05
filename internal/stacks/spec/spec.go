@@ -62,7 +62,7 @@ type Service struct {
 	Volumes     []Mount           `json:"volumes,omitempty"`
 	Tmpfs       []string          `json:"tmpfs,omitempty"`
 	DependsOn   []string          `json:"depends_on,omitempty"`
-	Restart     string            `json:"restart,omitempty"`
+	Restart     string            `json:"restart,omitempty"` // "" is DefaultRestart
 	Healthcheck *Healthcheck      `json:"healthcheck,omitempty"`
 	User        string            `json:"user,omitempty"`
 	WorkingDir  string            `json:"working_dir,omitempty"`

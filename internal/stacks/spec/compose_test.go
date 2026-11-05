@@ -139,3 +139,22 @@ func FuzzCompose(f *testing.F) {
 		}
 	})
 }
+
+func TestComposeRestartDefault(t *testing.T) {
+	for in, want := range map[string]string{"": DefaultRestart, "no": "no", "always": "always"} {
+		s := Spec{Version: 1, Name: "r", Services: map[string]Service{"w": {Image: "nginx:1.27", Restart: in}}}
+		b, err := Compose(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out struct {
+			Services map[string]struct{ Restart string }
+		}
+		if err := json.Unmarshal(b, &out); err != nil {
+			t.Fatal(err)
+		}
+		if got := out.Services["w"].Restart; got != want {
+			t.Errorf("restart %q: got %q", in, got)
+		}
+	}
+}
