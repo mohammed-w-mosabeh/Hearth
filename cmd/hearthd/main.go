@@ -665,6 +665,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 			return sec, len(list), err
 		},
 		Containers: func(ctx context.Context) ([]posture.Risky, error) { return docker.Risks(ctx, brokerClient) },
+		Apps:       func(ctx context.Context) ([]posture.App, error) { return stacks.DangerApps(ctx, brokerClient) },
 		Release: func() string {
 			b, _ := os.ReadFile("/proc/sys/kernel/osrelease")
 			return strings.TrimSpace(string(b))

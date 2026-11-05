@@ -18,6 +18,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/actions"
 	"github.com/mohammed-w-mosabeh/hearth/internal/broker"
 	"github.com/mohammed-w-mosabeh/hearth/internal/docker"
+	"github.com/mohammed-w-mosabeh/hearth/internal/posture"
 	"github.com/mohammed-w-mosabeh/hearth/internal/stacks/secrets"
 	"github.com/mohammed-w-mosabeh/hearth/internal/stacks/spec"
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
@@ -39,7 +40,10 @@ const (
 // Kind is the actions' kind: POST /api/v1/actions/stack/{action}.
 const Kind = "stack"
 
-type deployState struct{ Spec json.RawMessage }
+type deployState struct {
+	Spec  json.RawMessage
+	Flags []string
+}
 
 type updateState struct{ Params broker.StackUpdateParams }
 
@@ -69,7 +73,11 @@ func Register(reg *actions.Registry, b Broker, tags docker.TagChecker) {
 			if !ok {
 				return actions.Result{Failed: []actions.Blocked{}, Blocked: p.Blocked}, nil
 			}
-			return call(ctx, b, p, "stack.deploy", broker.StackDeployParams{Spec: st.Spec, AckFlags: []string{}})
+			flags := st.Flags
+			if flags == nil {
+				flags = []string{}
+			}
+			return call(ctx, b, p, "stack.deploy", broker.StackDeployParams{Spec: st.Spec, AckFlags: flags})
 		}})
 	for _, op := range []struct {
 		verb string
@@ -156,9 +164,6 @@ func planDeploy(r actions.Request) (actions.Plan, error) {
 	for _, why := range rep.Refused {
 		p.Blocked = append(p.Blocked, blocked(r.Target, why))
 	}
-	for _, f := range rep.Flags {
-		p.Blocked = append(p.Blocked, blocked(r.Target, "danger flag "+f+": not deployable before task 9.6"))
-	}
 	if len(p.Blocked) > 0 {
 		return p, nil
 	}
@@ -170,8 +175,45 @@ func planDeploy(r actions.Request) (actions.Plan, error) {
 	for _, n := range names {
 		p.Items = append(p.Items, actions.Item{ID: n, Name: n, Detail: describe(sp.Services[n])})
 	}
-	p.State = deployState{Spec: raw}
+	// Each danger flag is its own item, the name is typed back, and the
+	// broker asks org.hearth.stack.danger, whose dialog names them all.
+	for _, f := range rep.Flags {
+		p.Items = append(p.Items, actions.Item{ID: "flag:" + f, Name: f, Detail: "danger: " + FlagMeaning(f)})
+	}
+	if len(rep.Flags) > 0 {
+		p.Confirm = r.Target
+		p.Summary = "deploy " + r.Target + " with " + strconv.Itoa(len(rep.Flags)) + " danger flags"
+	}
+	p.State = deployState{Spec: raw, Flags: rep.Flags}
 	return p, nil
+}
+
+// FlagMeaning says in a few words what a danger flag gives the container.
+func FlagMeaning(f string) string {
+	kind, arg, _ := strings.Cut(f, ":")
+	switch kind {
+	case "cap":
+		return "the capability " + arg
+	case "device":
+		return "the host device " + arg
+	case "network":
+		return "the host's network stack"
+	case "pid":
+		return "the host's processes"
+	case "ipc":
+		return "the host's shared memory"
+	case "userns":
+		return "no user namespace: its root is the host's"
+	case "sysctl":
+		return "the kernel setting " + arg
+	case "docker-socket":
+		return "the Docker socket, which is root on the host"
+	case "bind":
+		return "the host path " + arg
+	case "port":
+		return "a port reachable from the network at " + arg
+	}
+	return f
 }
 
 // describe is one line per service: image, ports and binds, what deploying
@@ -531,4 +573,25 @@ func secretError(w http.ResponseWriter, err error) {
 	default:
 		httpError(w, err)
 	}
+}
+
+// DangerApps lists the managed apps with their danger flags, for Security
+// posture (SECURITY S12b). Each spec is checked here again: the flags are
+// what it opts in to, whatever the broker said.
+func DangerApps(ctx context.Context, b Broker) ([]posture.App, error) {
+	var list []broker.StackInfo
+	if err := b.Call(ctx, "stack.status", nil, &list); err != nil {
+		return nil, err
+	}
+	out := []posture.App{}
+	for _, info := range list {
+		var sp spec.Spec
+		if err := json.Unmarshal(info.Spec, &sp); err != nil {
+			continue
+		}
+		if rep := spec.Check(sp); len(rep.Flags) > 0 {
+			out = append(out, posture.App{Name: info.Name, Flags: rep.Flags})
+		}
+	}
+	return out, nil
 }

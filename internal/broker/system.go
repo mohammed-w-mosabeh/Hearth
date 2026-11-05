@@ -41,6 +41,15 @@ const pkAllowUserInteraction = uint32(1)
 // with its start time, so a reused pid does not match); without a start
 // time it refuses.
 func (p Polkit) Check(ctx context.Context, c Caller, action string) (bool, error) {
+	return p.CheckDetails(ctx, c, action, nil)
+}
+
+// CheckDetails implements DetailedAuthority: polkit shows details in its
+// dialog, and since the broker runs as root it honours polkit.message.
+func (p Polkit) CheckDetails(ctx context.Context, c Caller, action string, details map[string]string) (bool, error) {
+	if details == nil {
+		details = map[string]string{}
+	}
 	if c.PID <= 0 || c.Start == 0 {
 		return false, errors.New("caller process unknown")
 	}
@@ -57,7 +66,7 @@ func (p Polkit) Check(ctx context.Context, c Caller, action string) (bool, error
 	var res authResult
 	err = conn.CallInteractive(ctx, "org.freedesktop.PolicyKit1", "/org/freedesktop/PolicyKit1/Authority",
 		"org.freedesktop.PolicyKit1.Authority.CheckAuthorization", []any{&res},
-		subj, action, map[string]string{}, pkAllowUserInteraction, "")
+		subj, action, details, pkAllowUserInteraction, "")
 	if err != nil {
 		return false, err
 	}

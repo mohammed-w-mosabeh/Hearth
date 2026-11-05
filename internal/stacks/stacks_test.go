@@ -118,9 +118,7 @@ func TestDeploy(t *testing.T) {
 	for name, s := range map[string]string{
 		"other name": strings.Replace(testSpec, `"name":"web"`, `"name":"blog"`, 1),
 		"privileged": strings.Replace(testSpec, `"image":"nginx:1.27"`, `"image":"nginx:1.27","privileged":true`, 1),
-		"flag": strings.Replace(strings.Replace(testSpec, `"host":8080`, `"host_ip":"0.0.0.0","host":8080`, 1),
-			`"name":"web",`, `"name":"web","opt_in":["port:0.0.0.0:8080/tcp"],`, 1),
-		"yaml": "services:\n  a: {}",
+		"yaml":       "services:\n  a: {}",
 	} {
 		before := len(fb.calls)
 		r := actions.Request{Target: "web", Params: map[string]string{"spec": s}}
@@ -347,5 +345,51 @@ func TestSecretRoutes(t *testing.T) {
 	sb.err = broker.Errorf(broker.CodeBadParams, "no service of web names the secret OTHER")
 	if rec := do("/api/v1/stacks/web/secrets", `{"set":{"OTHER":"hunter2"}}`); rec.Code != 422 || strings.Contains(rec.Body.String(), "hunter2") {
 		t.Fatal(rec.Code, rec.Body.String())
+	}
+}
+
+func TestDeployDanger(t *testing.T) {
+	reg, fb := rig(t, fakeTags{})
+	spec := strings.Replace(strings.Replace(testSpec, `"host":8080`, `"host_ip":"0.0.0.0","host":8080`, 1),
+		`"name":"web",`, `"name":"web","opt_in":["port:0.0.0.0:8080/tcp"],`, 1)
+	r := actions.Request{Target: "web", Params: map[string]string{"spec": spec}}
+	p := plan(t, reg, "deploy", r)
+	if len(p.Blocked) != 0 || p.Confirm != "web" || !strings.Contains(p.Summary, "1 danger flags") {
+		t.Fatalf("%+v", p)
+	}
+	var flagged bool
+	for _, it := range p.Items {
+		if it.ID == "flag:port:0.0.0.0:8080/tcp" && strings.Contains(it.Detail, "reachable from the network") {
+			flagged = true
+		}
+	}
+	if !flagged {
+		t.Fatalf("no danger item: %+v", p.Items)
+	}
+	run(t, reg, "deploy", r, p)
+	last := fb.calls[len(fb.calls)-1]
+	if last.method != "stack.deploy" || !strings.Contains(last.params, `"ack_flags":["port:0.0.0.0:8080/tcp"]`) {
+		t.Fatalf("%+v", last)
+	}
+	for f, want := range map[string]string{"cap:NET_ADMIN": "capability NET_ADMIN", "docker-socket": "root on the host", "network:host": "network", "x": "x"} {
+		if !strings.Contains(FlagMeaning(f), want) {
+			t.Errorf("%s: %s", f, FlagMeaning(f))
+		}
+	}
+}
+
+func TestDangerApps(t *testing.T) {
+	flagged := strings.Replace(strings.Replace(testSpec, `"host":8080`, `"host_ip":"0.0.0.0","host":8080`, 1),
+		`"name":"web",`, `"name":"web","opt_in":["port:0.0.0.0:8080/tcp"],`, 1)
+	fb := &fakeBroker{status: []broker.StackInfo{
+		{Name: "web", Spec: json.RawMessage(flagged)},
+		{Name: "plain", Spec: json.RawMessage(strings.Replace(testSpec, `"name":"web"`, `"name":"plain"`, 1))},
+	}}
+	got, err := DangerApps(context.Background(), &listBroker{fb})
+	if err != nil || len(got) != 1 || got[0].Name != "web" || strings.Join(got[0].Flags, ",") != "port:0.0.0.0:8080/tcp" {
+		t.Fatalf("%+v %v", got, err)
+	}
+	if _, err := DangerApps(context.Background(), errBroker{broker.ErrNotMember}); err == nil {
+		t.Fatal("an error was swallowed")
 	}
 }

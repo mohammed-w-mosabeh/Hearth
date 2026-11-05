@@ -92,7 +92,7 @@ export const FINDINGS = new Set([
   'unattended.active', 'unattended.never', 'unattended.stale', 'unattended.off', 'unattended.no_lists', 'unattended.no_timer', 'unattended.no_tool',
   'restart.reboot', 'restart.kernel', 'restart.services', 'restart.sessions', 'restart.no_tool', 'restart.scan_failed', 'restart.scanning',
   'cves.not_installed', 'cves.not_run', 'cves.fixed', 'cves.open',
-  'container.risky', 'container.risky_stopped',
+  'container.risky', 'container.risky_stopped', 'app.danger', 'app.exposed',
   'path.world', 'path.world_file', 'path.owner', 'path.owner_file', 'path.relative', 'path.truncated',
 ]);
 

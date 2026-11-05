@@ -33,6 +33,9 @@ const (
 	ActionStackDeploy  = "org.hearth.stack.deploy"  // deploy and update, auth_admin
 	ActionStackControl = "org.hearth.stack.control" // start, stop, restart, auth_admin_keep
 	ActionStackRemove  = "org.hearth.stack.remove"  // auth_admin
+	// ActionStackDanger replaces deploy for a spec with danger flags, which
+	// its dialog names: auth_admin, no keep, one prompt per deploy or update.
+	ActionStackDanger = "org.hearth.stack.danger"
 
 	// StackTimeout bounds a deploy or update, pulls included.
 	StackTimeout = 30 * time.Minute
@@ -83,6 +86,8 @@ type StackConfig struct {
 	Bus      func(ctx context.Context) (SystemBus, error)
 	ProcRoot string // default "/proc"
 	Now      func() time.Time
+	// Audit gets one entry per container that runs with danger flags.
+	Audit Auditor
 }
 
 // StackDeployParams is stack.deploy's params.
@@ -218,13 +223,13 @@ func StackLifeMethods(c StackConfig) []Method {
 				_, err := s.checkDeploy(ctx, p, true)
 				return pre(err)
 			},
-			Handle: s.deploy},
+			Handle: s.deploy, Authorize: s.authorizeDeploy},
 		{Name: "stack.update", Privileged: true, Action: ActionStackDeploy, Timeout: StackTimeout,
 			Check: func(ctx context.Context, p json.RawMessage) error {
 				_, _, err := s.checkUpdate(ctx, p, true)
 				return pre(err)
 			},
-			Handle: s.update},
+			Handle: s.update, Authorize: s.authorizeUpdate},
 		{Name: "stack.control", Privileged: true, Action: ActionStackControl, Timeout: 10 * time.Minute,
 			Check: func(ctx context.Context, p json.RawMessage) error {
 				_, _, err := s.checkControl(ctx, p, true)
@@ -323,10 +328,6 @@ func (s *stacks) checkDeploy(ctx context.Context, p json.RawMessage, pre bool) (
 	sort.Strings(ack)
 	if !slices.Equal(ack, rep.Flags) {
 		return deployCheck{}, badParam("the acknowledged flags are not the spec's: %s", strings.Join(rep.Flags, ", "))
-	}
-	if len(rep.Flags) > 0 {
-		// The danger dialog and its audit entries are task 9.6.
-		return deployCheck{}, badParam("a stack with danger flags cannot be deployed yet: %s", strings.Join(rep.Flags, ", "))
 	}
 	if pre {
 		if _, err := s.paths(ctx, v.Spec, true); err != nil {
@@ -437,7 +438,7 @@ func (s *stacks) checkRemove(p json.RawMessage) (StackRemoveParams, error) {
 
 // --- handlers, after polkit ---
 
-func (s *stacks) deploy(ctx context.Context, _ Caller, p json.RawMessage) (any, error) {
+func (s *stacks) deploy(ctx context.Context, c Caller, p json.RawMessage) (any, error) {
 	chk, err := s.checkDeploy(ctx, p, false)
 	if err != nil {
 		return nil, err
@@ -453,10 +454,14 @@ func (s *stacks) deploy(ctx context.Context, _ Caller, p json.RawMessage) (any, 
 	if _, err := s.c.Store.Prepare(chk.raw, "up"); err != nil {
 		return nil, Errorf(CodeFailed, "the stack's files could not be written")
 	}
-	return s.runAndVerify(ctx, chk.spec.Name, "up", paths)
+	res, err := s.runAndVerify(ctx, chk.spec.Name, "up", paths)
+	if err == nil {
+		s.auditDanger(ctx, c, "stack.deploy", chk.spec)
+	}
+	return res, err
 }
 
-func (s *stacks) update(ctx context.Context, _ Caller, p json.RawMessage) (any, error) {
+func (s *stacks) update(ctx context.Context, c Caller, p json.RawMessage) (any, error) {
 	v, _, err := s.checkUpdate(ctx, p, false)
 	if err != nil {
 		return nil, err
@@ -487,7 +492,88 @@ func (s *stacks) update(ctx context.Context, _ Caller, p json.RawMessage) (any, 
 	if err := s.c.Store.SetVerb(v.Name, "up"); err != nil {
 		return nil, Errorf(CodeFailed, "the stack's files could not be written")
 	}
-	return s.runAndVerify(ctx, v.Name, "up", paths)
+	res, err := s.runAndVerify(ctx, v.Name, "up", paths)
+	if err == nil {
+		s.auditDanger(ctx, c, "stack.update", sp)
+	}
+	return res, err
+}
+
+// --- danger flags (ROADMAP 9.6) ---
+
+// dangerAction is the action and dialog details for deploying sp: deploy
+// when it has no flag, danger naming every flag when it has.
+func dangerAction(sp spec.Spec, verb string) (string, map[string]string) {
+	rep := spec.Check(sp)
+	if len(rep.Flags) == 0 {
+		return ActionStackDeploy, nil
+	}
+	flags := strings.Join(rep.Flags, ", ")
+	return ActionStackDanger, map[string]string{
+		"polkit.message": fmt.Sprintf("Hearth wants to %s the app %s with danger flags: %s", verb, sp.Name, flags),
+		"app":            sp.Name,
+		"flags":          flags,
+	}
+}
+
+func (s *stacks) authorizeDeploy(p json.RawMessage) (string, map[string]string) {
+	var v StackDeployParams
+	if err := decodeParams(p, &v); err != nil {
+		return ActionStackDanger, nil // Check refused it already; never the milder action
+	}
+	sp, _, err := spec.Parse(v.Spec)
+	if err != nil {
+		return ActionStackDanger, nil
+	}
+	return dangerAction(sp, "deploy")
+}
+
+func (s *stacks) authorizeUpdate(p json.RawMessage) (string, map[string]string) {
+	var v StackUpdateParams
+	if err := decodeParams(p, &v); err != nil {
+		return ActionStackDanger, nil
+	}
+	sp, _, _, err := s.stored(v.Name)
+	if err != nil {
+		return ActionStackDanger, nil
+	}
+	return dangerAction(sp, "update")
+}
+
+// auditDanger writes one entry per container that runs with danger
+// flags, naming them (SECURITY S12b).
+func (s *stacks) auditDanger(ctx context.Context, c Caller, method string, sp spec.Spec) {
+	rep := spec.Check(sp)
+	if len(rep.ServiceFlags) == 0 || s.c.Audit == nil {
+		return
+	}
+	list, err := s.c.Engine.StackContainers(ctx, sp.Name)
+	if err != nil {
+		list = nil
+	}
+	seen := map[string]bool{}
+	now := s.c.Now()
+	record := func(container, service string) {
+		s.c.Audit.Record(AuditRecord{Time: now, TS: now.UnixMilli(), UID: c.UID, PID: c.PID, Method: method + ".danger",
+			Result: fmt.Sprintf("ok: %s/%s container %s runs with %s", sp.Name, service, container, strings.Join(rep.ServiceFlags[service], ", "))})
+	}
+	for _, k := range list {
+		if k.Stack == sp.Name && len(rep.ServiceFlags[k.Service]) > 0 {
+			record(k.Name, k.Service)
+			seen[k.Service] = true
+		}
+	}
+	// A flagged service without a container still gets its line.
+	svcs := make([]string, 0, len(rep.ServiceFlags))
+	for svc := range rep.ServiceFlags {
+		svcs = append(svcs, svc)
+	}
+	sort.Strings(svcs)
+	for _, svc := range svcs {
+		if !seen[svc] {
+			record("(none)", svc)
+		}
+	}
 }
 
 func (s *stacks) control(ctx context.Context, _ Caller, p json.RawMessage) (any, error) {

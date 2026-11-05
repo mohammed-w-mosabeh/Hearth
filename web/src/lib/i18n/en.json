@@ -1569,6 +1569,8 @@
   "security.f.cves_open": "{s} vulnerabilities have no fix yet",
   "security.f.container_risky": "{s} could take over the host",
   "security.f.container_risky_stopped": "{s} (stopped) could take over the host when started",
+  "security.f.app_danger": "The app {s} runs with danger flags",
+  "security.f.app_exposed": "The app {s} is reachable from the network",
   "security.f.path_world": "{s} is writable by anyone",
   "security.f.path_world_file": "{s} is writable by anyone",
   "security.f.path_owner": "{s} belongs to another user",

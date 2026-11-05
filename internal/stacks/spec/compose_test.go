@@ -187,3 +187,19 @@ func TestComposeSecretsLabel(t *testing.T) {
 		t.Fatalf("env %v", out.Services["w"].Environment)
 	}
 }
+
+func TestServiceFlags(t *testing.T) {
+	_, rep, err := Parse([]byte(`{"version":1,"name":"f","opt_in":["cap:NET_ADMIN","port:0.0.0.0:8443/tcp","docker-socket"],
+"services":{"vpn":{"image":"x","cap_add":["NET_ADMIN"],"ports":[{"host_ip":"0.0.0.0","host":8443,"container":443}]},
+"ui":{"image":"y","volumes":[{"type":"bind","source":"/run/docker.sock","target":"/var/run/docker.sock"}]},"plain":{"image":"z"}}}`))
+	if err != nil || !rep.OK() {
+		t.Fatalf("%v %v", err, rep.Refused)
+	}
+	want := map[string][]string{"vpn": {"cap:NET_ADMIN", "port:0.0.0.0:8443/tcp"}, "ui": {"docker-socket"}}
+	if len(rep.ServiceFlags) != 2 || !slices.Equal(rep.ServiceFlags["vpn"], want["vpn"]) || !slices.Equal(rep.ServiceFlags["ui"], want["ui"]) {
+		t.Fatalf("%v", rep.ServiceFlags)
+	}
+	if len(rep.Flags) != 3 {
+		t.Fatalf("%v", rep.Flags)
+	}
+}

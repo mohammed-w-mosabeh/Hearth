@@ -175,7 +175,6 @@ func TestStackDeployRefusedBeforePolkit(t *testing.T) {
 		"not a spec":    {deployParams(`"services: {}"`), nil, ""},
 		"unknown key":   {deployParams(strings.Replace(lifeSpec, `"image"`, `"privileged":true,"image"`, 1)), nil, "unknown key"},
 		"unacked flag":  {deployParams(lan), nil, "port:0.0.0.0:8080/tcp"},
-		"acked flag":    {deployParams(lan, "port:0.0.0.0:8080/tcp"), nil, "cannot be deployed yet"},
 		"extra ack":     {deployParams(lifeSpec, "cap:NET_ADMIN"), nil, "not the spec's"},
 		"unknown param": {map[string]any{"spec": json.RawMessage(lifeSpec), "ack_flags": []string{}, "x": 1}, nil, ""},
 		"no spec":       {map[string]any{"ack_flags": []string{}}, nil, "no spec"},
@@ -422,7 +421,7 @@ func TestStackPolicy(t *testing.T) {
 	if err := xml.Unmarshal(b, &doc); err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]string{ActionStackDeploy: "auth_admin", ActionStackControl: "auth_admin_keep", ActionStackRemove: "auth_admin", ActionStackSecrets: "auth_admin"}
+	want := map[string]string{ActionStackDeploy: "auth_admin", ActionStackControl: "auth_admin_keep", ActionStackRemove: "auth_admin", ActionStackSecrets: "auth_admin", ActionStackDanger: "auth_admin"}
 	for _, a := range doc.Actions {
 		if w, ok := want[a.ID]; ok {
 			if a.Active != w || a.Any != "auth_admin" {
@@ -462,5 +461,76 @@ func TestStackRefusedWithoutDialog(t *testing.T) {
 	b, _ := json.Marshal(deployParams(lifeSpec))
 	if err := r.methods["stack.deploy"].Check(context.Background(), b); errCode(err) != CodeBadParams || !strings.Contains(err.Error(), "/etc") {
 		t.Fatalf("no Engine: %v", err)
+	}
+}
+
+type detailAuthority struct {
+	details []map[string]string
+	actions []string
+}
+
+func (d *detailAuthority) Check(ctx context.Context, c Caller, action string) (bool, error) {
+	d.actions = append(d.actions, action)
+	return true, nil
+}
+
+func (d *detailAuthority) CheckDetails(_ context.Context, _ Caller, action string, details map[string]string) (bool, error) {
+	d.actions = append(d.actions, action)
+	d.details = append(d.details, details)
+	return true, nil
+}
+
+// TestStackDanger: a flagged spec asks org.hearth.stack.danger once, its
+// dialog names the flags, and each flagged container gets an audit line.
+func TestStackDanger(t *testing.T) {
+	r := newLifeRig(t)
+	audit := &memAudit{}
+	methods := StackLifeMethods(StackConfig{Store: r.store, Paths: r.paths, Engine: r.engine, ProcRoot: r.proc, Audit: audit,
+		Run: func(ctx context.Context, unit string) error {
+			r.engine.containers = []StackContainer{{ID: "c1", Name: "web-app-1", Service: "app", State: "running", Stack: "web", PID: 42}}
+			return nil
+		}})
+	auth := &detailAuthority{}
+	h := start(t, true, func(c *Config) { c.Methods = append(c.Methods, methods...); c.Authority = auth })
+	_ = h
+	lan := strings.Replace(lifeSpec, `"volumes"`, `"ports":[{"host_ip":"0.0.0.0","host":8080,"container":80}],"cap_add":["NET_ADMIN"],"volumes"`, 1)
+	lan = strings.Replace(lan, `"name":"web",`, `"name":"web","opt_in":["port:0.0.0.0:8080/tcp","cap:NET_ADMIN"],`, 1)
+	p, _ := json.Marshal(deployParams(lan, "port:0.0.0.0:8080/tcp", "cap:NET_ADMIN"))
+	resp := h.raw(`{"id":1,"method":"stack.deploy","params":` + string(p) + `}`)
+	if len(resp) != 1 || resp[0].Error != nil {
+		t.Fatalf("%+v", resp)
+	}
+	if len(auth.actions) != 1 || auth.actions[0] != ActionStackDanger {
+		t.Fatalf("asked %v", auth.actions)
+	}
+	msg := auth.details[0]["polkit.message"]
+	if !strings.Contains(msg, "cap:NET_ADMIN") || !strings.Contains(msg, "port:0.0.0.0:8080/tcp") || auth.details[0]["app"] != "web" {
+		t.Fatalf("dialog %v", auth.details[0])
+	}
+	found := false
+	for _, rec := range audit.recs {
+		if rec.Method == "stack.deploy.danger" && strings.Contains(rec.Result, "web-app-1 runs with cap:NET_ADMIN, port:0.0.0.0:8080/tcp") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no per-container audit: %+v", audit.recs)
+	}
+
+	// Without flags: the plain deploy action, no details, no danger line.
+	auth.actions, audit.recs = nil, nil
+	p, _ = json.Marshal(deployParams(lifeSpec))
+	if resp := h.raw(`{"id":2,"method":"stack.deploy","params":` + string(p) + `}`); resp[0].Error != nil {
+		t.Fatalf("%+v", resp)
+	}
+	if len(auth.actions) != 1 || auth.actions[0] != ActionStackDeploy || len(audit.recs) != 0 {
+		t.Fatalf("asked %v, audit %v", auth.actions, audit.recs)
+	}
+
+	// Acknowledging other flags than the spec's is refused before polkit.
+	auth.actions = nil
+	p, _ = json.Marshal(deployParams(lan, "cap:NET_ADMIN"))
+	if resp := h.raw(`{"id":3,"method":"stack.deploy","params":` + string(p) + `}`); resp[0].Error == nil || resp[0].Error.Code != CodeBadParams || len(auth.actions) != 0 {
+		t.Fatalf("%+v asked %v", resp, auth.actions)
 	}
 }

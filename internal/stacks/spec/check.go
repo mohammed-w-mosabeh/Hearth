@@ -52,6 +52,9 @@ type Report struct {
 	// Flags lists the danger flags the spec uses, sorted; each needs an
 	// opt-in, and deploying one needs org.hearth.stack.danger.
 	Flags []string `json:"flags"`
+	// ServiceFlags lists, per service, the flags it carries, sorted: the
+	// danger audit names them per container.
+	ServiceFlags map[string][]string `json:"service_flags,omitempty"`
 }
 
 // OK reports whether nothing was refused.
@@ -67,21 +70,28 @@ func Parse(raw []byte) (Spec, Report, error) {
 }
 
 type checker struct {
-	s     Spec
-	r     Report
-	flags map[string]bool
-	ports map[string]string // "ip:port/proto" -> service
+	s        Spec
+	r        Report
+	flags    map[string]bool
+	svcFlags map[string]map[string]bool
+	ports    map[string]string // "ip:port/proto" -> service
 }
 
 func (c *checker) refuse(where, format string, a ...any) {
 	c.r.Refused = append(c.r.Refused, where+": "+fmt.Sprintf(format, a...))
 }
 
-func (c *checker) flag(f string) { c.flags[f] = true }
+func (c *checker) flag(service, f string) {
+	c.flags[f] = true
+	if c.svcFlags[service] == nil {
+		c.svcFlags[service] = map[string]bool{}
+	}
+	c.svcFlags[service][f] = true
+}
 
 // Check applies S12b to a decoded spec.
 func Check(s Spec) Report {
-	c := &checker{s: s, flags: map[string]bool{}, ports: map[string]string{}}
+	c := &checker{s: s, flags: map[string]bool{}, svcFlags: map[string]map[string]bool{}, ports: map[string]string{}}
 	if s.Version != Version {
 		c.refuse("spec", "version %d is not %d", s.Version, Version)
 	}
@@ -134,6 +144,15 @@ func Check(s Spec) Report {
 		c.r.Flags = append(c.r.Flags, f)
 	}
 	sort.Strings(c.r.Flags)
+	for svc, fs := range c.svcFlags {
+		if c.r.ServiceFlags == nil {
+			c.r.ServiceFlags = map[string][]string{}
+		}
+		for f := range fs {
+			c.r.ServiceFlags[svc] = append(c.r.ServiceFlags[svc], f)
+		}
+		sort.Strings(c.r.ServiceFlags[svc])
+	}
 	if c.r.Refused == nil {
 		c.r.Refused = []string{}
 	}
@@ -337,7 +356,7 @@ func (c *checker) portList(name string, ports []Port) {
 		}
 		c.ports[key] = name
 		if !addr.IsLoopback() {
-			c.flag("port:" + key)
+			c.flag(name, "port:"+key)
 		}
 	}
 }
@@ -385,7 +404,7 @@ func (c *checker) bind(name, src string) {
 		return
 	}
 	if dockerSocket(src) {
-		c.flag("docker-socket")
+		c.flag(name, "docker-socket")
 		return
 	}
 	if within(src, "/dev") && deviceKind(src) == deviceNever {
@@ -393,7 +412,7 @@ func (c *checker) bind(name, src string) {
 		return
 	}
 	if hostTree(src) != "" {
-		c.flag("bind:" + src)
+		c.flag(name, "bind:"+src)
 		return
 	}
 	for _, r := range c.s.BindRoots {
@@ -465,7 +484,7 @@ func (c *checker) networking(name string, svc Service) {
 	switch {
 	case mode == "" || mode == "none":
 	case mode == "host":
-		c.flag("network:host")
+		c.flag(name, "network:host")
 	case strings.HasPrefix(mode, "service:"):
 		other := strings.TrimPrefix(mode, "service:")
 		if _, ok := c.s.Services[other]; !ok || other == name {
@@ -484,7 +503,7 @@ func (c *checker) networking(name string, svc Service) {
 		switch ns.v {
 		case "":
 		case "host":
-			c.flag(ns.key + ":host")
+			c.flag(name, ns.key+":host")
 		default:
 			c.refuse(name, "%s mode must be host or unset", ns.key)
 		}
@@ -492,7 +511,7 @@ func (c *checker) networking(name string, svc Service) {
 	switch svc.IPC {
 	case "", "private", "shareable":
 	case "host":
-		c.flag("ipc:host")
+		c.flag(name, "ipc:host")
 	default:
 		c.refuse(name, "ipc must be private, shareable or host")
 	}
@@ -513,7 +532,7 @@ func (c *checker) capabilities(name string, svc Service) {
 		case neverCaps[cp]:
 			c.refuse(name, "cap_add %s is never allowed", cp)
 		default:
-			c.flag("cap:" + cp)
+			c.flag(name, "cap:"+cp)
 		}
 	}
 	for _, cp := range svc.CapDrop {
@@ -537,7 +556,7 @@ func (c *checker) deviceList(name string, devices []string) {
 		case deviceNever:
 			c.refuse(name, "device %s is never allowed", clip(host))
 		case deviceListed:
-			c.flag("device:" + host)
+			c.flag(name, "device:"+host)
 		default:
 			c.refuse(name, "device %q is not one Hearth can pass through", clip(host))
 		}
@@ -553,7 +572,7 @@ func (c *checker) sysctls(name string, s map[string]string) {
 			c.refuse(name, "sysctl %q is not a namespaced sysctl Hearth can set", clip(k))
 			continue
 		}
-		c.flag("sysctl:" + k)
+		c.flag(name, "sysctl:"+k)
 	}
 }
 

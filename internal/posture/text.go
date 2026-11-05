@@ -51,6 +51,8 @@ var texts = map[string]string{
 	"cves.open":               "{s} vulnerabilities have no fix yet",
 	"container.risky":         "{s} could take over the host",
 	"container.risky_stopped": "{s} (stopped) could take over the host when started",
+	"app.danger":              "The app {s} runs with danger flags",
+	"app.exposed":             "The app {s} is reachable from the network",
 	"path.world":              "{s} is writable by anyone",
 	"path.world_file":         "{s} is writable by anyone",
 	"path.owner":              "{s} belongs to another user",

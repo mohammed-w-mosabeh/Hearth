@@ -76,7 +76,7 @@
       <span>{text(f)}</span>
       {#if f.details?.length}
         <span class="details">
-          {#if c.id === 'containers'}
+          {#if c.id === 'containers' && !f.code.startsWith('app.')}
             {#each f.details as r (r)}
               {@const rk = riskKey(r)}
               <span class="chip">{t(rk.key)}{#if rk.path}&nbsp;<code>{rk.path}</code>{/if}</span>

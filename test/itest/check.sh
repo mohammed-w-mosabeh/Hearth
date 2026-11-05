@@ -610,7 +610,7 @@ check "a user cannot ask it" grep -q 'error EACCES' <<<"$(asuser node -e 'const 
 check "it created nothing" test ! -e /srv/itest-app/nope
 check "it wrote no stack" not test -e /var/lib/hearth/stacks
 echo "== stack lifecycle (9.4)"
-for a in deploy control remove; do
+for a in deploy control remove danger; do
 	check "polkit has org.hearth.stack.$a" grep -q "action id=\"org.hearth.stack.$a\"" /usr/share/polkit-1/actions/org.hearth.policy
 done
 usermod -aG hearth "$user" # a member without a polkit agent
@@ -619,12 +619,27 @@ deploy() { printf '{"spec":%s,"ack_flags":%s}' "$1" "${2:-[]}"; }
 check "stack.status lists no stack" call_says '\[\]' stack.status
 check "deploy: privileged refused before polkit" call_says 'unknown key' stack.deploy "$(deploy '{"version":1,"name":"probe","services":{"web":{"image":"nginx","privileged":true}}}')"
 check "deploy: an unacknowledged flag is refused" call_says 'not the spec' stack.deploy "$(deploy '{"version":1,"name":"probe","opt_in":["cap:NET_ADMIN"],"services":{"web":{"image":"nginx","cap_add":["NET_ADMIN"]}}}')"
-check "deploy: a flag waits for 9.6" call_says 'cannot be deployed yet' stack.deploy "$(deploy '{"version":1,"name":"probe","opt_in":["cap:NET_ADMIN"],"services":{"web":{"image":"nginx","cap_add":["NET_ADMIN"]}}}' '["cap:NET_ADMIN"]')"
+polkit_logged() { grep -q -- "$1" <<<"$(journalctl -t hearth-itest --no-pager 2>/dev/null)"; }
+# A rule that records what polkit was asked, then refuses: the danger
+# action, with the flags in its details for the dialog. polkitd runs at
+# --log-level=notice, which hides polkit.log, so it spawns logger.
+cat >/etc/polkit-1/rules.d/53-hearth-itest-danger.rules <<'RULES'
+polkit.addRule(function(action, subject) {
+	if (action.id == "org.hearth.stack.danger" || action.id == "org.hearth.stack.deploy") {
+		polkit.spawn(["/usr/bin/logger", "-t", "hearth-itest", action.id + " app=" + action.lookup("app") + " flags=" + action.lookup("flags")]);
+		return polkit.Result.NO;
+	}
+});
+RULES
+sleep 1 # polkitd reloads rules on change
+check "deploy: an acknowledged flag reaches polkit" call_says 'not authorized' stack.deploy "$(deploy '{"version":1,"name":"probe","opt_in":["cap:NET_ADMIN"],"services":{"web":{"image":"nginx","cap_add":["NET_ADMIN"]}}}' '["cap:NET_ADMIN"]')"
+check "it asks org.hearth.stack.danger, naming the flags" wait_until 5 polkit_logged 'org.hearth.stack.danger app=probe flags=cap:NET_ADMIN'
 check "deploy: a bind of /etc is refused" call_says 'never allowed' stack.deploy "$(deploy '{"version":1,"name":"probe","services":{"web":{"image":"nginx","volumes":[{"type":"bind","source":"/etc","target":"/x"}]}}}')"
 check "deploy: a link to /etc is refused by the path check" call_says 'resolves to /etc' stack.deploy "$(deploy "$(pc_spec /srv/itest-app /srv/itest-app/esc)")"
 check "deploy: a missing bind is refused" call_says 'does not exist' stack.deploy "$(deploy "$(pc_spec /srv/itest-app /srv/itest-app/nope)")"
 check "deploy: YAML is refused" call_says 'not an object' stack.deploy '{"spec":"services: {}","ack_flags":[]}'
 check "deploy: a clean spec reaches polkit" call_says 'not authorized' stack.deploy "$(deploy "$stack_ok")"
+check "a plain deploy asks org.hearth.stack.deploy" wait_until 5 polkit_logged 'org.hearth.stack.deploy app=undefined'
 check "deploy: a bind that resolves reaches polkit" call_says 'not authorized' stack.deploy "$(deploy "$(pc_spec /srv/itest-app /srv/itest-app/inside)")"
 check "audit records the refusal" grep -q '"method":"stack.deploy".*refused: not authorized' /var/lib/hearth/audit.jsonl
 check "control of a missing stack is refused" call_says 'no such stack' stack.control '{"name":"probe","verb":"start"}'
@@ -632,6 +647,7 @@ check "control verbs are closed" call_says 'verb must be' stack.control '{"name"
 check "remove of a missing stack is refused" call_says 'no such stack' stack.remove '{"name":"probe"}'
 check "update of a missing stack is refused" call_says 'no such stack' stack.update "{\"name\":\"probe\",\"spec_sha256\":\"$(printf '0%.0s' {1..64})\",\"pins\":{\"web\":\"sha256:$(printf 'a%.0s' {1..64})\"}}"
 check "nothing was written" not test -e /var/lib/hearth/stacks
+rm -f /etc/polkit-1/rules.d/53-hearth-itest-danger.rules
 echo "== stack secrets (9.5)"
 check "polkit has org.hearth.stack.secrets" grep -q 'action id="org.hearth.stack.secrets"' /usr/share/polkit-1/actions/org.hearth.policy
 mark=ITEST-SECRET-7c1e

@@ -61,11 +61,20 @@ type Method struct {
 	// for a method whose params hold secrets (SECURITY S12c): no hash of a
 	// secret value is ever stored.
 	Redact func(params json.RawMessage) json.RawMessage
+	// Authorize, if set, picks the polkit action for these params in place
+	// of Action, and details for the dialog to show (polkit.message among
+	// them). It runs after Check; an empty action means Action.
+	Authorize func(params json.RawMessage) (action string, details map[string]string)
 }
 
 // Authority decides privileged calls (polkit in production).
 type Authority interface {
 	Check(ctx context.Context, c Caller, action string) (bool, error)
+}
+
+// DetailedAuthority also shows details in the dialog.
+type DetailedAuthority interface {
+	CheckDetails(ctx context.Context, c Caller, action string, details map[string]string) (bool, error)
 }
 
 // Auditor records every call.
@@ -335,8 +344,20 @@ func (s *Server) call(ctx context.Context, c Caller, line []byte, conn net.Conn,
 		}
 	}
 	if m.Privileged {
+		action, details := m.Action, map[string]string(nil)
+		if m.Authorize != nil {
+			if a, d := m.Authorize(req.Params); a != "" {
+				action, details = a, d
+			}
+		}
 		actx, cancel := context.WithTimeout(ctx, timeout)
-		ok, err := s.cfg.Authority.Check(actx, c, m.Action)
+		var ok bool
+		var err error
+		if da, isDA := s.cfg.Authority.(DetailedAuthority); isDA && len(details) > 0 {
+			ok, err = da.CheckDetails(actx, c, action, details)
+		} else {
+			ok, err = s.cfg.Authority.Check(actx, c, action)
+		}
 		cancel()
 		if err != nil || !ok {
 			// Fail closed: a polkit error is a refusal.

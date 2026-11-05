@@ -1569,6 +1569,8 @@
   "security.f.cves_open": "عدد الثغرات التي لا إصلاح لها بعد: {s}",
   "security.f.container_risky": "{s} قد تسيطر على المضيف",
   "security.f.container_risky_stopped": "{s} (متوقفة) قد تسيطر على المضيف عند تشغيلها",
+  "security.f.app_danger": "التطبيق {s} يعمل بخيارات خطرة",
+  "security.f.app_exposed": "التطبيق {s} متاح من الشبكة",
   "security.f.path_world": "{s} قابل للكتابة من الجميع",
   "security.f.path_world_file": "{s} قابل للكتابة من الجميع",
   "security.f.path_owner": "{s} يخص مستخدمًا آخر",

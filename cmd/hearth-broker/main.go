@@ -54,6 +54,7 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	var srv *broker.Server
+	audit := &broker.FileAudit{Path: filepath.Join(stateDir, "audit.jsonl"), MaxBytes: 8 << 20}
 	methods := broker.BaseMethods(version(), func() []string { return srv.Names() })
 	dockerAPI := broker.NewDocker(broker.DockerSocket)
 	methods = append(methods, broker.DockerMethods(dockerAPI)...)
@@ -66,7 +67,7 @@ func run(log *slog.Logger) error {
 			return c, nil
 		}})...)
 	methods = append(methods, broker.StackMethods()...)
-	methods = append(methods, broker.StackLifeMethods(broker.StackConfig{Paths: broker.PathChecker{}, Engine: dockerAPI,
+	methods = append(methods, broker.StackLifeMethods(broker.StackConfig{Paths: broker.PathChecker{}, Engine: dockerAPI, Audit: audit,
 		Bus: func(ctx context.Context) (broker.SystemBus, error) {
 			c, err := dbusx.SystemBus(ctx)
 			if err != nil {
@@ -120,7 +121,7 @@ func run(log *slog.Logger) error {
 		Methods:   methods,
 		InGroup:   broker.GroupMember(broker.Group),
 		Authority: broker.Polkit{Dial: dbusx.SystemBus},
-		Audit:     &broker.FileAudit{Path: filepath.Join(stateDir, "audit.jsonl"), MaxBytes: 8 << 20},
+		Audit:     audit,
 		Log:       log,
 	})
 	if err != nil {
