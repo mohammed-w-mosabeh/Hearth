@@ -142,8 +142,6 @@ func TestConvertRefusals(t *testing.T) {
 		"privileged":   {`{"services":{"a":{"image":"x","privileged":true}}}`, "privileged is not supported"},
 		"build only":   {`{"services":{"a":{"build":{"context":"."}}}}`, "built from source"},
 		"port range":   {`{"services":{"a":{"image":"x","ports":[{"target":80,"published":"8000-8010"}]}}}`, "port range"},
-		"two values":   {`{"services":{"a":{"image":"x","environment":{"PW":"one111"}},"b":{"image":"y","environment":{"PW":"two222"}}}}`, "PW has different values in a and b"},
-		"dotted name":  {`{"services":{"a":{"image":"x","environment":{"discovery.type":"single-node"}}}}`, "cannot name a secret; mark it plain"},
 		"url in label": {`{"services":{"a":{"image":"x","labels":{"l":"postgres://u:p@db/x"}}}}`, "a label holds a URL with a user"},
 		"nfs volume":   {`{"services":{"a":{"image":"x"}},"volumes":{"v":{"driver":"nfs"}}}`, "driver nfs"},
 		"etc bind":     {`{"services":{"a":{"image":"x","volumes":[{"type":"bind","source":"/etc/ssl","target":"/ssl"}]}}}`, "never allowed"},
@@ -238,9 +236,27 @@ func TestConvertRealShapes(t *testing.T) {
 	if len(r.Refused) != 0 || r.Spec.Services["workflow-ui"].Healthcheck.Test[2] != "workflow:7233" {
 		t.Fatalf("%+v", r)
 	}
-	// A dotted name is refused once, and not listed as a secret.
+	// A dotted name is a secret under a key that can name one.
 	r = Convert(Input{Project: "p", Rendered: []byte(`{"services":{"es":{"image":"x","environment":{"discovery.type":"single-node"}}}}`)})
-	if len(r.Refused) != 1 || len(r.Spec.Services["es"].Secrets) != 0 {
-		t.Fatalf("%v", r.Refused)
+	if len(r.Refused) != 0 || !slices.Equal(r.Spec.Services["es"].Secrets, []string{"discovery.type=DISCOVERY_TYPE"}) || r.Values["DISCOVERY_TYPE"] != "single-node" {
+		t.Fatalf("%+v", r)
+	}
+	// Different values in two services: one key each, the variable kept.
+	r = Convert(Input{Project: "p", Rendered: []byte(`{"services":{"a":{"image":"x","environment":{"PW":"one111"}},"b-db":{"image":"y","environment":{"PW":"two222"}}}}`)})
+	if len(r.Refused) != 0 || !slices.Equal(r.Spec.Services["a"].Secrets, []string{"PW=A_PW"}) || !slices.Equal(r.Spec.Services["b-db"].Secrets, []string{"PW=B_DB_PW"}) ||
+		r.Values["A_PW"] != "one111" || r.Values["B_DB_PW"] != "two222" || !has(r.Changes, "PW is kept as the secret B_DB_PW") {
+		t.Fatalf("%+v", r)
+	}
+	raw, _ := json.Marshal(r.Spec)
+	if _, rep, err := spec.Parse(raw); err != nil || !rep.OK() {
+		t.Fatalf("%v %v", err, rep.Refused)
+	}
+	if enc, _ := json.Marshal(r); strings.Contains(string(enc), "one111") || strings.Contains(string(enc), "two222") {
+		t.Fatalf("shown: %s", enc)
+	}
+	for in, want := range map[string]string{"discovery.type": "DISCOVERY_TYPE", "docker_host": "S_DOCKER_HOST", "9x": "S_9X", "a-b": "A_B", "OK_1": "OK_1"} {
+		if got := keyName(in); got != want {
+			t.Errorf("keyName(%q) = %q", in, got)
+		}
 	}
 }

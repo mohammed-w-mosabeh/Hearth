@@ -56,8 +56,10 @@ type Result struct {
 type conv struct {
 	in      Input
 	r       Result
-	values  map[string]string            // secret name -> value
-	from    map[string]map[string]string // secret name -> service -> value
+	values  map[string]string            // secret key -> value
+	from    map[string]map[string]string // variable -> service -> value
+	keyOf   map[string]map[string]string // service -> variable -> secret key
+	keySvcs map[string]map[string]bool   // secret key -> services
 	binds   map[string]bool
 	project string
 }
@@ -73,7 +75,8 @@ func (c *conv) change(where, format string, a ...any) {
 // Convert turns a rendering into a spec. It never returns a secret value
 // except in Result.Values.
 func Convert(in Input) Result {
-	c := &conv{in: in, values: map[string]string{}, from: map[string]map[string]string{}, binds: map[string]bool{}, project: in.Project}
+	c := &conv{in: in, values: map[string]string{}, from: map[string]map[string]string{}, keyOf: map[string]map[string]string{},
+		keySvcs: map[string]map[string]bool{}, binds: map[string]bool{}, project: in.Project}
 	c.r.Spec = spec.Spec{Version: spec.Version, Name: in.Project, Services: map[string]spec.Service{}}
 	if !spec.ValidName(in.Project) {
 		c.refuse("project", "%q cannot be a stack name", clip(in.Project))
@@ -104,6 +107,7 @@ func Convert(in Input) Result {
 			c.collectEnv(name, services[name])
 		}
 	}
+	c.assignKeys()
 	for _, name := range names {
 		if c.in.Skip[name] {
 			c.change(name, "left out, as asked")
@@ -143,7 +147,7 @@ func (c *conv) finish() Result {
 	keys := sortedKeys(c.values)
 	r.Secrets = make([]SecretKey, 0, len(keys))
 	for _, k := range keys {
-		r.Secrets = append(r.Secrets, SecretKey{Key: k, Services: sortedKeys(c.from[k])})
+		r.Secrets = append(r.Secrets, SecretKey{Key: k, Services: sortedKeys(c.keySvcs[k])})
 	}
 	r.Values = c.values
 	sort.Strings(r.Refused)
@@ -177,30 +181,89 @@ func (c *conv) collectEnv(name string, svc map[string]json.RawMessage) {
 			c.from[k] = map[string]string{}
 		}
 		c.from[k][name] = *v
-		c.values[k] = *v
 	}
+}
+
+// assignKeys picks each secret's key in secrets.env. A variable with one
+// value everywhere keeps its name; one whose services hold different values
+// gets a key per service; a name that cannot be a key (discovery.type) gets
+// one that can. The container still sees its own variable name.
+func (c *conv) assignKeys() {
+	used := map[string]bool{}
+	unique := func(base string) string {
+		k := base
+		for i := 2; used[k]; i++ {
+			k = base + "_" + strconv.Itoa(i)
+		}
+		used[k] = true
+		return k
+	}
+	assign := func(svc, variable, key, value string) {
+		if c.keyOf[svc] == nil {
+			c.keyOf[svc] = map[string]string{}
+		}
+		c.keyOf[svc][variable] = key
+		c.values[key] = value
+		if c.keySvcs[key] == nil {
+			c.keySvcs[key] = map[string]bool{}
+		}
+		c.keySvcs[key][svc] = true
+	}
+	for _, variable := range sortedKeys(c.from) {
+		bySvc := c.from[variable]
+		distinct := map[string]bool{}
+		for _, v := range bySvc {
+			distinct[v] = true
+		}
+		if len(distinct) == 1 {
+			key := unique(keyName(variable))
+			if key != variable {
+				c.change("secrets", "%s is kept as the secret %s", variable, key)
+			}
+			for svc, v := range bySvc {
+				assign(svc, variable, key, v)
+			}
+			continue
+		}
+		for _, svc := range sortedKeys(bySvc) {
+			key := unique(keyName(strings.ToUpper(svc + "_" + variable)))
+			c.change(svc, "%s is kept as the secret %s, as other services hold another value", variable, key)
+			assign(svc, variable, key, bySvc[svc])
+		}
+	}
+}
+
+// keyName makes a secrets.env key of s: upper case, _ for anything else,
+// never a Compose or Docker setting.
+func keyName(s string) string {
+	if secrets.ValidKey(s) {
+		return s
+	}
+	b := []byte(strings.ToUpper(s))
+	for i, ch := range b {
+		if (ch < 'A' || ch > 'Z') && (ch < '0' || ch > '9') && ch != '_' {
+			b[i] = '_'
+		}
+	}
+	k := string(b)
+	if k == "" || (k[0] >= '0' && k[0] <= '9') || !secrets.ValidKey(k) {
+		k = "S_" + k
+	}
+	if len(k) > 128 {
+		k = k[:128]
+	}
+	return k
 }
 
 // secretsOneValue: secrets.env holds one value per name.
 func (c *conv) secretsOneValue() {
-	for k, bySvc := range c.from {
-		seen := map[string]bool{}
-		for _, v := range bySvc {
-			seen[v] = true
-		}
-		if len(seen) > 1 {
-			how := "make them equal, or mark it plain if it is not a secret"
-			if secret.Name(k) {
-				how = "make them equal"
-			}
-			c.refuse("secrets", "%s has different values in %s; a stack keeps one value per name: %s", k, strings.Join(sortedKeys(bySvc), " and "), how)
-		}
-		if !secrets.ValidKey(k) {
-			c.refuse("secrets", "%q cannot name a secret; mark it plain to keep it", clip(k))
-		}
+	for _, k := range sortedKeys(c.values) {
 		if why := secrets.CheckValue(c.values[k]); why != "" {
 			c.refuse("secrets", "%s: %s", k, why)
 		}
+	}
+	if len(c.values) > secrets.MaxKeys {
+		c.refuse("secrets", "%d secrets, more than the %d a stack holds", len(c.values), secrets.MaxKeys)
 	}
 }
 
@@ -478,10 +541,12 @@ func (c *conv) environment(name string, raw map[string]json.RawMessage, svc *spe
 				svc.Environment = map[string]string{}
 			}
 			svc.Environment[k] = *v
-		case !secrets.ValidKey(k):
-			// Refused once, in secretsOneValue, with what to do.
 		default:
-			svc.Secrets = append(svc.Secrets, k)
+			if key := c.keyOf[name][k]; key != k {
+				svc.Secrets = append(svc.Secrets, k+"="+key)
+			} else {
+				svc.Secrets = append(svc.Secrets, k)
+			}
 		}
 	}
 }
@@ -567,7 +632,7 @@ func (c *conv) volumes(name string, raw map[string]json.RawMessage, svc *spec.Se
 		if svc.Environment == nil {
 			svc.Environment = map[string]string{}
 		}
-		if _, ok := svc.Environment["TZ"]; !ok && !slicesContains(svc.Secrets, "TZ") {
+		if _, ok := svc.Environment["TZ"]; !ok && !hasSecretVar(svc.Secrets, "TZ") {
 			svc.Environment["TZ"] = c.in.TZ
 		}
 		c.change(name, "the host's time zone bind becomes TZ=%s", c.in.TZ)
@@ -758,9 +823,9 @@ func sortedKeys[V any](m map[string]V) []string {
 	return out
 }
 
-func slicesContains(l []string, s string) bool {
+func hasSecretVar(l []string, variable string) bool {
 	for _, e := range l {
-		if e == s {
+		if v, _ := spec.SecretRef(e); v == variable {
 			return true
 		}
 	}

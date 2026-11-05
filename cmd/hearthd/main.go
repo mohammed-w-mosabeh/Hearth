@@ -531,7 +531,9 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	stacks.Register(reg, brokerClient, images.Registry)
 	srv.API.HandleFunc("GET /api/v1/stacks", stacks.HandleList(brokerClient))
 	srv.API.HandleFunc("GET /api/v1/stacks/{name}", stacks.HandleOne(brokerClient))
-	srv.API.HandleFunc("GET /api/v1/stacks/import/{project}", importer.Handle(importer.Deps{Broker: brokerClient, Run: safeexec.Run}))
+	importDeps := importer.Deps{Broker: brokerClient, Run: safeexec.Run}
+	srv.API.HandleFunc("GET /api/v1/stacks/import/{project}", importer.Handle(importDeps))
+	importer.RegisterAction(reg, importDeps)
 	srv.API.HandleFunc("POST /api/v1/stacks/{name}/secrets", stacks.HandleSecretsSet(brokerClient, db))
 	srv.API.HandleFunc("POST /api/v1/stacks/{name}/secrets/{key}/reveal", stacks.HandleReveal(brokerClient, db))
 	srv.API.HandleFunc("GET /api/v1/docker/images/{id}", images.HandleDetail)

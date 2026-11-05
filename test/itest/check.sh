@@ -649,6 +649,17 @@ check "update of a missing stack is refused" call_says 'no such stack' stack.upd
 check "nothing was written" not test -e /var/lib/hearth/stacks
 check "a read-only token cannot ask for it" test "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${ro_key:-none}" "http://127.0.0.1:$port/api/v1/stacks/import/nosuch")" != 200
 rm -f /etc/polkit-1/rules.d/53-hearth-itest-danger.rules
+echo "== stack import (9.8)"
+imark=ITEST-IMPORT-4d2a
+ispec='{"version":1,"name":"probe","services":{"web":{"image":"nginx:1.27","secrets":["PW","DB_PASSWORD=WEB_DB_PASSWORD"]}}}'
+import_params() { printf '{"spec":%s,"ack_flags":[],"secrets":%s}' "$ispec" "$1"; }
+check "import: a secret without its value is refused" call_says 'WEB_DB_PASSWORD has no value' stack.import "$(import_params "{\"PW\":\"$imark\"}")"
+check "import: a secret no service names is refused" call_says 'names the secret OTHER' stack.import "$(import_params "{\"PW\":\"$imark\",\"WEB_DB_PASSWORD\":\"$imark\",\"OTHER\":\"$imark\"}")"
+check "import: a value of two lines is refused" call_says 'one line' stack.import "$(import_params "{\"PW\":\"$imark\\nX=1\",\"WEB_DB_PASSWORD\":\"$imark\"}")"
+check "import: a complete one reaches polkit" call_says 'not authorized' stack.import "$(import_params "{\"PW\":\"$imark\",\"WEB_DB_PASSWORD\":\"$imark\"}")"
+check "import: the broker audit holds no value" not grep -q "$imark" /var/lib/hearth/audit.jsonl
+check "import: the journal holds no value" not grep -q "$imark" <<<"$(journalctl --no-pager 2>/dev/null)"
+check "import: nothing was written" not test -e /var/lib/hearth/stacks
 echo "== stack secrets (9.5)"
 check "polkit has org.hearth.stack.secrets" grep -q 'action id="org.hearth.stack.secrets"' /usr/share/polkit-1/actions/org.hearth.policy
 mark=ITEST-SECRET-7c1e

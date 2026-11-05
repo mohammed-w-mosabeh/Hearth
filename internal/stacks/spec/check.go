@@ -311,21 +311,35 @@ func (c *checker) env(name string, svc Service) {
 		c.refuse(name, "at most %d secrets", maxSecrets)
 	}
 	seen := map[string]bool{}
-	for _, k := range svc.Secrets {
+	for _, entry := range svc.Secrets {
+		v, k := SecretRef(entry)
 		switch {
+		case !plainEnvKey.MatchString(v):
+			c.refuse(name, "secrets: %q is not a variable name", clip(v))
 		case !envKey.MatchString(k):
-			c.refuse(name, "secrets: %q is not a variable name", clip(k))
+			c.refuse(name, "secrets: %q is not a secret name", clip(k))
 		case composeSetting(k):
 			c.refuse(name, "secrets: %s is a Compose or Docker setting, not a secret name", k)
-		case seen[k]:
-			c.refuse(name, "secrets: %s is listed twice", k)
+		case seen[v]:
+			c.refuse(name, "secrets: %s is listed twice", v)
 		default:
-			if _, ok := svc.Environment[k]; ok {
-				c.refuse(name, "%s is both a secret and a plain value", k)
+			if _, ok := svc.Environment[v]; ok {
+				c.refuse(name, "%s is both a secret and a plain value", v)
 			}
 		}
-		seen[k] = true
+		seen[v] = true
 	}
+}
+
+// SecretRef splits a service's secrets entry: "KEY" gives the container's
+// variable KEY the value of secrets.env's KEY; "VAR=KEY" gives VAR the
+// value of KEY, so two services can hold different values for one name,
+// and a variable whose name is not an identifier can still be a secret.
+func SecretRef(entry string) (variable, key string) {
+	if v, k, ok := strings.Cut(entry, "="); ok {
+		return v, k
+	}
+	return entry, entry
 }
 
 func (c *checker) portList(name string, ports []Port) {

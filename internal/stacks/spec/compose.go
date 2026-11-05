@@ -11,8 +11,8 @@ import (
 // LabelStack marks every container of a stack with its name.
 const LabelStack = "org.hearth.stack"
 
-// LabelSecrets lists, comma-separated, the secret keys a container
-// receives from secrets.env.
+// LabelSecrets lists, comma-separated, the variables a container receives
+// from secrets.env, so inspect masks them whatever they are called.
 const LabelSecrets = "org.hearth.secrets" // #nosec G101 -- a label name; it lists key names, never values
 
 // DefaultRestart is the restart policy of a service whose spec names none.
@@ -174,9 +174,12 @@ func service(stack string, svc Service) map[string]any {
 	labels[LabelStack] = stack
 	if len(svc.Secrets) > 0 {
 		// Names only: Hearth's inspect masks these keys, whatever they are called.
-		keys := slices.Clone(svc.Secrets)
-		slices.Sort(keys)
-		labels[LabelSecrets] = strings.Join(keys, ",")
+		vars := make([]string, len(svc.Secrets))
+		for i, entry := range svc.Secrets {
+			vars[i], _ = SecretRef(entry)
+		}
+		slices.Sort(vars)
+		labels[LabelSecrets] = strings.Join(vars, ",")
 	}
 	m["labels"] = labels
 	if len(svc.Networks) > 0 {
@@ -232,8 +235,9 @@ func service(stack string, svc Service) map[string]any {
 // resolves. A service gets only the secret keys it names.
 func environment(svc Service) map[string]string {
 	env := litMap(svc.Environment)
-	for _, k := range svc.Secrets {
-		env[k] = "${" + k + "}"
+	for _, entry := range svc.Secrets {
+		v, k := SecretRef(entry)
+		env[v] = "${" + k + "}"
 	}
 	return env
 }

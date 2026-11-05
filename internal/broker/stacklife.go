@@ -216,7 +216,7 @@ func StackLifeMethods(c StackConfig) []Method {
 		c.Run = func(ctx context.Context, unit string) error { return runOneshot(ctx, c.Bus, 0, "stack", unit) }
 	}
 	s := &stacks{c: c, cache: &pathCache{m: map[string]cachedPaths{}, now: c.Now}, locks: &stackLocks{m: map[string]*sync.Mutex{}}}
-	return append(s.secretMethods(), []Method{
+	return append(append(s.secretMethods(), s.importMethod()), []Method{
 		{Name: "stack.status", Handle: s.status},
 		{Name: "stack.deploy", Privileged: true, Action: ActionStackDeploy, Timeout: StackTimeout,
 			Check: func(ctx context.Context, p json.RawMessage) error {
@@ -290,8 +290,13 @@ func (s *stacks) paths(ctx context.Context, raw []byte, pre bool) (pathcheck.Rep
 }
 
 // foreign refuses a name a Compose project outside Hearth already uses:
-// deploying would take its containers over. Importing is 9.8's.
+// deploying would take its containers over; stack.import does that, after
+// its own confirmation. Once the stack is in the store the name is Hearth's,
+// so a deploy can finish an import whose up failed half way.
 func (s *stacks) foreign(ctx context.Context, name string) error {
+	if _, err := s.c.Store.Read(name, FileSpec); err == nil {
+		return nil
+	}
 	list, err := s.c.Engine.StackContainers(ctx, name)
 	if err != nil {
 		return err

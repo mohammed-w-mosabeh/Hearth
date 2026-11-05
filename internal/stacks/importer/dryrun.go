@@ -69,6 +69,9 @@ type DryRunResult struct {
 	Volumes []VolumeUse `json:"volumes"`
 	Ports   []PortUse   `json:"ports"`
 	Notes   []string    `json:"notes"`
+	// Deploy is the spec an import sends, before the page's masking:
+	// never encoded.
+	Deploy spec.Spec `json:"-"`
 }
 
 type listed struct {
@@ -146,6 +149,7 @@ func DryRun(ctx context.Context, d Deps, project string, plain, skip map[string]
 		tz = d.TZ
 	}
 	out.Result = Convert(Input{Project: project, Rendered: res.Stdout, Plain: plain, Skip: skip, TZ: tz()})
+	out.Deploy = out.Spec
 	out.Result = displayed(out.Result)
 
 	var vols struct {

@@ -214,3 +214,37 @@ func TestDottedPlainEnv(t *testing.T) {
 		t.Fatalf("%s", b)
 	}
 }
+
+func TestSecretAlias(t *testing.T) {
+	s := Spec{Version: 1, Name: "a", Services: map[string]Service{
+		"db":    {Image: "postgres:17", Secrets: []string{"POSTGRES_PASSWORD=DB_PASSWORD"}},
+		"other": {Image: "postgres:16", Secrets: []string{"POSTGRES_PASSWORD=OTHER_PASSWORD", "discovery.type=DISCOVERY_TYPE"}},
+	}}
+	b, err := Compose(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out struct {
+		Services map[string]struct {
+			Environment map[string]string
+			Labels      map[string]string
+		}
+	}
+	_ = json.Unmarshal(b, &out)
+	if out.Services["db"].Environment["POSTGRES_PASSWORD"] != "${DB_PASSWORD}" || out.Services["other"].Environment["discovery.type"] != "${DISCOVERY_TYPE}" {
+		t.Fatalf("%s", b)
+	}
+	if out.Services["other"].Labels[LabelSecrets] != "POSTGRES_PASSWORD,discovery.type" {
+		t.Fatalf("label %q", out.Services["other"].Labels[LabelSecrets])
+	}
+	for name, entry := range map[string]string{"bad key": "A=b.c", "compose key": "A=COMPOSE_FILE", "bad var": "A B=K", "empty key": "A="} {
+		s := Spec{Version: 1, Name: "a", Services: map[string]Service{"w": {Image: "x", Secrets: []string{entry}}}}
+		if Check(s).OK() {
+			t.Errorf("%s: %q accepted", name, entry)
+		}
+	}
+	s = Spec{Version: 1, Name: "a", Services: map[string]Service{"w": {Image: "x", Secrets: []string{"A=K1", "A=K2"}}}}
+	if Check(s).OK() {
+		t.Error("one variable twice")
+	}
+}

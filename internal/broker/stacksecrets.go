@@ -62,7 +62,8 @@ func (s *stacks) secretMethods() []Method {
 func referenced(sp spec.Spec) map[string][]string {
 	out := map[string][]string{}
 	for name, svc := range sp.Services {
-		for _, k := range svc.Secrets {
+		for _, entry := range svc.Secrets {
+			_, k := spec.SecretRef(entry)
 			out[k] = append(out[k], name)
 		}
 	}
