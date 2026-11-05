@@ -647,6 +647,7 @@ check "control verbs are closed" call_says 'verb must be' stack.control '{"name"
 check "remove of a missing stack is refused" call_says 'no such stack' stack.remove '{"name":"probe"}'
 check "update of a missing stack is refused" call_says 'no such stack' stack.update "{\"name\":\"probe\",\"spec_sha256\":\"$(printf '0%.0s' {1..64})\",\"pins\":{\"web\":\"sha256:$(printf 'a%.0s' {1..64})\"}}"
 check "nothing was written" not test -e /var/lib/hearth/stacks
+check "a read-only token cannot ask for it" test "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${ro_key:-none}" "http://127.0.0.1:$port/api/v1/stacks/import/nosuch")" != 200
 rm -f /etc/polkit-1/rules.d/53-hearth-itest-danger.rules
 echo "== stack secrets (9.5)"
 check "polkit has org.hearth.stack.secrets" grep -q 'action id="org.hearth.stack.secrets"' /usr/share/polkit-1/actions/org.hearth.policy
@@ -684,6 +685,11 @@ usermod -aG hearth "$user"
 touch /run/fakedocker.hostile
 systemd-run --quiet --unit=fakedocker /root/fakedocker
 wait_until 10 test -S /run/docker.sock || fail "fake docker started again"
+# 9.7: Docker is back and the user is a member here. The socket file may
+# be the stopped fake's, so retry until the new one answers.
+dry_code() { curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/stacks/import/nosuch"; }
+dry_is_404() { test "$(dry_code)" = 404; }
+check "the import dry-run of a project without containers is 404" wait_until 10 dry_is_404
 xss='<img src=x onerror="window.__xss=1">'
 mkdir -p /tmp/xssdeb/DEBIAN
 printf 'Package: hearth-xss-probe\nVersion: 1.0\nArchitecture: all\nMaintainer: itest <itest@example.invalid>\nDescription: %s\n %s\n' "$xss" "$xss" >/tmp/xssdeb/DEBIAN/control

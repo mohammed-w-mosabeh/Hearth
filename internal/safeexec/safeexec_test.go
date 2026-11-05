@@ -206,3 +206,23 @@ func TestStartReportsAnEarlyFailureWithoutItsArguments(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 }
+
+// TestComposeConfigOffline: rendering a Compose project must not fetch a
+// remote include or extends (ROADMAP 9.7).
+func TestComposeConfigOffline(t *testing.T) {
+	spec, ok := allowlist["docker-compose-config"]
+	if !ok {
+		t.Fatal("no docker-compose-config")
+	}
+	t.Setenv("HOME", "/home/u")
+	t.Setenv("COMPOSE_EXPERIMENTAL_GIT_REMOTE", "1") // not passed through, and overridden anyway
+	env := buildEnv(spec.Env, spec.SetEnv)
+	last := map[string]string{}
+	for _, e := range env {
+		k, v, _ := strings.Cut(e, "=")
+		last[k] = v // exec keeps the last value of a name
+	}
+	if last["COMPOSE_EXPERIMENTAL_GIT_REMOTE"] != "0" || last["COMPOSE_EXPERIMENTAL_OCI_REMOTE"] != "0" || last["HOME"] != "/home/u" {
+		t.Fatalf("%v", env)
+	}
+}

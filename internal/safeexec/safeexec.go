@@ -39,6 +39,9 @@ type Spec struct {
 	// Env lists variables passed through from hearthd's environment, on top
 	// of the fixed PATH and LANG.
 	Env []string
+	// SetEnv are fixed KEY=value entries, set after Env, so neither the
+	// environment nor anything the command reads can unset them.
+	SetEnv []string
 	// Timeout overrides DefaultTimeout when non-zero.
 	Timeout time.Duration
 }
@@ -105,7 +108,7 @@ func start(spec Spec, grace time.Duration, args []string) error {
 	}
 	// #nosec G204 -- bin comes from the static allowlist and args are validated above.
 	cmd := exec.CommandContext(context.Background(), bin, args...) // never cancelled: it outlives us
-	cmd.Env = buildEnv(spec.Env)
+	cmd.Env = buildEnv(spec.Env, spec.SetEnv)
 	cmd.Dir = "/"
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
@@ -141,7 +144,7 @@ func run(ctx context.Context, spec Spec, args []string) (Result, error) {
 
 	// #nosec G204 -- bin comes from the static allowlist and args are validated above.
 	cmd := exec.CommandContext(ctx, bin, args...)
-	cmd.Env = buildEnv(spec.Env)
+	cmd.Env = buildEnv(spec.Env, spec.SetEnv)
 	cmd.Dir = "/"
 	cmd.Stdin = nil
 	stdout := &capWriter{max: maxOutput}
@@ -257,14 +260,14 @@ func overflowUID() uint32 {
 	return 65534
 }
 
-func buildEnv(pass []string) []string {
+func buildEnv(pass, set []string) []string {
 	env := []string{"PATH=/usr/bin:/bin", "LANG=C.UTF-8"}
 	for _, k := range pass {
 		if v, ok := os.LookupEnv(k); ok {
 			env = append(env, k+"="+v)
 		}
 	}
-	return env
+	return append(env, set...)
 }
 
 type capWriter struct {

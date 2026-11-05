@@ -80,11 +80,15 @@ var allowlist = map[string]Spec{
 	// docker compose config, rendering one project as the user: it reads the
 	// project's files and needs no daemon. Run by hearthd; what it prints goes
 	// to the broker as untrusted input (SECURITY S16h). The output is bounded
-	// by the rendering's own limit there.
+	// by the rendering's own limit there. Remote include and extends
+	// (git and OCI) are switched off: with them on, rendering fetches from
+	// the network. The process environment wins over the project's .env,
+	// so the project cannot switch them back on (checked on Compose v5.6).
 	"docker-compose-config": {
 		Paths:    []string{"/usr/bin/docker"},
 		Validate: composeConfigArgs,
 		Env:      []string{"HOME"},
+		SetEnv:   []string{"COMPOSE_EXPERIMENTAL_GIT_REMOTE=0", "COMPOSE_EXPERIMENTAL_OCI_REMOTE=0"},
 		Timeout:  20 * time.Second,
 	},
 	"trivy-version": {

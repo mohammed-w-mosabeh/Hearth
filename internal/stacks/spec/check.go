@@ -33,6 +33,10 @@ var (
 	serviceName = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
 	objectName  = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`)
 	envKey      = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,127}$`)
+	// plainEnvKey also takes the dotted names some images read (Elasticsearch's
+	// discovery.type): a plain value is written escaped, so its name is never
+	// interpolated. A secret's name stays envKey, as it becomes ${KEY}.
+	plainEnvKey = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]{0,127}$`)
 	labelKey    = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,127}$`)
 	userSpec    = regexp.MustCompile(`^[a-z0-9_][a-z0-9_.-]{0,31}(?::[a-z0-9_][a-z0-9_.-]{0,31})?$`)
 	hostName    = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$`)
@@ -296,7 +300,7 @@ func (c *checker) env(name string, svc Service) {
 		c.refuse(name, "at most %d environment entries", maxEnv)
 	}
 	for k, v := range svc.Environment {
-		if !envKey.MatchString(k) {
+		if !plainEnvKey.MatchString(k) {
 			c.refuse(name, "environment: %q is not a variable name", clip(k))
 		}
 		if len(v) > maxArg || strings.ContainsRune(v, 0) {

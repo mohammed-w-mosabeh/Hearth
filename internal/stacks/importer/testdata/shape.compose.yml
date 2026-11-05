@@ -1,0 +1,37 @@
+# The project shape.json was rendered from (docker compose config --format json,
+# Compose v5.6, .env PW=s3cretvalue, app.env EXTRA=fromfile). Synthetic.
+name: shape
+services:
+  app:
+    image: nginx:1.27
+    container_name: shape-app
+    env_file: [app.env]
+    environment:
+      DB_PASSWORD: ${PW}
+      TZ: UTC
+    command: ["--pass", "${PW}"]
+    ports: ["8080:80", "127.0.0.1:9090:90/udp"]
+    expose: ["3000"]
+    volumes:
+      - ./data:/data
+      - model:/models
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      cache: {condition: service_healthy}
+    healthcheck: {test: ["CMD", "true"], interval: 1m30s, timeout: 5s, retries: 3, start_period: 10s}
+    shm_size: 128mb
+    mem_limit: 512m
+    stop_grace_period: 1m
+    networks: [front]
+    stdin_open: true
+    tty: true
+    labels: {a.b: c}
+  db:
+    image: postgres:17
+    profiles: [never]
+  cache:
+    image: redis:7
+volumes:
+  model: {}
+networks:
+  front: {}

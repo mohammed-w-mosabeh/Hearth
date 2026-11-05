@@ -203,3 +203,14 @@ func TestServiceFlags(t *testing.T) {
 		t.Fatalf("%v", rep.Flags)
 	}
 }
+
+func TestDottedPlainEnv(t *testing.T) {
+	s := Spec{Version: 1, Name: "es", Services: map[string]Service{"es": {Image: "elasticsearch:8", Environment: map[string]string{"discovery.type": "single-node", "xpack-x": "$v"}}}}
+	b, err := Compose(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"discovery.type":"single-node"`) || !strings.Contains(string(b), `"xpack-x":"$$v"`) {
+		t.Fatalf("%s", b)
+	}
+}
