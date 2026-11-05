@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,7 +18,9 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/actions"
 	"github.com/mohammed-w-mosabeh/hearth/internal/broker"
 	"github.com/mohammed-w-mosabeh/hearth/internal/docker"
+	"github.com/mohammed-w-mosabeh/hearth/internal/stacks/secrets"
 	"github.com/mohammed-w-mosabeh/hearth/internal/stacks/spec"
+	"github.com/mohammed-w-mosabeh/hearth/internal/store"
 )
 
 // Broker calls hearth-broker.
@@ -439,4 +442,93 @@ func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// Auditor records what hearthd did (store.DB in production).
+type Auditor interface {
+	Audit(ctx context.Context, e store.AuditEntry) error
+}
+
+// secretsBody is POST /api/v1/stacks/{name}/secrets's body.
+type secretsBody struct {
+	Set    map[string]string `json:"set"`
+	Remove []string          `json:"remove"`
+}
+
+// HandleSecretsSet serves POST /api/v1/stacks/{name}/secrets: the broker
+// asks for the password (SECURITY S12c). The audit holds key names only.
+func HandleSecretsSet(b Broker, audit Auditor) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		if !spec.ValidName(name) {
+			jsonError(w, http.StatusBadRequest, "not a stack name")
+			return
+		}
+		var v secretsBody
+		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2*secrets.MaxTotal))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&v); err != nil || dec.More() {
+			jsonError(w, http.StatusBadRequest, "the body is {\"set\": {KEY: value}, \"remove\": [KEY]}")
+			return
+		}
+		keys := make([]string, 0, len(v.Set))
+		for k := range v.Set {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		err := b.Call(r.Context(), "stack.secrets.set", broker.StackSecretsSetParams{Name: name, Set: v.Set, Remove: v.Remove}, nil)
+		auditCall(r.Context(), audit, "stack.secrets.set", name, map[string]any{"set": keys, "remove": v.Remove}, err)
+		if err != nil {
+			secretError(w, err)
+			return
+		}
+		writeJSON(w, map[string]bool{"done": true})
+	}
+}
+
+// HandleReveal serves POST /api/v1/stacks/{name}/secrets/{key}/reveal: one
+// value, after the password, never cached.
+func HandleReveal(b Broker, audit Auditor) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		name, key := r.PathValue("name"), r.PathValue("key")
+		if !spec.ValidName(name) || !secrets.ValidKey(key) {
+			jsonError(w, http.StatusBadRequest, "not a stack or secret name")
+			return
+		}
+		var out struct {
+			Value string `json:"value"`
+		}
+		err := b.Call(r.Context(), "stack.secrets.reveal", broker.StackSecretRevealParams{Name: name, Key: key}, &out)
+		auditCall(r.Context(), audit, "stack.secrets.reveal", name, map[string]string{"key": key}, err)
+		if err != nil {
+			secretError(w, err)
+			return
+		}
+		writeJSON(w, out)
+	}
+}
+
+func auditCall(ctx context.Context, audit Auditor, action, target string, params any, err error) {
+	result := "ok"
+	if err != nil {
+		result = "error"
+		if errors.Is(err, broker.ErrUnauthorized) {
+			result = "refused: not authorized"
+		}
+	}
+	_ = audit.Audit(ctx, store.AuditEntry{Origin: store.OriginLocal, UID: os.Getuid(), Action: action, Target: target, Params: params, Result: result})
+}
+
+// secretError answers a broker refusal with its reason, which names keys
+// and limits but never a value.
+func secretError(w http.ResponseWriter, err error) {
+	var be *broker.Error
+	switch {
+	case errors.Is(err, broker.ErrUnauthorized):
+		jsonError(w, http.StatusForbidden, "not authorized")
+	case errors.As(err, &be) && (be.Code == broker.CodeBadParams || be.Code == broker.CodeRefused):
+		jsonError(w, http.StatusUnprocessableEntity, be.Message)
+	default:
+		httpError(w, err)
+	}
 }

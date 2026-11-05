@@ -3,12 +3,17 @@ package spec
 import (
 	"encoding/json"
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 )
 
 // LabelStack marks every container of a stack with its name.
 const LabelStack = "org.hearth.stack"
+
+// LabelSecrets lists, comma-separated, the secret keys a container
+// receives from secrets.env.
+const LabelSecrets = "org.hearth.secrets" // #nosec G101 -- a label name; it lists key names, never values
 
 // DefaultRestart is the restart policy of a service whose spec names none.
 const DefaultRestart = "unless-stopped"
@@ -167,6 +172,12 @@ func service(stack string, svc Service) map[string]any {
 	}
 	labels := litMap(svc.Labels)
 	labels[LabelStack] = stack
+	if len(svc.Secrets) > 0 {
+		// Names only: Hearth's inspect masks these keys, whatever they are called.
+		keys := slices.Clone(svc.Secrets)
+		slices.Sort(keys)
+		labels[LabelSecrets] = strings.Join(keys, ",")
+	}
 	m["labels"] = labels
 	if len(svc.Networks) > 0 {
 		m["networks"] = svc.Networks

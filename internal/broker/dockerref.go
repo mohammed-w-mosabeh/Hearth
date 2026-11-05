@@ -2,6 +2,8 @@ package broker
 
 import (
 	"regexp"
+	"slices"
+	"strings"
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/imageref"
 	"github.com/mohammed-w-mosabeh/hearth/internal/secret"
@@ -57,3 +59,14 @@ const EnvMask = secret.Mask
 // masks replaced by EnvMask: secret-looking names, names ending _URL, _URI
 // or _DSN, and values holding a URL with user info.
 func MaskEnv(env []string) []string { return secret.Env(env) }
+
+// MaskEnvKeys is MaskEnv that also masks the values of keys.
+func MaskEnvKeys(env, keys []string) []string {
+	out := secret.Env(env)
+	for i, e := range out {
+		if k, _, ok := strings.Cut(e, "="); ok && k != "" && slices.Contains(keys, k) {
+			out[i] = k + "=" + secret.Mask
+		}
+	}
+	return out
+}

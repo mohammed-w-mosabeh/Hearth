@@ -11,6 +11,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/actions"
 	"github.com/mohammed-w-mosabeh/hearth/internal/broker"
 	"github.com/mohammed-w-mosabeh/hearth/internal/docker"
+	"github.com/mohammed-w-mosabeh/hearth/internal/store"
 )
 
 const testSpec = `{"version":1,"name":"web","services":{"app":{"image":"nginx:1.27","ports":[{"host":8080,"container":80}]},
@@ -272,3 +273,79 @@ func (l *listBroker) Call(ctx context.Context, method string, params, out any) e
 type errBroker struct{ err error }
 
 func (e errBroker) Call(context.Context, string, any, any) error { return e.err }
+
+type memAudit struct{ entries []store.AuditEntry }
+
+func (m *memAudit) Audit(_ context.Context, e store.AuditEntry) error {
+	m.entries = append(m.entries, e)
+	return nil
+}
+
+type secretBroker struct {
+	calls []string
+	err   error
+}
+
+func (s *secretBroker) Call(_ context.Context, method string, params, out any) error {
+	b, _ := json.Marshal(params)
+	s.calls = append(s.calls, method+" "+string(b))
+	if s.err != nil {
+		return s.err
+	}
+	if method == "stack.secrets.reveal" {
+		return remarshal(map[string]string{"value": "hunter2$x"}, out)
+	}
+	return nil
+}
+
+func TestSecretRoutes(t *testing.T) {
+	sb, audit := &secretBroker{}, &memAudit{}
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/v1/stacks/{name}/secrets", HandleSecretsSet(sb, audit))
+	mux.HandleFunc("POST /api/v1/stacks/{name}/secrets/{key}/reveal", HandleReveal(sb, audit))
+	do := func(path, body string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path, strings.NewReader(body)))
+		return rec
+	}
+	if rec := do("/api/v1/stacks/web/secrets", `{"set":{"PW":"hunter2$x"}}`); rec.Code != 200 {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(sb.calls[0], `"set":{"PW":"hunter2$x"}`) {
+		t.Fatalf("%v", sb.calls)
+	}
+	rec := do("/api/v1/stacks/web/secrets/PW/reveal", "")
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "hunter2$x") || rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal(rec.Code, rec.Body.String(), rec.Header())
+	}
+	for _, e := range audit.entries {
+		b, _ := json.Marshal(e.Params)
+		if strings.Contains(string(b), "hunter2") {
+			t.Fatalf("the audit holds a value: %s", b)
+		}
+	}
+	if len(audit.entries) != 2 || audit.entries[0].Action != "stack.secrets.set" || audit.entries[1].Target != "web" {
+		t.Fatalf("%+v", audit.entries)
+	}
+	for path, body := range map[string]string{ // #nosec G101 -- request paths and bodies of a test
+		"/api/v1/stacks/web/secrets":                  `{"set":{"PW":"x"},"extra":1}`,
+		"/api/v1/stacks/Bad/secrets":                  `{"set":{"PW":"x"}}`,
+		"/api/v1/stacks/web/secrets/A-B/reveal":       "",
+		"/api/v1/stacks/web/secrets/COMPOSE_X/reveal": "",
+	} {
+		if rec := do(path, body); rec.Code != 400 {
+			t.Errorf("%s: %d", path, rec.Code)
+		}
+	}
+	sb.err = broker.ErrUnauthorized
+	if rec := do("/api/v1/stacks/web/secrets/PW/reveal", ""); rec.Code != http.StatusForbidden || strings.Contains(rec.Body.String(), "hunter2") {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
+	if last := audit.entries[len(audit.entries)-1]; last.Result != "refused: not authorized" {
+		t.Fatalf("%+v", last)
+	}
+	sb.err = broker.Errorf(broker.CodeBadParams, "no service of web names the secret OTHER")
+	if rec := do("/api/v1/stacks/web/secrets", `{"set":{"OTHER":"hunter2"}}`); rec.Code != 422 || strings.Contains(rec.Body.String(), "hunter2") {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
+}

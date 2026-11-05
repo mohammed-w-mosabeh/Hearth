@@ -122,6 +122,7 @@ type StackInfo struct {
 	Spec       json.RawMessage  `json:"spec"`  // environment values S19 masks are masked
 	State      string           `json:"state"` // running, partial, stopped or absent
 	Containers []StackContainer `json:"containers"`
+	Secrets    []StackSecret    `json:"secrets"` // names only
 }
 
 // controlVerbs maps stack.control's verbs to the unit's. start is up
@@ -198,7 +199,7 @@ type stacks struct {
 }
 
 // StackLifeMethods are stack.status, stack.deploy, stack.update,
-// stack.control and stack.remove.
+// stack.control, stack.remove, stack.secrets.set and stack.secrets.reveal.
 func StackLifeMethods(c StackConfig) []Method {
 	if c.ProcRoot == "" {
 		c.ProcRoot = "/proc"
@@ -210,7 +211,7 @@ func StackLifeMethods(c StackConfig) []Method {
 		c.Run = func(ctx context.Context, unit string) error { return runOneshot(ctx, c.Bus, 0, "stack", unit) }
 	}
 	s := &stacks{c: c, cache: &pathCache{m: map[string]cachedPaths{}, now: c.Now}, locks: &stackLocks{m: map[string]*sync.Mutex{}}}
-	return []Method{
+	return append(s.secretMethods(), []Method{
 		{Name: "stack.status", Handle: s.status},
 		{Name: "stack.deploy", Privileged: true, Action: ActionStackDeploy, Timeout: StackTimeout,
 			Check: func(ctx context.Context, p json.RawMessage) error {
@@ -233,7 +234,7 @@ func StackLifeMethods(c StackConfig) []Method {
 		{Name: "stack.remove", Privileged: true, Action: ActionStackRemove, Timeout: 10 * time.Minute,
 			Check:  func(ctx context.Context, p json.RawMessage) error { _, err := s.checkRemove(p); return pre(err) },
 			Handle: s.remove},
-	}
+	}...)
 }
 
 // --- checks, run before polkit and again after it ---
@@ -613,7 +614,8 @@ func (s *stacks) status(ctx context.Context, _ Caller, p json.RawMessage) (any, 
 				mine = append(mine, c)
 			}
 		}
-		out = append(out, StackInfo{Name: name, SpecSHA256: sum, Spec: masked, State: stackState(sp, mine), Containers: mine})
+		out = append(out, StackInfo{Name: name, SpecSHA256: sum, Spec: masked, State: stackState(sp, mine), Containers: mine,
+			Secrets: s.secretList(name, sp)})
 	}
 	return out, nil
 }

@@ -632,6 +632,15 @@ check "control verbs are closed" call_says 'verb must be' stack.control '{"name"
 check "remove of a missing stack is refused" call_says 'no such stack' stack.remove '{"name":"probe"}'
 check "update of a missing stack is refused" call_says 'no such stack' stack.update "{\"name\":\"probe\",\"spec_sha256\":\"$(printf '0%.0s' {1..64})\",\"pins\":{\"web\":\"sha256:$(printf 'a%.0s' {1..64})\"}}"
 check "nothing was written" not test -e /var/lib/hearth/stacks
+echo "== stack secrets (9.5)"
+check "polkit has org.hearth.stack.secrets" grep -q 'action id="org.hearth.stack.secrets"' /usr/share/polkit-1/actions/org.hearth.policy
+mark=ITEST-SECRET-7c1e
+check "a secret for a missing stack is refused" call_says 'no such stack' stack.secrets.set "{\"name\":\"probe\",\"set\":{\"PW\":\"$mark\"}}"
+check "a reveal for a missing stack is refused" call_says 'no such stack' stack.secrets.reveal '{"name":"probe","key":"PW"}'
+call_says x stack.secrets.set "{\"name\":\"probe\",\"set\":{\"PW\":\"$mark\"}} junk" || true
+check "the broker audit holds no secret" not grep -q "$mark" /var/lib/hearth/audit.jsonl
+check "the journal holds no secret" not grep -q "$mark" <<<"$(journalctl --no-pager 2>/dev/null)"
+check "nothing was written" not test -e /var/lib/hearth/stacks
 gpasswd -d "$user" hearth >/dev/null
 rm -rf /srv/itest-app "/home/$user/itest-media"
 

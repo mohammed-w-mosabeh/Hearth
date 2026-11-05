@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
+
+	"github.com/mohammed-w-mosabeh/hearth/internal/stacks/spec"
 )
 
 // The Docker proxy (SECURITY S12). The broker speaks to the Engine API on
@@ -389,7 +391,11 @@ func maskEnvIn(raw json.RawMessage, keys ...string) (json.RawMessage, error) {
 		if err := json.Unmarshal(cfg["Env"], &env); err != nil || env == nil {
 			continue
 		}
-		cfg["Env"], _ = json.Marshal(MaskEnv(env))
+		// A stack's container also lists its secret keys in a label, so
+		// they are masked whatever they are called (SECURITY S12c).
+		var labels map[string]string
+		_ = json.Unmarshal(cfg["Labels"], &labels)
+		cfg["Env"], _ = json.Marshal(MaskEnvKeys(env, strings.Split(labels[spec.LabelSecrets], ",")))
 		top[k], _ = json.Marshal(cfg)
 	}
 	out, err := json.Marshal(top)

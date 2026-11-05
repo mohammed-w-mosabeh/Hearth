@@ -158,3 +158,32 @@ func TestComposeRestartDefault(t *testing.T) {
 		}
 	}
 }
+
+func TestComposeSecretsLabel(t *testing.T) {
+	s := Spec{Version: 1, Name: "r", Services: map[string]Service{
+		"w":     {Image: "nginx:1.27", Secrets: []string{"PW", "ADMIN_USER"}},
+		"plain": {Image: "nginx:1.27"},
+	}}
+	b, err := Compose(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out struct {
+		Services map[string]struct {
+			Labels      map[string]string
+			Environment map[string]string
+		}
+	}
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.Services["w"].Labels[LabelSecrets]; got != "ADMIN_USER,PW" {
+		t.Fatalf("label %q", got)
+	}
+	if _, ok := out.Services["plain"].Labels[LabelSecrets]; ok {
+		t.Fatal("a service without secrets has the label")
+	}
+	if out.Services["w"].Environment["PW"] != "${PW}" {
+		t.Fatalf("env %v", out.Services["w"].Environment)
+	}
+}

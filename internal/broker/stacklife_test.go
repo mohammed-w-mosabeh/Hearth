@@ -422,7 +422,7 @@ func TestStackPolicy(t *testing.T) {
 	if err := xml.Unmarshal(b, &doc); err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]string{ActionStackDeploy: "auth_admin", ActionStackControl: "auth_admin_keep", ActionStackRemove: "auth_admin"}
+	want := map[string]string{ActionStackDeploy: "auth_admin", ActionStackControl: "auth_admin_keep", ActionStackRemove: "auth_admin", ActionStackSecrets: "auth_admin"}
 	for _, a := range doc.Actions {
 		if w, ok := want[a.ID]; ok {
 			if a.Active != w || a.Any != "auth_admin" {
