@@ -292,6 +292,8 @@ func (c *checker) env(name string, svc Service) {
 		switch {
 		case !envKey.MatchString(k):
 			c.refuse(name, "secrets: %q is not a variable name", clip(k))
+		case composeSetting(k):
+			c.refuse(name, "secrets: %s is a Compose or Docker setting, not a secret name", k)
 		case seen[k]:
 			c.refuse(name, "secrets: %s is listed twice", k)
 		default:
@@ -589,6 +591,17 @@ func (c *checker) dependencies(names []string) {
 		}
 	}
 }
+
+// composeSetting: Compose reads COMPOSE_* and DOCKER_* from its env file, so
+// a secret by such a name could change which file it runs or which daemon it
+// talks to.
+func composeSetting(k string) bool {
+	u := strings.ToUpper(k)
+	return strings.HasPrefix(u, "COMPOSE_") || strings.HasPrefix(u, "DOCKER_") || u == "BUILDKIT_PROGRESS"
+}
+
+// ValidName reports whether s is a stack name.
+func ValidName(s string) bool { return stackName.MatchString(s) }
 
 // cleanAbs: absolute, already clean, bounded, printable.
 func cleanAbs(p string) bool {

@@ -1,0 +1,57 @@
+[Unit]
+Description=Hearth: run one verb on the app %i
+Documentation=https://github.com/mohammed-w-mosabeh/hearth
+# Started only by hearth-broker's stack methods (SECURITY S12b), after polkit,
+# on files the broker generated from a checked spec. %i is a stack name:
+# a-z, 0-9, - and _ only, so it is the same escaped or not.
+ConditionFileIsExecutable=/usr/bin/docker
+ConditionPathExists=/var/lib/hearth/stacks/%i/compose.json
+ConditionPathExists=/var/lib/hearth/stacks/%i/secrets.env
+
+[Service]
+Type=oneshot
+# One line, written by the broker from its closed StackVerbs table:
+# STACK_ARGS=<verb and its fixed flags>. systemd splits it into words; no
+# shell is involved. Compose reads only the generated file and the stack's
+# secrets.env, which supplies the ${NAME} references the file holds.
+EnvironmentFile=/var/lib/hearth/stacks/%i/args
+ExecStart=/usr/bin/docker compose --project-name %i --project-directory /var/lib/hearth/stacks/%i --file /var/lib/hearth/stacks/%i/compose.json --env-file /var/lib/hearth/stacks/%i/secrets.env $STACK_ARGS
+StandardOutput=journal
+StandardError=journal
+Environment=LC_ALL=C
+# Root has no registry logins here, and compose needs somewhere to look.
+Environment=HOME=/nonexistent DOCKER_CONFIG=/tmp/docker
+UMask=0077
+TimeoutStartSec=30min
+
+# --- Hardening (SECURITY.md "systemd hardening") ---
+# None: /run/docker.sock is root's, and connecting needs no capability. The
+# Docker daemon mounts binds and pulls images; this unit only talks to it.
+CapabilityBoundingSet=
+AmbientCapabilities=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+KeyringMode=private
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+MemoryMax=256M
+CPUQuota=50%
+TasksMax=64

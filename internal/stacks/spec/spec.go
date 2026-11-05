@@ -24,8 +24,9 @@ import (
 const (
 	// Version is the only spec version.
 	Version = 1
-	// MaxSpec bounds a spec in bytes.
-	MaxSpec = 64 << 10
+	// MaxSpec bounds a spec in bytes, so a broker request carrying one
+	// stays under the broker's 64 KiB line.
+	MaxSpec = 48 << 10
 	// maxDepth bounds nesting; the deepest legal path is 5.
 	maxDepth = 8
 )

@@ -562,6 +562,23 @@ check "its unit denies every address" test "$(systemctl show -p IPAddressDeny --
 check "it holds no capability" test -z "$(systemctl show -p CapabilityBoundingSet --value hearth-compose.service | sed 's/^0*$//')"
 check "polkit asks every time" grep -A8 'org.hearth.docker.compose"' /usr/share/polkit-1/actions/org.hearth.policy
 
+echo "== stacks (9.2)"
+check "stack unit installed" test -f /usr/lib/systemd/system/hearth-stack@.service
+check "it denies every address" test "$(systemctl show -p IPAddressDeny --value hearth-stack@probe.service)" != ""
+check "it holds no capability" test -z "$(systemctl show -p CapabilityBoundingSet --value hearth-stack@probe.service | sed 's/^0*$//')"
+check "it runs Compose on the stack's files only" grep -q -- '--file /var/lib/hearth/stacks/%i/compose.json --env-file /var/lib/hearth/stacks/%i/secrets.env $STACK_ARGS$' /usr/lib/systemd/system/hearth-stack@.service
+systemctl start hearth-stack@probe.service || true
+check "it does not run without a stack" test "$(systemctl show -p ConditionResult --value hearth-stack@probe.service)" = "no"
+usermod -aG hearth "$user" # a member: the calls below reach the broker's checks
+spec_ok='{"spec":{"version":1,"name":"probe","services":{"web":{"image":"nginx:1.27","ports":[{"host":8080,"container":80}]}}}}'
+spec_lan='{"spec":{"version":1,"name":"probe","services":{"web":{"image":"nginx:1.27","ports":[{"host_ip":"0.0.0.0","host":8080,"container":80}]}}}}'
+check "stack.validate accepts a plain spec" call_says '"refused": *\[\]' stack.validate "$spec_ok"
+check "stack.validate names a flag" call_says '"port:0.0.0.0:8080/tcp"' stack.validate "$spec_lan"
+check "stack.validate refuses privileged" call_says 'unknown key' stack.validate '{"spec":{"version":1,"name":"p","services":{"w":{"image":"nginx","privileged":true}}}}'
+check "stack.validate refuses a bind of /etc" call_says 'never allowed' stack.validate '{"spec":{"version":1,"name":"p","services":{"w":{"image":"nginx","volumes":[{"type":"bind","source":"/etc","target":"/x"}]}}}}'
+check "stack.validate writes nothing" not test -e /var/lib/hearth/stacks
+gpasswd -d "$user" hearth >/dev/null
+
 echo "== terminal"
 # A shell through hearthd: it must run as the user, in the folder asked,
 # outside hearthd's sandbox (home writable), on a terminal of its own.

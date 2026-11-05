@@ -74,6 +74,10 @@ contents:
     dst: /usr/lib/systemd/system/hearth-compose.service
     file_info:
       mode: 0644
+  - src: packaging/systemd/hearth-stack@.service
+    dst: /usr/lib/systemd/system/hearth-stack@.service
+    file_info:
+      mode: 0644
   - src: packaging/systemd/hearth-ufw.service
     dst: /usr/lib/systemd/system/hearth-ufw.service
     file_info:

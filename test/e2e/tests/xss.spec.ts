@@ -333,14 +333,16 @@ test('the drawer is a link, closes on Esc and gives focus back', async ({ page }
 
   await page.keyboard.press('Escape');
   await expect(drawer).toHaveCount(0);
-  expect(page.url()).not.toContain('inspect=');
+  // The dialog closes at once; its close event, which clears the link and
+  // gives focus back, runs a task later.
+  await expect(page).not.toHaveURL(/inspect=/);
 
   await what.focus();
   await page.keyboard.press('Enter');
   await expect(drawer).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(drawer).toHaveCount(0);
-  expect(await page.evaluate(() => document.activeElement?.classList.contains('what'))).toBe(true);
+  await expect.poll(() => page.evaluate(() => document.activeElement?.classList.contains('what'))).toBe(true);
 
   // A lineage link opens that item in the drawer; Back returns.
   await what.click();
@@ -363,8 +365,12 @@ test('list rows move with the keyboard and keep their header', async ({ page }) 
   expect(await page.locator('tbody tr[tabindex="0"]').count()).toBe(1);
   await rows.first().focus();
   await page.keyboard.press('ArrowDown');
-  const name = await page.evaluate(() => document.activeElement?.getAttribute('aria-label'));
-  expect(name).toBe(await rows.nth(1).getAttribute('aria-label'));
+  // One evaluation: the list refreshes live and may reorder between two reads.
+  const [name, index] = await page.evaluate(() => {
+    const a = document.activeElement;
+    return [a?.getAttribute('aria-label'), a?.parentElement ? [...a.parentElement.children].indexOf(a) : -1];
+  });
+  expect(index).toBe(1);
   await page.keyboard.press('Enter');
   await expect(page.locator('dialog.drawer[open] #inspect-title')).toHaveText(name ?? '');
   await page.keyboard.press('Escape');
