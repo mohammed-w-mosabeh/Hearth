@@ -78,6 +78,14 @@ contents:
     dst: /usr/lib/systemd/system/hearth-stack@.service
     file_info:
       mode: 0644
+  - src: packaging/systemd/hearth-pathcheck.socket
+    dst: /usr/lib/systemd/system/hearth-pathcheck.socket
+    file_info:
+      mode: 0644
+  - src: packaging/systemd/hearth-pathcheck@.service
+    dst: /usr/lib/systemd/system/hearth-pathcheck@.service
+    file_info:
+      mode: 0644
   - src: packaging/systemd/hearth-ufw.service
     dst: /usr/lib/systemd/system/hearth-ufw.service
     file_info:

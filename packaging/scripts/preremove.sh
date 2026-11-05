@@ -10,6 +10,7 @@ if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
 	done
 	if [ -d /run/systemd/system ]; then
 		systemctl disable --now hearth-broker.socket >/dev/null 2>&1 || true
+		systemctl disable --now hearth-pathcheck.socket >/dev/null 2>&1 || true
 		systemctl stop hearth-broker.service >/dev/null 2>&1 || true
 	fi
 fi

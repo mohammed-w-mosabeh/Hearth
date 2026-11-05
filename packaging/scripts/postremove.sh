@@ -13,6 +13,7 @@ fi
 if [ "$1" = "purge" ]; then
 	rm -f /etc/systemd/user/default.target.wants/hearthd.service
 	rm -f /etc/systemd/system/sockets.target.wants/hearth-broker.socket
+	rm -f /etc/systemd/system/sockets.target.wants/hearth-pathcheck.socket
 	rm -rf /var/lib/hearth /run/hearth
 	# A Lynis schedule set through Hearth (SECURITY S16h).
 	rm -f /etc/systemd/system/hearth-lynis.timer /etc/systemd/system/timers.target.wants/hearth-lynis.timer

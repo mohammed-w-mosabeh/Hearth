@@ -1,0 +1,58 @@
+[Unit]
+Description=Hearth: resolve and check one stack's bind paths
+Documentation=https://github.com/mohammed-w-mosabeh/hearth
+# Started by hearth-pathcheck.socket for each connection from hearth-broker
+# (SECURITY S12b): it reads one spec, resolves its bind roots and sources
+# with openat2 (no /proc magic links), opens them O_PATH only, and answers
+# ok with what they resolved to, or refused. It writes nothing.
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/hearth-broker pathcheck
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+Environment=LC_ALL=C
+UMask=0077
+TimeoutStartSec=30s
+
+# --- Hardening (SECURITY.md "systemd hardening") ---
+# Root with only CAP_DAC_READ_SEARCH: it can walk any folder, read nothing
+# it opens (O_PATH) and gain no other power.
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+AmbientCapabilities=
+NoNewPrivileges=yes
+ProtectSystem=strict
+# Read-only, not hidden: binds under home must resolve as Docker sees them.
+ProtectHome=read-only
+# No PrivateTmp and no PrivateDevices: a private /tmp or /dev would resolve
+# a bind there to a different folder than the one Docker mounts. Device
+# nodes are still closed to it, and O_PATH opens none.
+PrivateTmp=no
+PrivateDevices=no
+DevicePolicy=closed
+PrivateNetwork=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+KeyringMode=private
+# Not RestrictSUIDSGID: its filter cannot see openat2's flags, so it blocks
+# openat2 outright (ENOSYS), and the check needs openat2. It could add
+# nothing here: it writes no file, ProtectSystem=strict leaves only the API
+# trees writable, and /dev, the one of them that takes files, is nosuid.
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+MemoryMax=64M
+CPUQuota=50%
+TasksMax=16

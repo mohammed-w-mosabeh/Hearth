@@ -11,6 +11,7 @@ if [ "$1" = "configure" ]; then
 	if [ -d /run/systemd/system ]; then
 		systemctl daemon-reload >/dev/null 2>&1 || true
 		systemctl enable --now hearth-broker.socket >/dev/null 2>&1 || true
+		systemctl enable --now hearth-pathcheck.socket >/dev/null 2>&1 || true
 	fi
 	# Start hearthd at login for every user.
 	systemctl --global enable hearthd.service >/dev/null 2>&1 || true

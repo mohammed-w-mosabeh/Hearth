@@ -20,6 +20,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/broker"
 	"github.com/mohammed-w-mosabeh/hearth/internal/dbusx"
 	"github.com/mohammed-w-mosabeh/hearth/internal/dropin"
+	"github.com/mohammed-w-mosabeh/hearth/internal/pathcheck"
 	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
 	"github.com/mohammed-w-mosabeh/hearth/internal/scheduler"
 )
@@ -29,6 +30,15 @@ const stateDir = "/var/lib/hearth"
 
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	// hearth-pathcheck@.service runs the same binary for one bind check
+	// on its socket (SECURITY S12b), with only CAP_DAC_READ_SEARCH.
+	if len(os.Args) == 2 && os.Args[1] == "pathcheck" {
+		if err := pathcheck.Serve(pathcheck.System, os.Stdin, os.Stdout); err != nil {
+			log.Error(err.Error())
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(log); err != nil {
 		log.Error(err.Error())
 		os.Exit(1)

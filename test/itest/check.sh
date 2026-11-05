@@ -579,6 +579,38 @@ check "stack.validate refuses a bind of /etc" call_says 'never allowed' stack.va
 check "stack.validate writes nothing" not test -e /var/lib/hearth/stacks
 gpasswd -d "$user" hearth >/dev/null
 
+echo "== path checks (9.3)"
+pathcheck() { # pathcheck SPEC: one request on hearth-pathcheck.socket, as root
+	node -e 'const c=require("net").createConnection(process.argv[1]);let o="";c.on("data",d=>o+=d);c.on("end",()=>process.stdout.write(o));c.on("error",e=>{process.stdout.write("error "+e.code);});c.write(JSON.stringify({spec:JSON.parse(process.argv[2])})+"\n")' /run/hearth/pathcheck.sock "$1"
+}
+pc_says() { grep -q -- "$1" <<<"$(pathcheck "$2" 2>&1)"; }
+pc_spec() { # pc_spec ROOT SOURCE
+	printf '{"version":1,"name":"probe","bind_roots":["%s"],"services":{"web":{"image":"nginx:1.27","volumes":[{"type":"bind","source":"%s","target":"/data"}]}}}' "$1" "$2"
+}
+check "pathcheck socket listening" systemctl is-active hearth-pathcheck.socket
+check "its socket is root's alone" test "$(stat -c '%U %G %a' /run/hearth/pathcheck.sock)" = "root root 600"
+check "its unit holds only CAP_DAC_READ_SEARCH" test "$(systemctl show -p CapabilityBoundingSet --value hearth-pathcheck@x.service)" = "cap_dac_read_search"
+check "its unit has no network" test "$(systemctl show -p PrivateNetwork --value hearth-pathcheck@x.service)" = yes
+check "its unit sees home read-only" test "$(systemctl show -p ProtectHome --value hearth-pathcheck@x.service)" = read-only
+mkdir -p /srv/itest-app/data "/home/$user/itest-media/films"
+ln -sfn /etc /srv/itest-app/esc
+ln -sfn /srv/itest-app/esc /srv/itest-app/chain
+ln -sfn /proc/self/root/etc /srv/itest-app/magic
+ln -sfn data /srv/itest-app/inside
+check "a plain bind resolves" pc_says '"ok":true' "$(pc_spec /srv/itest-app /srv/itest-app/data)"
+check "a link inside its root resolves" pc_says '"real":"/srv/itest-app/data"' "$(pc_spec /srv/itest-app /srv/itest-app/inside)"
+check "a bind under home resolves" pc_says '"ok":true' "$(pc_spec "/home/$user/itest-media" "/home/$user/itest-media/films")"
+check "a link to /etc is refused" pc_says 'never allowed' "$(pc_spec /srv/itest-app /srv/itest-app/esc)"
+check "a chain to /etc is refused" pc_says 'never allowed' "$(pc_spec /srv/itest-app /srv/itest-app/chain)"
+check "a /proc magic link is refused" pc_says '/proc link' "$(pc_spec /srv/itest-app /srv/itest-app/magic)"
+check "a missing source is refused" pc_says 'does not exist' "$(pc_spec /srv/itest-app /srv/itest-app/nope)"
+check "a root linked to /etc is refused" pc_says 'cannot be a root' "$(pc_spec /srv/itest-app/esc /srv/itest-app/esc/x)"
+check "a non-JSON request is refused" grep -q 'not a path check request' <<<"$(node -e 'const c=require("net").createConnection("/run/hearth/pathcheck.sock");let o="";c.on("data",d=>o+=d);c.on("end",()=>process.stdout.write(o));c.write("services: {}\n")')"
+check "a user cannot ask it" grep -q 'error EACCES' <<<"$(asuser node -e 'const c=require("net").createConnection("/run/hearth/pathcheck.sock");c.on("error",e=>process.stdout.write("error "+e.code));c.on("connect",()=>process.stdout.write("connected"))' 2>&1)"
+check "it created nothing" test ! -e /srv/itest-app/nope
+check "it wrote no stack" not test -e /var/lib/hearth/stacks
+rm -rf /srv/itest-app "/home/$user/itest-media"
+
 echo "== terminal"
 # A shell through hearthd: it must run as the user, in the folder asked,
 # outside hearthd's sandbox (home writable), on a terminal of its own.
@@ -1048,7 +1080,9 @@ check "system drop-ins removed" test ! -e /etc/systemd/system/itest-limits.servi
 for f in /usr/bin/hearth-broker /usr/lib/systemd/system/hearth-broker.socket \
 	/usr/lib/systemd/system/hearth-broker.service /usr/lib/systemd/system/hearth-needrestart.service \
 	/usr/share/polkit-1/actions/org.hearth.policy \
-	/etc/systemd/system/sockets.target.wants/hearth-broker.socket /run/hearth; do
+	/usr/lib/systemd/system/hearth-pathcheck.socket /usr/lib/systemd/system/hearth-pathcheck@.service \
+	/etc/systemd/system/sockets.target.wants/hearth-broker.socket \
+	/etc/systemd/system/sockets.target.wants/hearth-pathcheck.socket /run/hearth; do
 	check "removed $f" test ! -e "$f"
 done
 check "broker stopped" not pgrep -x hearth-broker
