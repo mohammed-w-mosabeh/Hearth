@@ -2262,5 +2262,22 @@
   "health.src.app": "Unhealthy apps",
   "health.src.backup": "Failed app backups",
   "health.src.appUpdate": "Apps with an update found",
-  "health.open.stacks": "Open apps"
+  "health.open.stacks": "Open apps",
+  "stacks.proxy": "Local address",
+  "stacks.proxyUnread": "The local address could not be read.",
+  "stacks.proxyNoPorts": "This app publishes no TCP port on this computer, so it cannot have a local address.",
+  "stacks.proxyPort": "Name opens",
+  "stacks.proxyNone": "no name",
+  "stacks.proxySave": "Save",
+  "stacks.proxySaved": "{name} has a local address.",
+  "stacks.proxyRemoved": "{name} no longer has a local address.",
+  "stacks.proxyWaiting": "{url} works once app names are turned on.",
+  "stacks.proxyOn": "App names are served on port {port}, on this computer only.",
+  "stacks.proxyDown": "App names are on but not served: {why}",
+  "stacks.proxyOff": "App names are off.",
+  "stacks.proxyListen": "Port",
+  "stacks.proxyTurnOn": "Turn on app names",
+  "stacks.proxyTurnOff": "Turn off app names",
+  "stacks.proxyStarted": "App names are served on port {port}.",
+  "stacks.proxyStopped": "App names are off."
 }

@@ -63,6 +63,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/power"
 	"github.com/mohammed-w-mosabeh/hearth/internal/procctl"
 	"github.com/mohammed-w-mosabeh/hearth/internal/profiles"
+	"github.com/mohammed-w-mosabeh/hearth/internal/proxy"
 	"github.com/mohammed-w-mosabeh/hearth/internal/reports"
 	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
 	"github.com/mohammed-w-mosabeh/hearth/internal/scheduler"
@@ -531,6 +532,14 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	appUpdates := &stacks.UpdateNotes{Settings: db}
 	stacks.Register(reg, brokerClient, images.Registry, appUpdates)
 	srv.API.HandleFunc("GET /api/v1/app-health", stacks.HandleHealth(brokerClient, appUpdates))
+	// App names at http://<app>.localhost:<port>/ (9.13): off until the
+	// owner turns it on, 127.0.0.1 only, never Hearth.
+	appProxy := &proxy.Proxy{Settings: db, HearthPort: srv.Port, Log: log,
+		Targets: func(ctx context.Context) (map[string][]int, error) { return stacks.ProxyTargets(ctx, brokerClient) }}
+	appProxy.Register(reg)
+	srv.API.HandleFunc("GET /api/v1/proxy", appProxy.HandleStatus)
+	appProxy.Start(ctx)
+	defer appProxy.Stop()
 	// Managed apps' alerts (9.12): an unhealthy app, a failed backup.
 	appsWatchCtx, stopAppsWatch := context.WithCancel(ctx)
 	appsWatchDone := make(chan struct{})

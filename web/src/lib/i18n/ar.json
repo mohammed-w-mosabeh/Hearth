@@ -2262,5 +2262,22 @@
   "health.src.app": "تطبيقات غير سليمة",
   "health.src.backup": "نسخ احتياطية فاشلة للتطبيقات",
   "health.src.appUpdate": "تطبيقات وُجد لها تحديث",
-  "health.open.stacks": "افتح التطبيقات"
+  "health.open.stacks": "افتح التطبيقات",
+  "stacks.proxy": "العنوان المحلي",
+  "stacks.proxyUnread": "تعذرت قراءة العنوان المحلي.",
+  "stacks.proxyNoPorts": "لا ينشر هذا التطبيق أي منفذ TCP على هذا الحاسوب، فلا يمكن أن يكون له عنوان محلي.",
+  "stacks.proxyPort": "يفتح الاسم",
+  "stacks.proxyNone": "بلا اسم",
+  "stacks.proxySave": "حفظ",
+  "stacks.proxySaved": "صار لـ {name} عنوان محلي.",
+  "stacks.proxyRemoved": "لم يعد لـ {name} عنوان محلي.",
+  "stacks.proxyWaiting": "يعمل {url} بعد تشغيل أسماء التطبيقات.",
+  "stacks.proxyOn": "تُخدم أسماء التطبيقات على المنفذ {port}، على هذا الحاسوب فقط.",
+  "stacks.proxyDown": "أسماء التطبيقات مفعّلة لكنها لا تُخدم: {why}",
+  "stacks.proxyOff": "أسماء التطبيقات معطّلة.",
+  "stacks.proxyListen": "المنفذ",
+  "stacks.proxyTurnOn": "شغّل أسماء التطبيقات",
+  "stacks.proxyTurnOff": "أوقف أسماء التطبيقات",
+  "stacks.proxyStarted": "تُخدم أسماء التطبيقات على المنفذ {port}.",
+  "stacks.proxyStopped": "أسماء التطبيقات معطّلة."
 }

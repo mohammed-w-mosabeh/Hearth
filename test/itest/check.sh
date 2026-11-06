@@ -649,6 +649,31 @@ check "update of a missing stack is refused" call_says 'no such stack' stack.upd
 check "nothing was written" not test -e /var/lib/hearth/stacks
 check "a read-only token cannot ask for it" test "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${ro_key:-none}" "http://127.0.0.1:$port/api/v1/stacks/import/nosuch")" != 200
 rm -f /etc/polkit-1/rules.d/53-hearth-itest-danger.rules
+echo "== app names (9.13)"
+key=$(api_key)
+proxy_act() {
+	curl -s -X POST -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$port" -H 'Content-Type: application/json' \
+		-d "$2" "http://127.0.0.1:$port/api/v1/actions/proxy/$1"
+}
+proxy_get() { curl -s -o /dev/null -w '%{http_code}' -H "Host: $1" "http://127.0.0.1:8470/"; }
+st=$(curl -s -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/proxy")
+check "app names are off by default" grep -q '"enabled":false' <<<"$st"
+check "and nothing listens for them" not port_open 8470
+check "Hearth's own port is refused" grep -q "Hearth's own" <<<"$(proxy_act listen "{\"target\":\"proxy\",\"params\":{\"enabled\":\"true\",\"port\":\"$port\"}}")"
+check "a privileged port is refused" grep -q '1024' <<<"$(proxy_act listen '{"target":"proxy","params":{"enabled":"true","port":"80"}}')"
+check "no address can be chosen" grep -q 'unknown param' <<<"$(proxy_act listen '{"target":"proxy","params":{"enabled":"true","address":"0.0.0.0"}}')"
+check "turning names on" grep -q '"done":1' <<<"$(proxy_act listen '{"target":"proxy","params":{"enabled":"true","port":"8470"}}')"
+check "they listen" wait_until 5 port_open 8470
+check "on 127.0.0.1 only" loopback_only "$(ss -tlnH 'sport = :8470' | awk '{print $4}')"
+check "nothing on 0.0.0.0 / [::] for names" not wildcard_listener 8470
+check "Hearth is not proxied by its host" test "$(proxy_get "localhost:8470")" = 404
+check "nor by 127.0.0.1" test "$(proxy_get "127.0.0.1:8470")" = 404
+check "an app with no name is not proxied" test "$(proxy_get "nope.localhost:8470")" = 502
+check "a route to a port no app publishes is refused" not grep -q '"done":1' <<<"$(proxy_act route "{\"target\":\"probe\",\"params\":{\"port\":\"$port\"}}")"
+check "Hearth refuses a name's Host" test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: probe.localhost:'"$port" "http://127.0.0.1:$port/api/v1/health")" = 403
+check "turning names off" grep -q '"done":1' <<<"$(proxy_act listen '{"target":"proxy","params":{"enabled":"false"}}')"
+check "the port closes" wait_until 5 not port_open 8470
+
 echo "== stack backups (9.10)"
 check "polkit has org.hearth.stack.backup" grep -q 'action id="org.hearth.stack.backup"' "$policy"
 check "restore asks every time (auth_admin, no keep)" grep -Pzq '(?s)org\.hearth\.stack\.restore">.*?<allow_active>auth_admin</allow_active>' "$policy"

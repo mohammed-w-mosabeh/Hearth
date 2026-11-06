@@ -262,3 +262,20 @@ export function backupQuery(keep: number, include: string[]): string {
 export function otherFS(p: BackupPreview): BackupBind[] {
   return p.binds.filter((b) => b.other_fs);
 }
+
+/** GET /proxy: app names at http://<app>.localhost:<port>/ (9.13). */
+export interface ProxyStatus {
+  enabled: boolean;
+  port: number;
+  /** App name to the port its name opens. */
+  routes: Record<string, number>;
+  running: boolean;
+  error?: string;
+  /** Each app's TCP ports published on this computer. */
+  ports: Record<string, number[]>;
+}
+
+/** The address an app's name opens. */
+export function proxyURL(name: string, port: number): string {
+  return `http://${name}.localhost:${port}/`;
+}

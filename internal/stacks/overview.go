@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/broker"
+	"github.com/mohammed-w-mosabeh/hearth/internal/proxy"
 	"github.com/mohammed-w-mosabeh/hearth/internal/reports"
 	"github.com/mohammed-w-mosabeh/hearth/internal/stacks/spec"
 )
@@ -211,6 +212,23 @@ func ReportApps(ctx context.Context, b Broker, notes *UpdateNotes) ([]reports.Ap
 			r.Backup, r.BackupOK = a.Backup.At, a.Backup.OK
 		}
 		out = append(out, r)
+	}
+	return out, nil
+}
+
+// ProxyTargets is each managed app's reachable TCP ports, from its spec,
+// for the app proxy (9.13).
+func ProxyTargets(ctx context.Context, b Broker) (map[string][]int, error) {
+	var list []broker.StackInfo
+	if err := b.Call(ctx, "stack.status", nil, &list); err != nil {
+		return nil, err
+	}
+	out := map[string][]int{}
+	for _, info := range list {
+		var sp spec.Spec
+		if json.Unmarshal(info.Spec, &sp) == nil {
+			out[info.Name] = proxy.AppPorts(sp)
+		}
 	}
 	return out, nil
 }

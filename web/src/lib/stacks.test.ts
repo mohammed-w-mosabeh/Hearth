@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Project } from './docker';
-import { addresses, backupQuery, detected, dryRunQuery, exposure, logSources, otherFS, presetOf, restartPolicies, serviceCount, shape, storage, type BackupPreview, type StackInfo } from './stacks';
+import { addresses, backupQuery, detected, dryRunQuery, exposure, logSources, otherFS, presetOf, proxyURL, restartPolicies, serviceCount, shape, storage, type BackupPreview, type StackInfo } from './stacks';
 
 function app(over: Partial<StackInfo> = {}): StackInfo {
   return {
@@ -92,5 +92,11 @@ describe('backup schedule', () => {
     expect(presetOf(null)).toBe('off');
     expect(presetOf({ on_calendar: 'Sun *-*-* 03:00:00', keep: 7, stop_first: true, include: [] })).toBe('weekly');
     expect(presetOf({ on_calendar: 'Mon..Fri 22:00', keep: 7, stop_first: true, include: [] })).toBe('custom');
+  });
+});
+
+describe('local address', () => {
+  it('names an app under localhost', () => {
+    expect(proxyURL('cloud', 8470)).toBe('http://cloud.localhost:8470/');
   });
 });
