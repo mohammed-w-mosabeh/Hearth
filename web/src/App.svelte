@@ -21,6 +21,7 @@
   import Settings from './routes/Settings.svelte';
   import Disks from './routes/Disks.svelte';
   import Docker from './routes/Docker.svelte';
+  import Stacks from './routes/Stacks.svelte';
   import Packages from './routes/Packages.svelte';
   import Tools from './routes/Tools.svelte';
   import Network from './routes/Network.svelte';
@@ -117,6 +118,8 @@
         {#if live}<Disks {live} />{/if}
       {:else if route?.id === 'docker'}
         {#if live}<Docker {live} />{/if}
+      {:else if route?.id === 'stacks'}
+        <Stacks />
       {:else if route?.id === 'packages'}
         {#if live}<Packages {live} />{/if}
       {:else if route?.id === 'settings'}

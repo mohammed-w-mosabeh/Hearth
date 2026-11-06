@@ -17,6 +17,7 @@ export const routes: Route[] = [
   { id: 'games', label: 'nav.games', icon: 'gamepad' },
   { id: 'services', label: 'nav.services', icon: 'gear' },
   { id: 'docker', label: 'nav.docker', icon: 'box' },
+  { id: 'stacks', label: 'nav.stacks', icon: 'layers' },
   { id: 'packages', label: 'nav.packages', icon: 'package' },
   { id: 'tools', label: 'nav.tools', icon: 'wrench' },
   { id: 'space', label: 'nav.space', icon: 'broom' },
@@ -35,9 +36,9 @@ export const routes: Route[] = [
   { id: 'settings', label: 'nav.settings', icon: 'sliders' },
 ];
 
-/** Names of pages that open another page for now: Apps opens the Docker
- *  page's Compose tab until Phase 9, Modes the Profiles page until Phase 10. */
-export const aliases: Readonly<Record<string, string>> = { stacks: 'docker', modes: 'profiles' };
+/** Names of pages that open another page for now: Modes opens the Profiles
+ *  page until Phase 10. */
+export const aliases: Readonly<Record<string, string>> = { modes: 'profiles' };
 
 /** The page a route id shows. */
 export const pageOf = (id: string): string => aliases[id] ?? id;

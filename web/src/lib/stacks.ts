@@ -1,0 +1,159 @@
+// Apps (ROADMAP 9.9): the stacks Hearth manages, as GET /api/v1/stacks
+// gives them, and the Compose projects it only detects. Pure helpers; the
+// page and its tests share them.
+
+import type { Project } from './docker';
+
+export interface StackContainer {
+  id: string;
+  name: string;
+  service: string;
+  state: string;
+  health?: string;
+  image: string;
+  image_id: string;
+  restart: string;
+  restart_count: number;
+  started_at?: string;
+}
+
+export interface StackSecret {
+  key: string;
+  services: string[];
+  set: boolean;
+}
+
+export interface SpecPort {
+  host_ip?: string;
+  host: number;
+  container: number;
+  protocol?: string;
+}
+
+export interface SpecMount {
+  type: 'volume' | 'bind';
+  source: string;
+  target: string;
+  read_only?: boolean;
+}
+
+export interface SpecService {
+  image: string;
+  ports?: SpecPort[];
+  volumes?: SpecMount[];
+  restart?: string;
+  secrets?: string[];
+}
+
+export interface Spec {
+  name: string;
+  services: Record<string, SpecService>;
+  volumes?: Record<string, { name?: string; external?: boolean }>;
+  bind_roots?: string[];
+  opt_in?: string[];
+}
+
+export interface StackInfo {
+  name: string;
+  spec_sha256: string;
+  spec: Spec;
+  state: 'running' | 'partial' | 'stopped' | 'absent';
+  containers: StackContainer[];
+  secrets: StackSecret[];
+}
+
+/** The design's state shapes, never colour alone (docs/design/ember.md). */
+export type Shape = 'ok' | 'degraded' | 'warning' | 'stopped';
+export const shapes: Record<Shape, string> = { ok: '●', degraded: '◐', warning: '▲', stopped: '■' };
+
+/** An app's shape: unhealthy or restarting containers make it degraded. */
+export function shape(s: StackInfo): Shape {
+  if (s.state === 'stopped' || s.state === 'absent') return 'stopped';
+  if (s.containers.some((c) => c.health === 'unhealthy' || c.state === 'restarting')) return 'warning';
+  if (s.state === 'partial' || s.containers.some((c) => c.health === 'starting')) return 'degraded';
+  return 'ok';
+}
+
+/** "running/total" services. */
+export function serviceCount(s: StackInfo): string {
+  const total = Object.keys(s.spec.services ?? {}).length;
+  const running = new Set(s.containers.filter((c) => c.state === 'running').map((c) => c.service)).size;
+  return `${running}/${total}`;
+}
+
+/** Every published address, sorted: "127.0.0.1:8080". */
+export function addresses(s: StackInfo): string[] {
+  const out: string[] = [];
+  for (const svc of Object.values(s.spec.services ?? {})) {
+    for (const p of svc.ports ?? []) out.push(`${p.host_ip || '127.0.0.1'}:${p.host}`);
+  }
+  return out.sort();
+}
+
+/** A spec's danger flags: what it opts in to. */
+export function flags(s: StackInfo): string[] {
+  return [...(s.spec.opt_in ?? [])].sort();
+}
+
+/** Flags that open a port to the network, apart from the rest. */
+export function exposure(s: StackInfo): { exposed: string[]; danger: string[] } {
+  const exposed: string[] = [];
+  const danger: string[] = [];
+  for (const f of flags(s)) {
+    if (f.startsWith('port:')) exposed.push(f.slice('port:'.length));
+    else danger.push(f);
+  }
+  return { exposed, danger };
+}
+
+/** The restart policies its containers run with, deduplicated. */
+export function restartPolicies(s: StackInfo): string[] {
+  return [...new Set(s.containers.map((c) => c.restart).filter((r) => r !== ''))].sort();
+}
+
+/** Its volumes: named ones by Docker name, then bind sources. */
+export function storage(s: StackInfo): { kind: 'volume' | 'bind'; name: string }[] {
+  const named = Object.entries(s.spec.volumes ?? {}).map(([k, v]) => ({ kind: 'volume' as const, name: v.name || `${s.name}_${k}` }));
+  const binds = new Set<string>();
+  for (const svc of Object.values(s.spec.services ?? {})) {
+    for (const m of svc.volumes ?? []) if (m.type === 'bind') binds.add(m.source);
+  }
+  return [...named.sort((a, b) => (a.name < b.name ? -1 : 1)), ...[...binds].sort().map((name) => ({ kind: 'bind' as const, name }))];
+}
+
+/** Compose projects Hearth does not manage: the Detected group. */
+export function detected(projects: Project[], managed: StackInfo[]): Project[] {
+  const mine = new Set(managed.map((s) => s.name));
+  return projects.filter((p) => !mine.has(p.name)).sort((a, b) => (a.name < b.name ? -1 : 1));
+}
+
+/** Container names to show in the log explorer, as its source ids. */
+export function logSources(s: StackInfo): string[] {
+  return s.containers.map((c) => `container:${c.name}`).sort();
+}
+
+// --- the import dry-run (GET /api/v1/stacks/import/{project}) ---
+
+export interface DryRun {
+  project: string;
+  dir: string;
+  files: string[];
+  containers: { name: string; service: string; state: string }[];
+  spec: Spec;
+  secrets: { key: string; services: string[] }[];
+  refused: string[];
+  changes: string[];
+  flags: string[];
+  volumes: { key: string; name: string; exists: boolean }[];
+  ports: { service: string; host_ip: string; host: number; protocol: string; conflict?: string }[];
+  notes: string[];
+}
+
+/** The query of a dry-run: names marked plain and services left out. */
+export function dryRunQuery(plain: string[], skip: string[]): string {
+  const q = new URLSearchParams();
+  if (plain.length) q.set('plain', plain.join(','));
+  if (skip.length) q.set('skip', skip.join(','));
+  const s = q.toString();
+  return s ? `?${s}` : '';
+}

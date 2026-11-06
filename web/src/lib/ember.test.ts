@@ -14,8 +14,8 @@ describe('ember rail', () => {
     expect([...pages].sort()).toEqual(routes.map((r) => r.id).sort());
   });
 
-  it('opens the existing pages for Apps and Modes', () => {
-    expect(pageOf('stacks')).toBe('docker');
+  it('opens Apps as its own page, Modes on Profiles for now', () => {
+    expect(pageOf('stacks')).toBe('stacks');
     expect(pageOf('modes')).toBe('profiles');
     expect(pageOf('apps')).toBe('apps');
     expect(railCurrent('modes', 'profiles')).toBe(true);
