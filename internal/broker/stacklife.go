@@ -88,6 +88,15 @@ type StackConfig struct {
 	Now      func() time.Time
 	// Audit gets one entry per container that runs with danger flags.
 	Audit Auditor
+
+	// Backups (9.10). Measure asks the path check for sizes (by default
+	// PathChecker's); Volumes reads named volumes (the Engine); Backups is
+	// the archives' folder (backup.Dir); FreeSpace reads a filesystem's
+	// free bytes (statfs).
+	Measure   func(ctx context.Context, spec json.RawMessage) (pathcheck.Reply, error)
+	Volumes   BackupVolumes
+	Backups   string
+	FreeSpace func(path string) (uint64, error)
 }
 
 // StackDeployParams is stack.deploy's params.
@@ -198,9 +207,10 @@ func (l *stackLocks) lock(name string) func() {
 }
 
 type stacks struct {
-	c     StackConfig
-	cache *pathCache
-	locks *stackLocks
+	c      StackConfig
+	cache  *pathCache
+	locks  *stackLocks
+	grants *restoreGrants
 }
 
 // StackLifeMethods are stack.status, stack.deploy, stack.update,
@@ -215,8 +225,15 @@ func StackLifeMethods(c StackConfig) []Method {
 	if c.Run == nil {
 		c.Run = func(ctx context.Context, unit string) error { return runOneshot(ctx, c.Bus, 0, "stack", unit) }
 	}
-	s := &stacks{c: c, cache: &pathCache{m: map[string]cachedPaths{}, now: c.Now}, locks: &stackLocks{m: map[string]*sync.Mutex{}}}
-	return append(append(s.secretMethods(), s.importMethod()), []Method{
+	if c.Measure == nil {
+		c.Measure = PathChecker{}.Measure
+	}
+	if c.FreeSpace == nil {
+		c.FreeSpace = FreeSpace
+	}
+	s := &stacks{c: c, cache: &pathCache{m: map[string]cachedPaths{}, now: c.Now}, locks: &stackLocks{m: map[string]*sync.Mutex{}},
+		grants: &restoreGrants{m: map[string]restoreGrant{}, now: c.Now}}
+	return append(append(append(s.secretMethods(), s.importMethod()), s.backupMethods()...), []Method{
 		{Name: "stack.status", Handle: s.status},
 		{Name: "stack.deploy", Privileged: true, Action: ActionStackDeploy, Timeout: StackTimeout,
 			Check: func(ctx context.Context, p json.RawMessage) error {

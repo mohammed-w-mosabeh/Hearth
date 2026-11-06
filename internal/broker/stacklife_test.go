@@ -70,9 +70,14 @@ type lifeRig struct {
 	ran     []string // verbs the unit ran
 	proc    string
 	methods map[string]Method
+	// unit runs any unit but hearth-stack@ (backups' tests).
+	unit func(unit string) error
 }
 
-func newLifeRig(t *testing.T) *lifeRig {
+func newLifeRig(t *testing.T) *lifeRig { t.Helper(); return newLifeRigWith(t, nil) }
+
+// newLifeRigWith lets more change the config before the methods are made.
+func newLifeRigWith(t *testing.T, more func(r *lifeRig, c *StackConfig)) *lifeRig {
 	t.Helper()
 	r := &lifeRig{store: StackStore{Dir: filepath.Join(t.TempDir(), "stacks")}, engine: &fakeStackEngine{},
 		paths: &fakePaths{first: okPaths(), second: okPaths()}, proc: t.TempDir(), methods: map[string]Method{}}
@@ -81,6 +86,12 @@ func newLifeRig(t *testing.T) *lifeRig {
 	}
 	r.mountinfo(t, "1 0 0:5 / / rw - overlay overlay rw\n2 1 8:1 /srv/site /usr/share/nginx/html rw - ext4 /dev/sda1 rw\n")
 	run := func(_ context.Context, unit string) error {
+		if !strings.HasPrefix(unit, StackUnitPrefix) {
+			if r.unit == nil {
+				return errors.New("no such unit " + unit)
+			}
+			return r.unit(unit)
+		}
 		name := strings.TrimSuffix(strings.TrimPrefix(unit, StackUnitPrefix), ".service")
 		args, err := r.store.Read(name, FileArgs)
 		if err != nil {
@@ -90,17 +101,23 @@ func newLifeRig(t *testing.T) *lifeRig {
 			if string(args) == "STACK_ARGS="+a+"\n" {
 				r.ran = append(r.ran, v)
 				switch v {
-				case "up", "restart":
+				case "up", "restart", "start":
 					r.engine.containers = []StackContainer{{ID: "c1", Service: "app", State: "running", Stack: name, PID: 42}}
 				case "stop":
 					r.engine.containers = []StackContainer{{ID: "c1", Service: "app", State: "exited", Stack: name}}
+				case "create":
+					r.engine.containers = []StackContainer{{ID: "c1", Service: "app", State: "created", Stack: name}}
 				}
 				return nil
 			}
 		}
 		return errors.New("unknown args " + string(args))
 	}
-	for _, m := range StackLifeMethods(StackConfig{Store: r.store, Paths: r.paths, Engine: r.engine, Run: run, ProcRoot: r.proc}) {
+	c := StackConfig{Store: r.store, Paths: r.paths, Engine: r.engine, Run: run, ProcRoot: r.proc}
+	if more != nil {
+		more(r, &c)
+	}
+	for _, m := range StackLifeMethods(c) {
 		r.methods[m.Name] = m
 	}
 	return r

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Project } from './docker';
-import { addresses, detected, dryRunQuery, exposure, logSources, restartPolicies, serviceCount, shape, storage, type StackInfo } from './stacks';
+import { addresses, backupQuery, detected, dryRunQuery, exposure, logSources, otherFS, restartPolicies, serviceCount, shape, storage, type BackupPreview, type StackInfo } from './stacks';
 
 function app(over: Partial<StackInfo> = {}): StackInfo {
   return {
@@ -72,5 +72,17 @@ describe('stacks', () => {
   it('builds a dry-run query', () => {
     expect(dryRunQuery([], [])).toBe('');
     expect(dryRunQuery(['TZ', 'discovery.type'], ['tools'])).toBe('?plain=TZ%2Cdiscovery.type&skip=tools');
+  });
+});
+
+describe('backups', () => {
+  it('builds the preview query', () => {
+    expect(backupQuery(7, [])).toBe('?keep=7');
+    expect(backupQuery(0, [])).toBe('');
+    expect(backupQuery(31, ['/mnt/a b', '/x&y'])).toBe('?include=%2Fmnt%2Fa+b&include=%2Fx%26y');
+  });
+  it('finds the binds on another filesystem', () => {
+    const p = { binds: [{ real: '/a', other_fs: true }, { real: '/b' }] } as unknown as BackupPreview;
+    expect(otherFS(p).map((b) => b.real)).toEqual(['/a']);
   });
 });

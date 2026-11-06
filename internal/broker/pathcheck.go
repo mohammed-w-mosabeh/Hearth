@@ -33,12 +33,26 @@ var ErrPathCheck = errors.New("the path check is not available")
 
 // Check sends one spec and returns the answer.
 func (p PathChecker) Check(ctx context.Context, spec json.RawMessage) (pathcheck.Reply, error) {
-	path, timeout := p.Path, p.Timeout
+	return p.ask(ctx, pathcheck.Request{Spec: spec}, 20*time.Second)
+}
+
+// Measure is Check, plus each bind's size and the backups' device (9.10).
+// The walk is bounded at 15 s; the unit stops at 30 s.
+func (p PathChecker) Measure(ctx context.Context, spec json.RawMessage) (pathcheck.Reply, error) {
+	r, err := p.ask(ctx, pathcheck.Request{Spec: spec, Measure: true}, 25*time.Second)
+	if err == nil && r.OK && r.BackupDev == "" {
+		return pathcheck.Reply{}, fmt.Errorf("%w: no size in the answer", ErrPathCheck)
+	}
+	return r, err
+}
+
+func (p PathChecker) ask(ctx context.Context, req pathcheck.Request, timeout time.Duration) (pathcheck.Reply, error) {
+	path := p.Path
 	if path == "" {
 		path = pathcheck.SocketPath
 	}
-	if timeout == 0 {
-		timeout = 20 * time.Second
+	if p.Timeout != 0 {
+		timeout = p.Timeout
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -51,7 +65,7 @@ func (p PathChecker) Check(ctx context.Context, spec json.RawMessage) (pathcheck
 	if dl, ok := ctx.Deadline(); ok {
 		_ = conn.SetDeadline(dl)
 	}
-	if err := json.NewEncoder(conn).Encode(pathcheck.Request{Spec: spec}); err != nil {
+	if err := json.NewEncoder(conn).Encode(req); err != nil {
 		return pathcheck.Reply{}, fmt.Errorf("%w: %w", ErrPathCheck, err)
 	}
 	line, err := bufio.NewReaderSize(io.LimitReader(conn, 1<<20), 64<<10).ReadBytes('\n')

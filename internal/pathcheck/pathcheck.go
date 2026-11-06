@@ -37,9 +37,11 @@ const SocketPath = "/run/hearth/pathcheck.sock"
 // MaxRequest bounds a request line: a spec and its JSON wrapping.
 const MaxRequest = spec.MaxSpec + 1024
 
-// Request asks for one spec's binds to be checked.
+// Request asks for one spec's binds to be checked. Measure also asks for
+// each bind's size and for the device of the backups' filesystem (9.10).
 type Request struct {
-	Spec json.RawMessage `json:"spec"`
+	Spec    json.RawMessage `json:"spec"`
+	Measure bool            `json:"measure,omitempty"`
 }
 
 // Reply is the answer: OK, or the refusals. Roots and Binds are filled
@@ -49,6 +51,19 @@ type Reply struct {
 	Refused []string          `json:"refused"`
 	Roots   map[string]string `json:"roots,omitempty"`
 	Binds   []Resolved        `json:"binds,omitempty"`
+	// Sizes and BackupDev answer a Measure request: one size per real
+	// bind path, and the major:minor of the filesystem holding the
+	// backups, to tell binds on another filesystem.
+	Sizes     map[string]Size `json:"sizes,omitempty"`
+	BackupDev string          `json:"backup_dev,omitempty"`
+}
+
+// Size is the bytes of the regular files under a path, on its own
+// filesystem, links not followed. Partial means the walk stopped at its
+// bound, so Bytes is a lower bound.
+type Size struct {
+	Bytes   int64 `json:"bytes"`
+	Partial bool  `json:"partial,omitempty"`
 }
 
 // Resolved is one bind after resolution.
@@ -67,10 +82,17 @@ type Resolver struct {
 	Open func(p string) (real string, mntID uint64, err error)
 	// Mounts returns the resolver's own mountinfo.
 	Mounts func() ([]byte, error)
+	// Measure sizes a real path (Walk in production).
+	Measure func(real string) Size
 }
 
 // System is the resolver on the running kernel.
-var System = Resolver{Open: openReal, Mounts: func() ([]byte, error) { return os.ReadFile("/proc/self/mountinfo") }}
+var System = Resolver{Open: openReal, Mounts: func() ([]byte, error) { return os.ReadFile("/proc/self/mountinfo") },
+	Measure: func(real string) Size { return Walk(real, walkBudget, walkEntries) }}
+
+// BackupsParent is resolved for a Measure request: the backups' folder
+// may not exist yet, its parent does.
+const BackupsParent = "/var/lib/hearth"
 
 func openReal(p string) (string, uint64, error) {
 	fd, err := unix.Openat2(unix.AT_FDCWD, p, &unix.OpenHow{
@@ -235,6 +257,8 @@ func Serve(res Resolver, r io.Reader, w io.Writer) error {
 		reply = refused("the request is too large")
 	case dec.Decode(&req) != nil || dec.More() || len(req.Spec) == 0:
 		reply = refused("not a path check request")
+	case req.Measure:
+		reply = res.CheckMeasure(req.Spec)
 	default:
 		reply = res.Check(req.Spec)
 	}

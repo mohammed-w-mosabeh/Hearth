@@ -50,7 +50,7 @@ type updateState struct{ Params broker.StackUpdateParams }
 type removeState struct{ Params broker.StackRemoveParams }
 
 // Register adds stack/deploy, stack/start, stack/stop, stack/restart,
-// stack/update and stack/remove.
+// stack/update, stack/remove, stack/backup and stack/restore.
 func Register(reg *actions.Registry, b Broker, tags docker.TagChecker) {
 	reg.Register(actions.Action{Kind: Kind, Name: "deploy", Risk: actions.Destructive,
 		Validate: func(r actions.Request) error {
@@ -137,6 +137,7 @@ func Register(reg *actions.Registry, b Broker, tags docker.TagChecker) {
 			}
 			return call(ctx, b, p, "stack.remove", st.Params)
 		}})
+	registerBackups(reg, b)
 }
 
 func nameOnly(r actions.Request) error {

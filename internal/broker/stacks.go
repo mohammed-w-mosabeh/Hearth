@@ -37,8 +37,12 @@ const (
 // volumes; only down-volumes, which stack.remove runs after the stack's
 // name was typed back, deletes them.
 var StackVerbs = map[string]string{
-	"up":      "up --detach --no-build --pull missing --quiet-pull --remove-orphans",
-	"update":  "up --detach --no-build --pull always --quiet-pull --remove-orphans",
+	"up":     "up --detach --no-build --pull missing --quiet-pull --remove-orphans",
+	"update": "up --detach --no-build --pull always --quiet-pull --remove-orphans",
+	// create makes the containers and volumes without starting them, so a
+	// restore has volumes to write into. No --yes: Compose must never
+	// answer its own "recreate this volume, data will be lost" question.
+	"create":  "create --no-build --pull missing --quiet-pull --remove-orphans",
 	"start":   "start",
 	"stop":    "stop",
 	"restart": "restart",

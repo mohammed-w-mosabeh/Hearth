@@ -157,3 +157,63 @@ export function dryRunQuery(plain: string[], skip: string[]): string {
   const s = q.toString();
   return s ? `?${s}` : '';
 }
+
+// --- backups (ROADMAP 9.10) ---
+
+export interface BackupBind {
+  service: string;
+  source: string;
+  real: string;
+  size: number;
+  partial?: boolean;
+  other_fs?: boolean;
+  included: boolean;
+}
+
+export interface BackupPreview {
+  name: string;
+  running: boolean;
+  volumes: { name: string; size: number; included: boolean; why?: string }[];
+  binds: BackupBind[];
+  secrets: string[];
+  estimate: number;
+  partial: boolean;
+  free: number;
+  enough: boolean;
+  keep: number;
+  archives: string[];
+  prune: string[];
+}
+
+export interface BackupEntry {
+  archive: string;
+  created: string;
+  size: number;
+  stopped_first: boolean;
+  keep: number;
+  volumes: { name: string; size: number }[];
+  binds: BackupBind[];
+  secrets: string[];
+  warning?: string;
+}
+
+export interface BackupList {
+  name: string;
+  dir: string;
+  archives: BackupEntry[];
+}
+
+/** The query of a backup preview: how many to keep, and the binds on
+ *  another filesystem chosen. */
+export function backupQuery(keep: number, include: string[]): string {
+  const q = new URLSearchParams();
+  if (Number.isInteger(keep) && keep >= 1 && keep <= 30) q.set('keep', String(keep));
+  for (const p of include) q.append('include', p);
+  const s = q.toString();
+  return s ? `?${s}` : '';
+}
+
+/** Binds on another filesystem than the backups': left out unless chosen. */
+export function otherFS(p: BackupPreview): BackupBind[] {
+  return p.binds.filter((b) => b.other_fs);
+}

@@ -1,0 +1,63 @@
+[Unit]
+Description=Hearth: restore the app %i from a backup
+Documentation=https://github.com/mohammed-w-mosabeh/hearth
+# Started only by hearth-broker's stack.restore (SECURITY S12d), after the
+# preview's token, the typed name and polkit, with the app stopped. %i is a
+# stack name: a-z, 0-9, - and _ only.
+ConditionPathExists=/var/lib/hearth/backups/%i/.restore.json
+ConditionPathIsDirectory=/var/lib/docker/volumes
+
+[Service]
+Type=oneshot
+# The broker's binary reads the plan, checks the archive's SHA-256 against
+# the manifest's, empties each named volume's data without following a
+# link, then runs one fixed tar --zstd argv naming those volumes and
+# secrets.env, nothing else.
+ExecStart=/usr/bin/hearth-broker restore %i
+StandardOutput=journal
+StandardError=journal
+Environment=LC_ALL=C
+UMask=0077
+TimeoutStartSec=6h
+Nice=10
+IOSchedulingClass=idle
+
+# --- Hardening (SECURITY.md "systemd hardening") ---
+# Restoring files as their owners had them needs chown, the file-owner
+# override and reading and writing whatever is there; no other capability.
+# Only Docker's volume store and the app's own folder are writable, and
+# home is not even visible: binds are never restored (owner's decision).
+CapabilityBoundingSet=CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH CAP_CHOWN CAP_FOWNER CAP_FSETID
+AmbientCapabilities=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/docker/volumes /var/lib/hearth/stacks/%i
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+KeyringMode=private
+# No RestrictSUIDSGID: a volume may hold a setgid folder (a shared group),
+# and a restore puts back modes as archived. The volume store is root's.
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+# @privileged holds @chown, which tar needs to give files back to their
+# owners; later lines add back (tested with systemd-run).
+SystemCallFilter=@chown
+SystemCallErrorNumber=EPERM
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+MemoryMax=512M
+CPUQuota=100%
+TasksMax=16

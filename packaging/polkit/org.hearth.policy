@@ -192,4 +192,24 @@
       <allow_active>auth_admin</allow_active>
     </defaults>
   </action>
+  <action id="org.hearth.stack.backup">
+    <description>Back up an app through Hearth</description>
+    <message>Authentication is required to back up this app</message>
+    <icon_name>preferences-system</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.hearth.stack.restore">
+    <description>Restore an app from a backup through Hearth</description>
+    <message>Authentication is required to restore this app, overwriting its volumes</message>
+    <icon_name>dialog-warning</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
 </policyconfig>

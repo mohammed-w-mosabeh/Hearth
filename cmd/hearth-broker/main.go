@@ -23,6 +23,8 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/pathcheck"
 	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
 	"github.com/mohammed-w-mosabeh/hearth/internal/scheduler"
+	"github.com/mohammed-w-mosabeh/hearth/internal/stacks/backup"
+	"github.com/mohammed-w-mosabeh/hearth/internal/stacks/spec"
 )
 
 // stateDir is the unit's StateDirectory= (created by systemd, mode 0700).
@@ -39,10 +41,45 @@ func main() {
 		}
 		return
 	}
+	// hearth-backup@<stack> and hearth-restore@<stack> run it on the plan
+	// the broker wrote (SECURITY S12d), each in its own sandbox.
+	if len(os.Args) == 3 && (os.Args[1] == "backup" || os.Args[1] == "restore") {
+		step := "restore"
+		if os.Args[1] == "backup" {
+			step = "backup"
+		}
+		if err := unitStep(step, os.Args[2]); err != nil {
+			log.Error(step+" failed", "error", err.Error()) // JSON: each value escaped
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(log); err != nil {
 		log.Error(err.Error())
 		os.Exit(1)
 	}
+}
+
+// unitStep runs one backup or restore of stack with tar through safeexec.
+func unitStep(step, stack string) error {
+	if !spec.ValidName(stack) {
+		return errors.New("not a stack name")
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	defer stop()
+	tar := func(name string) backup.Tar {
+		return func(ctx context.Context, args []string) (int, error) {
+			res, err := safeexec.Run(ctx, name, args...)
+			if len(res.Stderr) > 0 {
+				_, _ = os.Stderr.Write(res.Stderr) // tar's own lines, to the journal
+			}
+			return res.ExitCode, err
+		}
+	}
+	if step == "backup" {
+		return backup.RunBackup(ctx, backup.Roots{}, stack, tar("tar-create"))
+	}
+	return backup.RunRestore(ctx, backup.Roots{}, stack, tar("tar-extract"))
 }
 
 func run(log *slog.Logger) error {
@@ -67,7 +104,7 @@ func run(log *slog.Logger) error {
 			return c, nil
 		}})...)
 	methods = append(methods, broker.StackMethods()...)
-	methods = append(methods, broker.StackLifeMethods(broker.StackConfig{Paths: broker.PathChecker{}, Engine: dockerAPI, Audit: audit,
+	methods = append(methods, broker.StackLifeMethods(broker.StackConfig{Paths: broker.PathChecker{}, Engine: dockerAPI, Volumes: dockerAPI, Audit: audit,
 		Bus: func(ctx context.Context) (broker.SystemBus, error) {
 			c, err := dbusx.SystemBus(ctx)
 			if err != nil {

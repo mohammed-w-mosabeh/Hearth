@@ -649,6 +649,26 @@ check "update of a missing stack is refused" call_says 'no such stack' stack.upd
 check "nothing was written" not test -e /var/lib/hearth/stacks
 check "a read-only token cannot ask for it" test "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${ro_key:-none}" "http://127.0.0.1:$port/api/v1/stacks/import/nosuch")" != 200
 rm -f /etc/polkit-1/rules.d/53-hearth-itest-danger.rules
+echo "== stack backups (9.10)"
+check "polkit has org.hearth.stack.backup" grep -q 'action id="org.hearth.stack.backup"' "$policy"
+check "restore asks every time (auth_admin, no keep)" grep -Pzq '(?s)org\.hearth\.stack\.restore">.*?<allow_active>auth_admin</allow_active>' "$policy"
+for u in backup restore; do
+	check "$u unit installed" test -f "/usr/lib/systemd/system/hearth-$u@.service"
+	check "$u unit has no network" test "$(systemctl show -p PrivateNetwork --value "hearth-$u@probe.service")" = yes
+	systemctl start "hearth-$u@probe.service" 2>/dev/null || true
+	check "$u unit does not run without the broker's plan" test "$(systemctl show -p ConditionResult --value "hearth-$u@probe.service")" = "no"
+done
+check "backup unit holds only CAP_DAC_READ_SEARCH" test "$(systemctl show -p CapabilityBoundingSet --value hearth-backup@probe.service)" = "cap_dac_read_search"
+check "backup unit sees home read-only" test "$(systemctl show -p ProtectHome --value hearth-backup@probe.service)" = read-only
+check "restore unit cannot see home" test "$(systemctl show -p ProtectHome --value hearth-restore@probe.service)" = yes
+check "restore unit cannot mount or load modules" not grep -Eq 'cap_sys_admin|cap_sys_module' <<<"$(systemctl show -p CapabilityBoundingSet --value hearth-restore@probe.service)"
+check "backup of a missing stack is refused" call_says 'no such stack' stack.backup '{"name":"probe"}'
+check "backup keeps 1 to 30" call_says 'keep is 1 to 30' stack.backup '{"name":"probe","keep":31}'
+check "a restore without the typed name is refused" call_says 'type the app' stack.restore '{"name":"probe","archive":"20261106T000000Z.tar.zst","token":"x","typed_name":"","ack_flags":[]}'
+check "a restore without a preview is refused" call_says 'preview it again' stack.restore '{"name":"probe","archive":"20261106T000000Z.tar.zst","token":"x","typed_name":"probe","ack_flags":[]}'
+check "a path as an archive name is refused" call_says 'not an archive name' stack.restore.preview '{"name":"probe","archive":"../x/20261106T000000Z.tar.zst"}'
+check "a listing of no backups is empty" call_says '"archives":\[\]' stack.backup.list '{"name":"probe"}'
+check "no backup folder was made" not test -e /var/lib/hearth/backups
 echo "== stack import (9.8)"
 imark=ITEST-IMPORT-4d2a
 ispec='{"version":1,"name":"probe","services":{"web":{"image":"nginx:1.27","secrets":["PW","DB_PASSWORD=WEB_DB_PASSWORD"]}}}'
@@ -1131,7 +1151,16 @@ check "still one hearthd" test "$(hearthds)" = 1
 pkill -f hearth-stub-browser || true
 
 echo "== purge"
-apt-get purge -y -qq hearth >/dev/null
+# An app backup (9.10): purge keeps it, and only it.
+mkdir -p -m 0700 /var/lib/hearth/backups/probe
+echo archive >/var/lib/hearth/backups/probe/20261106T000000Z.tar.zst
+touch /var/lib/hearth/backups/probe/.plan.json
+purge_out=$(apt-get purge -y -qq hearth 2>&1 >/dev/null || true)
+check "purge keeps app backups" test -f /var/lib/hearth/backups/probe/20261106T000000Z.tar.zst
+check "and says so" grep -q 'app backups kept in /var/lib/hearth/backups' <<<"$purge_out"
+check "and keeps nothing else" test "$(ls -A /var/lib/hearth)" = backups
+check "and drops the units' plans" not test -e /var/lib/hearth/backups/probe/.plan.json
+rm -rf /var/lib/hearth
 check "purge removes the Lynis schedule" not test -e /etc/systemd/system/hearth-lynis.timer
 check "and its enable link" not test -L /etc/systemd/system/timers.target.wants/hearth-lynis.timer
 check "package gone" not dpkg -s hearth
@@ -1147,6 +1176,7 @@ for f in /usr/bin/hearth-broker /usr/lib/systemd/system/hearth-broker.socket \
 	/usr/lib/systemd/system/hearth-broker.service /usr/lib/systemd/system/hearth-needrestart.service \
 	/usr/share/polkit-1/actions/org.hearth.policy \
 	/usr/lib/systemd/system/hearth-pathcheck.socket /usr/lib/systemd/system/hearth-pathcheck@.service \
+	/usr/lib/systemd/system/hearth-backup@.service /usr/lib/systemd/system/hearth-restore@.service \
 	/etc/systemd/system/sockets.target.wants/hearth-broker.socket \
 	/etc/systemd/system/sockets.target.wants/hearth-pathcheck.socket /run/hearth; do
 	check "removed $f" test ! -e "$f"

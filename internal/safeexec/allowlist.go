@@ -11,6 +11,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/mohammed-w-mosabeh/hearth/internal/stacks/backup"
 )
 
 // desktopEnv is what a browser needs from the user's session.
@@ -250,6 +252,19 @@ var allowlist = map[string]Spec{
 		Validate: exactly(Literal("set-default"), PWNodeID),
 		Env:      []string{"XDG_RUNTIME_DIR"},
 		Timeout:  5 * time.Second,
+	},
+	// tar in hearth-backup@ and hearth-restore@ only (SECURITY S12d): the
+	// argv package backup builds from the broker's checked plan, compared
+	// whole. --zstd runs Debian's zstd; the units have no network.
+	"tar-create": {
+		Paths:    []string{"/usr/bin/tar", "/bin/tar"},
+		Validate: backup.CheckTarCreate,
+		Timeout:  backup.UnitTimeout,
+	},
+	"tar-extract": {
+		Paths:    []string{"/usr/bin/tar", "/bin/tar"},
+		Validate: backup.CheckTarExtract,
+		Timeout:  backup.UnitTimeout,
 	},
 }
 

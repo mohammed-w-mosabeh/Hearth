@@ -1,6 +1,7 @@
 <script lang="ts">
   import ConfirmDialog from './ConfirmDialog.svelte';
   import LogExplorer from './LogExplorer.svelte';
+  import StackBackups from './StackBackups.svelte';
   import { api } from '../lib/api';
   import { preview, reasonKey, run, type Plan, type Result } from '../lib/actions';
   import { failure } from '../lib/errors';
@@ -160,6 +161,11 @@
       <li class="muted">{t('stacks.noSecrets')}</li>
     {/each}
   </ul>
+</section>
+
+<section>
+  <h3>{t('stacks.backups')}</h3>
+  <StackBackups name={stack.name} />
 </section>
 
 <section>
