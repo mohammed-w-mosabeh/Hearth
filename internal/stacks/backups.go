@@ -11,6 +11,7 @@ import (
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/actions"
 	"github.com/mohammed-w-mosabeh/hearth/internal/broker"
+	"github.com/mohammed-w-mosabeh/hearth/internal/scheduler"
 	"github.com/mohammed-w-mosabeh/hearth/internal/stacks/backup"
 	"github.com/mohammed-w-mosabeh/hearth/internal/stacks/spec"
 )
@@ -254,22 +255,96 @@ func planRestore(ctx context.Context, b Broker, name, archive string) (actions.P
 	return p, nil
 }
 
+// BackupsView is GET /api/v1/app-backups/{name}: the broker's list, and
+// when the schedule runs next.
+type BackupsView struct {
+	broker.BackupList
+	Next []int64 `json:"next"` // Unix ms
+}
+
 // HandleBackups serves GET /api/v1/app-backups/{name}: the archives,
-// newest first, without their specs.
-func HandleBackups(b Broker) http.HandlerFunc {
+// newest first, without their specs, the schedule and its next runs.
+func HandleBackups(b Broker, run scheduler.Runner) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
 		if !spec.ValidName(name) {
 			jsonError(w, http.StatusBadRequest, "not a stack name")
 			return
 		}
-		var out broker.BackupList
-		if err := b.Call(r.Context(), "stack.backup.list", map[string]string{"name": name}, &out); err != nil {
+		out := BackupsView{Next: []int64{}}
+		if err := b.Call(r.Context(), "stack.backup.list", map[string]string{"name": name}, &out.BackupList); err != nil {
 			httpError(w, err)
 			return
 		}
+		if out.Schedule != nil && run != nil {
+			if c := scheduler.CheckSchedule(r.Context(), run, scheduler.Schedule{Kind: scheduler.KindCalendar, Value: out.Schedule.OnCalendar}); c.Valid {
+				out.Next = c.Next
+			}
+		}
 		writeJSON(w, out)
 	}
+}
+
+type scheduleState struct{ Params broker.StackScheduleParams }
+
+// RegisterSchedule adds stack/schedule (ROADMAP 9.11): set or clear an
+// app's backup schedule. Its preview says what systemd makes of the
+// calendar and when it runs next; the broker asks polkit and checks again.
+func RegisterSchedule(reg *actions.Registry, b Broker, run scheduler.Runner) {
+	reg.Register(actions.Action{Kind: Kind, Name: "schedule", Risk: actions.Reversible,
+		Validate: func(r actions.Request) error { _, err := scheduleParams(r); return err },
+		Plan: func(ctx context.Context, r actions.Request) (actions.Plan, error) {
+			v, err := scheduleParams(r)
+			if err != nil {
+				return actions.Plan{}, actions.Errorf(http.StatusBadRequest, "%s", err.Error())
+			}
+			p := actions.Plan{Summary: "stop backing up " + v.Name + " on a schedule", Items: []actions.Item{{ID: v.Name, Name: v.Name}},
+				Blocked: []actions.Blocked{}}
+			if v.OnCalendar != "" {
+				c := scheduler.CheckSchedule(ctx, run, scheduler.Schedule{Kind: scheduler.KindCalendar, Value: v.OnCalendar})
+				if !c.Valid {
+					p.Blocked = append(p.Blocked, blocked(v.Name, c.Error))
+					p.Items = []actions.Item{}
+					return p, nil
+				}
+				p.Summary = "back up " + v.Name + " on " + c.Normalized + ", keeping " + strconv.Itoa(v.Keep)
+				if v.StopFirst {
+					p.Summary += "; the app is stopped while it runs"
+				}
+			}
+			p.State = scheduleState{Params: v}
+			return p, nil
+		},
+		Run: func(ctx context.Context, _ actions.Request, p actions.Plan) (actions.Result, error) {
+			st, ok := p.State.(scheduleState)
+			if !ok {
+				return actions.Result{Failed: []actions.Blocked{}, Blocked: p.Blocked}, nil
+			}
+			return call(ctx, b, p, "stack.backup.schedule", st.Params)
+		}})
+}
+
+// scheduleParams reads on_calendar ("" for none), keep, stop and include.
+func scheduleParams(r actions.Request) (broker.StackScheduleParams, error) {
+	rest := map[string]string{}
+	cal := ""
+	for k, v := range r.Params {
+		if k == "on_calendar" {
+			cal = v
+			continue
+		}
+		rest[k] = v
+	}
+	bp, err := backupParams(actions.Request{Target: r.Target, Params: rest})
+	if err != nil {
+		return broker.StackScheduleParams{}, err
+	}
+	if cal != "" {
+		if err := scheduler.CalendarSyntax(cal); err != nil {
+			return broker.StackScheduleParams{}, errors.New("params.on_calendar is not a calendar expression")
+		}
+	}
+	return broker.StackScheduleParams{Name: bp.Name, OnCalendar: cal, Keep: bp.Keep, StopFirst: bp.StopFirst, Include: bp.Include}, nil
 }
 
 // HandleBackupPreview serves GET /api/v1/app-backups/{name}/preview:

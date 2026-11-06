@@ -25,6 +25,8 @@ if [ "$1" = "purge" ]; then
 		rm -rf /var/lib/hearth
 	fi
 	rm -rf /run/hearth
+	# App backup schedules set through Hearth (SECURITY S12d).
+	rm -f /etc/systemd/system/hearth-backup-*.timer /etc/systemd/system/timers.target.wants/hearth-backup-*.timer
 	# A Lynis schedule set through Hearth (SECURITY S16h).
 	rm -f /etc/systemd/system/hearth-lynis.timer /etc/systemd/system/timers.target.wants/hearth-lynis.timer
 	# Limits set through Hearth (SECURITY S16d). Other drop-ins stay.

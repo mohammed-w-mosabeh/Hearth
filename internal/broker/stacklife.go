@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/pathcheck"
+	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
 	"github.com/mohammed-w-mosabeh/hearth/internal/secret"
 	"github.com/mohammed-w-mosabeh/hearth/internal/stacks/spec"
 )
@@ -97,6 +98,10 @@ type StackConfig struct {
 	Volumes   BackupVolumes
 	Backups   string
 	FreeSpace func(path string) (uint64, error)
+	// Scheduled backups (9.11): UnitDir holds the timers (SystemUnitDir);
+	// Analyze runs systemd-analyze calendar (safeexec.Run).
+	UnitDir string
+	Analyze Runner
 }
 
 // StackDeployParams is stack.deploy's params.
@@ -190,10 +195,13 @@ func (c *pathCache) take(raw []byte) (pathcheck.Reply, bool) {
 }
 
 type stackLocks struct {
-	mu sync.Mutex
-	m  map[string]*sync.Mutex
+	mu  sync.Mutex
+	m   map[string]*sync.Mutex
+	dir string // the lock files' folder: the stack store
 }
 
+// lock holds name's mutex, then its lock file, which a scheduled backup
+// (another process) takes too.
 func (l *stackLocks) lock(name string) func() {
 	l.mu.Lock()
 	m, ok := l.m[name]
@@ -203,7 +211,11 @@ func (l *stackLocks) lock(name string) func() {
 	}
 	l.mu.Unlock()
 	m.Lock()
-	return m.Unlock
+	unlock := flock(l.dir, name)
+	return func() {
+		unlock()
+		m.Unlock()
+	}
 }
 
 type stacks struct {
@@ -213,9 +225,8 @@ type stacks struct {
 	grants *restoreGrants
 }
 
-// StackLifeMethods are stack.status, stack.deploy, stack.update,
-// stack.control, stack.remove, stack.secrets.set and stack.secrets.reveal.
-func StackLifeMethods(c StackConfig) []Method {
+// newStacks fills c's defaults.
+func newStacks(c StackConfig) *stacks {
 	if c.ProcRoot == "" {
 		c.ProcRoot = "/proc"
 	}
@@ -231,9 +242,19 @@ func StackLifeMethods(c StackConfig) []Method {
 	if c.FreeSpace == nil {
 		c.FreeSpace = FreeSpace
 	}
-	s := &stacks{c: c, cache: &pathCache{m: map[string]cachedPaths{}, now: c.Now}, locks: &stackLocks{m: map[string]*sync.Mutex{}},
+	if c.Analyze == nil {
+		c.Analyze = safeexec.Run
+	}
+	return &stacks{c: c, cache: &pathCache{m: map[string]cachedPaths{}, now: c.Now},
+		locks:  &stackLocks{m: map[string]*sync.Mutex{}, dir: c.Store.dir()},
 		grants: &restoreGrants{m: map[string]restoreGrant{}, now: c.Now}}
-	return append(append(append(s.secretMethods(), s.importMethod()), s.backupMethods()...), []Method{
+}
+
+// StackLifeMethods are stack.status, stack.deploy, stack.update,
+// stack.control, stack.remove, stack.secrets.set and stack.secrets.reveal.
+func StackLifeMethods(c StackConfig) []Method {
+	s := newStacks(c)
+	return append(append(append(s.secretMethods(), s.importMethod(), s.scheduleMethod()), s.backupMethods()...), []Method{
 		{Name: "stack.status", Handle: s.status},
 		{Name: "stack.deploy", Privileged: true, Action: ActionStackDeploy, Timeout: StackTimeout,
 			Check: func(ctx context.Context, p json.RawMessage) error {
@@ -627,6 +648,10 @@ func (s *stacks) remove(ctx context.Context, _ Caller, p json.RawMessage) (any, 
 	}
 	if _, err := s.run(ctx, v.Name, verb); err != nil {
 		return nil, err
+	}
+	// Its schedule goes with it; archives stay.
+	if err := s.unschedule(ctx, v.Name); err != nil {
+		return nil, Errorf(CodeFailed, "the containers are gone, but the backup schedule could not be removed")
 	}
 	if err := s.c.Store.Remove(v.Name); err != nil {
 		return nil, Errorf(CodeFailed, "the containers are gone, but the stack's files could not be removed")

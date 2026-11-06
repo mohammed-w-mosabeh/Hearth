@@ -99,7 +99,7 @@ func (s StackStore) open(name string, create bool) (*os.Root, error) {
 }
 
 // stackFiles are the names a stack folder may hold.
-var stackFiles = map[string]bool{FileSpec: true, FileCompose: true, FileSecrets: true, FileArgs: true}
+var stackFiles = map[string]bool{FileSpec: true, FileCompose: true, FileSecrets: true, FileArgs: true, FileBackup: true}
 
 // Write replaces files of a stack atomically, each 0600: a temporary file
 // made with O_EXCL, synced, renamed over the old one, then the folder

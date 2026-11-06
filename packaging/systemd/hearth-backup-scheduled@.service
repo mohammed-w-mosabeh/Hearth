@@ -1,0 +1,55 @@
+[Unit]
+Description=Hearth: scheduled backup of the app %i
+Documentation=https://github.com/mohammed-w-mosabeh/hearth
+# Started only by hearth-backup-%i.timer, which hearth-broker writes when
+# the owner sets a schedule through stack.backup.schedule, after polkit
+# (SECURITY S12d). %i is a stack name: a-z, 0-9, - and _ only. The settings
+# it reads are the root-owned backup.json the broker saved with the timer.
+ConditionPathExists=/var/lib/hearth/stacks/%i/backup.json
+
+[Service]
+Type=oneshot
+# The broker's own steps, as stack.backup runs them: the path check, the
+# plan, hearth-backup@%i (the fixed tar), the manifest and retention. No
+# script is involved; the stack's lock file keeps it apart from the broker.
+ExecStart=/usr/bin/hearth-broker scheduled-backup %i
+StandardOutput=journal
+StandardError=journal
+Environment=LC_ALL=C
+UMask=0077
+TimeoutStartSec=7h
+
+# --- Hardening (SECURITY.md "systemd hardening") ---
+# As the broker, but less: no capability at all. It talks to Docker, the
+# system bus (to start hearth-stack@ and hearth-backup@, which root may do
+# without polkit) and the path check, all Unix sockets, and writes only
+# Hearth's state: the stack's args, its backup folder and the audit log.
+CapabilityBoundingSet=
+AmbientCapabilities=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/hearth
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=no
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+KeyringMode=private
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+MemoryMax=128M
+TasksMax=32

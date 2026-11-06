@@ -197,10 +197,43 @@ export interface BackupEntry {
   warning?: string;
 }
 
+export interface BackupSchedule {
+  on_calendar: string;
+  keep: number;
+  stop_first: boolean;
+  include: string[];
+}
+
+export interface BackupLast {
+  at: string;
+  scheduled: boolean;
+  ok: boolean;
+  archive?: string;
+  error?: string;
+}
+
 export interface BackupList {
   name: string;
   dir: string;
   archives: BackupEntry[];
+  schedule: BackupSchedule | null;
+  last: BackupLast | null;
+  next: number[];
+}
+
+/** Schedule presets, as OnCalendar expressions; anything else is custom. */
+export const schedulePresets = {
+  daily: '*-*-* 03:00:00',
+  weekly: 'Sun *-*-* 03:00:00',
+  monthly: '*-*-01 03:00:00',
+} as const;
+export type SchedulePreset = keyof typeof schedulePresets | 'off' | 'custom';
+
+/** Which preset a saved schedule is. */
+export function presetOf(s: BackupSchedule | null): SchedulePreset {
+  if (!s || s.on_calendar === '') return 'off';
+  for (const [k, v] of Object.entries(schedulePresets)) if (v === s.on_calendar) return k as SchedulePreset;
+  return 'custom';
 }
 
 /** The query of a backup preview: how many to keep, and the binds on

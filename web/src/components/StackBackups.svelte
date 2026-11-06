@@ -5,7 +5,7 @@
   import { failure } from '../lib/errors';
   import { bytes } from '../lib/format';
   import { locale, t } from '../lib/i18n';
-  import { backupQuery, otherFS, type BackupList, type BackupPreview } from '../lib/stacks';
+  import { backupQuery, otherFS, presetOf, schedulePresets, type BackupList, type BackupPreview, type SchedulePreset } from '../lib/stacks';
   import { toast } from '../lib/toast.svelte';
 
   // An app's backups (ROADMAP 9.10): the archives, newest first, and Back
@@ -24,9 +24,19 @@
   let busy = $state(false);
   let confirming = $state.raw<{ action: 'backup' | 'restore'; plan: Plan; params: Record<string, string> } | null>(null);
 
+  // The schedule's form, filled from the saved one on each load.
+  let preset = $state<SchedulePreset>('off');
+  let custom = $state('');
+  let schedKeep = $state(7);
+  let schedStop = $state(true);
+
   async function load(): Promise<void> {
     try {
       list = await api<BackupList>(`/app-backups/${encodeURIComponent(name)}`);
+      preset = presetOf(list.schedule);
+      custom = list.schedule?.on_calendar ?? '';
+      schedKeep = list.schedule?.keep ?? 7;
+      schedStop = list.schedule?.stop_first ?? true;
       error = '';
     } catch (err) {
       error = failure(err, 'stacks.backupsError');
@@ -99,6 +109,23 @@
     }
   }
 
+  async function saveSchedule(): Promise<void> {
+    const cal = preset === 'off' ? '' : preset === 'custom' ? custom.trim() : schedulePresets[preset];
+    busy = true;
+    toast(t('docker.authHint'));
+    try {
+      report(
+        await run('stack', 'schedule', name, { on_calendar: cal, keep: String(schedKeep), stop: schedStop ? 'true' : 'false' }),
+        t(cal ? 'stacks.scheduleSaved' : 'stacks.scheduleOff', { name }),
+      );
+      await load();
+    } catch (err) {
+      toast(failure(err, 'action.failed'), { tone: 'error' });
+    } finally {
+      busy = false;
+    }
+  }
+
   function when(iso: string): string {
     const d = new Date(iso);
     return Number.isNaN(d.getTime()) ? iso : d.toLocaleString(locale('en-GB'), { dateStyle: 'medium', timeStyle: 'short' });
@@ -154,6 +181,42 @@
 {/if}
 
 {#if list}
+  <div class="schedule">
+    <p class="muted">
+      {#if list.schedule}
+        {t('stacks.scheduled', { when: list.schedule.on_calendar })}{#if list.next[0] !== undefined} · {t('stacks.nextRun', { when: when(new Date(list.next[0]).toISOString()) })}{/if}
+      {:else}
+        {t('stacks.notScheduled')}
+      {/if}
+    </p>
+    {#if list.last}
+      <p class={list.last.ok ? 'muted' : 'danger'} role={list.last.ok ? undefined : 'note'}>
+        {#if !list.last.ok}<span aria-hidden="true">▲</span>{/if}
+        {t(list.last.ok ? 'stacks.lastOk' : 'stacks.lastFailed', { when: when(list.last.at), why: list.last.error ?? '' })}
+      </p>
+    {/if}
+    <div class="row">
+      <label class="check">
+        {t('stacks.schedule')}
+        <select bind:value={preset}>
+          <option value="off">{t('stacks.schedule.off')}</option>
+          <option value="daily">{t('stacks.schedule.daily')}</option>
+          <option value="weekly">{t('stacks.schedule.weekly')}</option>
+          <option value="monthly">{t('stacks.schedule.monthly')}</option>
+          <option value="custom">{t('stacks.schedule.custom')}</option>
+        </select>
+      </label>
+      {#if preset === 'custom'}
+        <input type="text" class="cal" bind:value={custom} placeholder="Mon..Fri 22:00" aria-label={t('stacks.schedule.custom')} />
+      {/if}
+      {#if preset !== 'off'}
+        <label class="check">{t('stacks.keep')} <input type="number" min="1" max="30" bind:value={schedKeep} /></label>
+        <label class="check"><input type="checkbox" bind:checked={schedStop} /> {t('stacks.stopFirst')}</label>
+      {/if}
+      <button type="button" class="plain" disabled={busy || (preset === 'custom' && custom.trim() === '')} onclick={saveSchedule}>{t('stacks.scheduleSave')}</button>
+    </div>
+  </div>
+
   <ul class="list archives">
     {#each list.archives as a (a.archive)}
       <li>
@@ -216,6 +279,29 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-1);
+  }
+  .schedule {
+    display: grid;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
+    font-size: 13px;
+  }
+  .schedule p {
+    margin: 0;
+  }
+  select,
+  .cal {
+    font: inherit;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-s);
+    padding: 0 var(--space-1);
+  }
+  .cal {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    min-width: 12em;
   }
   input[type='number'] {
     font: inherit;

@@ -124,6 +124,9 @@ type BackupList struct {
 	Name     string        `json:"name"`
 	Dir      string        `json:"dir"`
 	Archives []BackupEntry `json:"archives"`
+	// Schedule is nil when there is none; Last nil before a first backup.
+	Schedule *BackupSchedule `json:"schedule"`
+	Last     *BackupLast     `json:"last"`
 }
 
 // StackRestorePreviewParams is stack.restore.preview's params.
@@ -456,40 +459,51 @@ func (s *stacks) backup(ctx context.Context, _ Caller, p json.RawMessage) (any, 
 		return nil, err
 	}
 	defer s.locks.lock(v.Name)()
-	pl, err := s.planBackup(ctx, v)
+	res, err := s.doBackup(ctx, v)
+	s.recordLast(v.Name, false, res, err)
 	if err != nil {
 		return nil, err
 	}
+	return res, nil
+}
+
+// doBackup makes one backup of v.Name, the stack's lock held: on request
+// (stack.backup) or on its schedule (ScheduledBackup).
+func (s *stacks) doBackup(ctx context.Context, v StackBackupParams) (BackupResult, error) {
+	pl, err := s.planBackup(ctx, v)
+	if err != nil {
+		return BackupResult{}, err
+	}
 	if !pl.preview.Enough {
-		return nil, Errorf(CodeRefused, "not enough free space for the backup")
+		return BackupResult{}, Errorf(CodeRefused, "not enough free space for the backup")
 	}
 	dir, err := s.backupFolder(v.Name)
 	if err != nil {
-		return nil, Errorf(CodeFailed, "the backup folder could not be made")
+		return BackupResult{}, Errorf(CodeFailed, "the backup folder could not be made")
 	}
 	defer func() { _ = dir.Close() }()
 	now := s.c.Now()
 	stamp := backup.Stamp(now)
 	if _, err := dir.Lstat(backup.ArchiveName(stamp)); err == nil {
-		return nil, Errorf(CodeConflict, "a backup was made this second; try again")
+		return BackupResult{}, Errorf(CodeConflict, "a backup was made this second; try again")
 	}
 	plan := backup.Plan{Stack: v.Name, Output: backup.PartialName(stamp), Paths: pl.paths}
 	if err := plan.Check(); err != nil {
-		return nil, Errorf(CodeRefused, "%s", err.Error())
+		return BackupResult{}, Errorf(CodeRefused, "%s", err.Error())
 	}
 	b, err := json.Marshal(plan)
 	if err != nil {
-		return nil, err
+		return BackupResult{}, err
 	}
 	if err := writeAtomic(dir, backup.PlanFile, b); err != nil {
-		return nil, Errorf(CodeFailed, "the backup plan could not be written")
+		return BackupResult{}, Errorf(CodeFailed, "the backup plan could not be written")
 	}
 	defer func() { _ = dir.Remove(backup.PlanFile) }()
 
 	stopped := false
 	if v.StopFirst && pl.preview.Running {
 		if _, err := s.run(ctx, v.Name, "stop"); err != nil {
-			return nil, err
+			return BackupResult{}, err
 		}
 		stopped = true
 	}
@@ -506,12 +520,12 @@ func (s *stacks) backup(ctx context.Context, _ Caller, p json.RawMessage) (any, 
 	}
 	if runErr != nil {
 		_ = dir.Remove(plan.Output)
-		return nil, Errorf(CodeFailed, "the backup failed (journal of %s)%s", BackupUnit(v.Name), startedAgain(stopped, startErr))
+		return BackupResult{}, Errorf(CodeFailed, "the backup failed (journal of %s)%s", BackupUnit(v.Name), startedAgain(stopped, startErr))
 	}
 	sum, size, err := backup.FileSHA256(s.backupRoots(), v.Name, plan.Output)
 	if err != nil {
 		_ = dir.Remove(plan.Output)
-		return nil, Errorf(CodeFailed, "the archive could not be read back%s", startedAgain(stopped, startErr))
+		return BackupResult{}, Errorf(CodeFailed, "the archive could not be read back%s", startedAgain(stopped, startErr))
 	}
 	_, raw, _, _ := s.stored(v.Name)
 	vols := []backup.Volume{}
@@ -525,16 +539,16 @@ func (s *stacks) backup(ctx context.Context, _ Caller, p json.RawMessage) (any, 
 		Volumes: vols, Binds: pl.preview.Binds, Secrets: pl.preview.Secrets, Warning: warning}
 	mb, err := json.Marshal(m)
 	if err != nil {
-		return nil, err
+		return BackupResult{}, err
 	}
 	if err := writeAtomic(dir, backup.ManifestName(stamp), mb); err != nil {
 		_ = dir.Remove(plan.Output)
-		return nil, Errorf(CodeFailed, "the manifest could not be written%s", startedAgain(stopped, startErr))
+		return BackupResult{}, Errorf(CodeFailed, "the manifest could not be written%s", startedAgain(stopped, startErr))
 	}
 	if err := dir.Rename(plan.Output, m.Archive); err != nil {
 		_ = dir.Remove(backup.ManifestName(stamp))
 		_ = dir.Remove(plan.Output)
-		return nil, Errorf(CodeFailed, "the archive could not be named%s", startedAgain(stopped, startErr))
+		return BackupResult{}, Errorf(CodeFailed, "the archive could not be named%s", startedAgain(stopped, startErr))
 	}
 	removed := []string{}
 	for _, old := range backup.Prune(s.archives(v.Name), v.Keep) {
@@ -548,7 +562,7 @@ func (s *stacks) backup(ctx context.Context, _ Caller, p json.RawMessage) (any, 
 		_ = d.Close()
 	}
 	if startErr != nil {
-		return nil, Errorf(CodeFailed, "the backup %s was made, but the app did not start again: %v", m.Archive, startErr)
+		return BackupResult{}, Errorf(CodeFailed, "the backup %s was made, but the app did not start again: %v", m.Archive, startErr)
 	}
 	return BackupResult{Archive: m.Archive, Size: size, Warning: warning, Removed: removed}, nil
 }
@@ -618,7 +632,7 @@ func (s *stacks) backupList(_ context.Context, _ Caller, p json.RawMessage) (any
 	if !spec.ValidName(v.Name) {
 		return nil, badParam("not a stack name")
 	}
-	out := BackupList{Name: v.Name, Dir: backup.StackDir(v.Name), Archives: []BackupEntry{}}
+	out := BackupList{Name: v.Name, Dir: backup.StackDir(v.Name), Archives: []BackupEntry{}, Schedule: s.schedule(v.Name), Last: s.last(v.Name)}
 	names := s.archives(v.Name)
 	slices.Reverse(names)
 	for _, a := range names {

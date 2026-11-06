@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Project } from './docker';
-import { addresses, backupQuery, detected, dryRunQuery, exposure, logSources, otherFS, restartPolicies, serviceCount, shape, storage, type BackupPreview, type StackInfo } from './stacks';
+import { addresses, backupQuery, detected, dryRunQuery, exposure, logSources, otherFS, presetOf, restartPolicies, serviceCount, shape, storage, type BackupPreview, type StackInfo } from './stacks';
 
 function app(over: Partial<StackInfo> = {}): StackInfo {
   return {
@@ -84,5 +84,13 @@ describe('backups', () => {
   it('finds the binds on another filesystem', () => {
     const p = { binds: [{ real: '/a', other_fs: true }, { real: '/b' }] } as unknown as BackupPreview;
     expect(otherFS(p).map((b) => b.real)).toEqual(['/a']);
+  });
+});
+
+describe('backup schedule', () => {
+  it('names presets', () => {
+    expect(presetOf(null)).toBe('off');
+    expect(presetOf({ on_calendar: 'Sun *-*-* 03:00:00', keep: 7, stop_first: true, include: [] })).toBe('weekly');
+    expect(presetOf({ on_calendar: 'Mon..Fri 22:00', keep: 7, stop_first: true, include: [] })).toBe('custom');
   });
 });

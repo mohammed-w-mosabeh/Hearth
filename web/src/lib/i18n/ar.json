@@ -2219,5 +2219,19 @@
   "stacks.backupBody": "يذهب الأرشيف إلى مجلد النسخ الاحتياطية في Hearth، ويُحذف الأقدم بعد العدد المحفوظ.",
   "stacks.backupRunning": "جارٍ النسخ الاحتياطي؛ قد يستغرق ذلك وقتًا.",
   "stacks.backedUp": "نُسخ {name} احتياطيًا.",
-  "stacks.restored": "استُعيد {name}."
+  "stacks.restored": "استُعيد {name}.",
+  "stacks.schedule": "نسخ احتياطي مجدول",
+  "stacks.schedule.off": "متوقف",
+  "stacks.schedule.daily": "يوميًا الساعة 03:00",
+  "stacks.schedule.weekly": "أيام الأحد الساعة 03:00",
+  "stacks.schedule.monthly": "شهريًا، في اليوم الأول الساعة 03:00",
+  "stacks.schedule.custom": "مخصص (تقويم systemd)",
+  "stacks.scheduleSave": "حفظ الجدول",
+  "stacks.scheduleSaved": "يُنسخ {name} احتياطيًا وفق جدوله.",
+  "stacks.scheduleOff": "لم يعد {name} يُنسخ احتياطيًا وفق جدول.",
+  "stacks.scheduled": "يُنسخ احتياطيًا وفق {when}",
+  "stacks.nextRun": "التالي {when}",
+  "stacks.notScheduled": "لا جدول: لا يجري النسخ الاحتياطي إلا حين تبدؤه.",
+  "stacks.lastOk": "آخر نسخة {when}: تمت.",
+  "stacks.lastFailed": "فشلت آخر نسخة {when}: {why}"
 }

@@ -113,7 +113,7 @@ func newLifeRigWith(t *testing.T, more func(r *lifeRig, c *StackConfig)) *lifeRi
 		}
 		return errors.New("unknown args " + string(args))
 	}
-	c := StackConfig{Store: r.store, Paths: r.paths, Engine: r.engine, Run: run, ProcRoot: r.proc}
+	c := StackConfig{Store: r.store, Paths: r.paths, Engine: r.engine, Run: run, ProcRoot: r.proc, UnitDir: t.TempDir()}
 	if more != nil {
 		more(r, &c)
 	}

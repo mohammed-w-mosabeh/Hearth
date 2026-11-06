@@ -54,10 +54,45 @@ func main() {
 		}
 		return
 	}
+	// hearth-backup-scheduled@<stack>, started by the stack's timer: one
+	// backup with the settings the owner saved (SECURITY S12d).
+	if len(os.Args) == 3 && os.Args[1] == "scheduled-backup" {
+		if err := scheduledBackup(os.Args[2]); err != nil {
+			log.Error("scheduled backup failed", "error", err.Error())
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(log); err != nil {
 		log.Error(err.Error())
 		os.Exit(1)
 	}
+}
+
+// stackConfig is the stacks' configuration, the broker's and a scheduled
+// backup's alike.
+func stackConfig(dockerAPI *broker.Docker, audit broker.Auditor) broker.StackConfig {
+	return broker.StackConfig{Paths: broker.PathChecker{}, Engine: dockerAPI, Volumes: dockerAPI, Audit: audit,
+		Bus: func(ctx context.Context) (broker.SystemBus, error) {
+			c, err := dbusx.SystemBus(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return c, nil
+		}}
+}
+
+func scheduledBackup(stack string) error {
+	if os.Geteuid() != 0 {
+		return errors.New("runs as root, started by its timer")
+	}
+	if !spec.ValidName(stack) {
+		return errors.New("not a stack name")
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	defer stop()
+	audit := &broker.FileAudit{Path: filepath.Join(stateDir, "audit.jsonl"), MaxBytes: 8 << 20}
+	return broker.ScheduledBackup(ctx, stackConfig(broker.NewDocker(broker.DockerSocket), audit), stack)
 }
 
 // unitStep runs one backup or restore of stack with tar through safeexec.
@@ -104,14 +139,7 @@ func run(log *slog.Logger) error {
 			return c, nil
 		}})...)
 	methods = append(methods, broker.StackMethods()...)
-	methods = append(methods, broker.StackLifeMethods(broker.StackConfig{Paths: broker.PathChecker{}, Engine: dockerAPI, Volumes: dockerAPI, Audit: audit,
-		Bus: func(ctx context.Context) (broker.SystemBus, error) {
-			c, err := dbusx.SystemBus(ctx)
-			if err != nil {
-				return nil, err
-			}
-			return c, nil
-		}})...)
+	methods = append(methods, broker.StackLifeMethods(stackConfig(dockerAPI, audit))...)
 	methods = append(methods, broker.PackageMethods(safeexec.Run)...)
 	methods = append(methods, broker.SpaceMethods(safeexec.Run, broker.AptArchives)...)
 	methods = append(methods, broker.SmartMethods(safeexec.Run, broker.SysRoot)...)

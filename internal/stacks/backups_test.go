@@ -3,6 +3,7 @@ package stacks
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/actions"
 	"github.com/mohammed-w-mosabeh/hearth/internal/broker"
+	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
 	"github.com/mohammed-w-mosabeh/hearth/internal/stacks/backup"
 )
 
@@ -151,7 +153,7 @@ func TestBackupRoutes(t *testing.T) {
 	_, fb := backupRig(t)
 	fb.list = broker.BackupList{Name: "web", Dir: backup.StackDir("web"), Archives: []broker.BackupEntry{{Archive: "20261106T100000Z.tar.zst"}}}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/v1/app-backups/{name}", HandleBackups(fb))
+	mux.HandleFunc("GET /api/v1/app-backups/{name}", HandleBackups(fb, nil))
 	mux.HandleFunc("GET /api/v1/app-backups/{name}/preview", HandleBackupPreview(fb))
 	get := func(path string) *httptest.ResponseRecorder {
 		w := httptest.NewRecorder()
@@ -180,5 +182,62 @@ func TestSize(t *testing.T) {
 		if got := Size(n); got != want {
 			t.Errorf("%d: %s", n, got)
 		}
+	}
+}
+
+func fakeAnalyze(_ context.Context, name string, args ...string) (safeexec.Result, error) {
+	if name != "calendar-check" || args[len(args)-1] == "never" {
+		return safeexec.Result{Stderr: []byte("Failed to parse calendar specification 'never'")}, errors.New("exit 1")
+	}
+	return safeexec.Result{Stdout: []byte("  Original form: daily\nNormalized form: *-*-* 00:00:00\n    Next elapse: Sat 2026-11-07 00:00:00 UTC\n       (in UTC): Sat 2026-11-07 00:00:00 UTC\n")}, nil
+}
+
+func TestScheduleAction(t *testing.T) {
+	_, fb := backupRig(t)
+	reg := actions.NewRegistry(nil)
+	RegisterSchedule(reg, fb, fakeAnalyze)
+	r := actions.Request{Target: "web", Params: map[string]string{"on_calendar": "daily", "keep": "5", "stop": "true"}}
+	a, _ := reg.Lookup(Kind + "/schedule")
+	if err := a.Validate(r); err != nil {
+		t.Fatal(err)
+	}
+	p, err := a.Plan(context.Background(), r)
+	if err != nil || len(p.Blocked) != 0 || !strings.Contains(p.Summary, "*-*-* 00:00:00, keeping 5; the app is stopped") {
+		t.Fatalf("%+v %v", p, err)
+	}
+	if _, err := a.Run(context.Background(), r, p); err != nil {
+		t.Fatal(err)
+	}
+	var sent broker.StackScheduleParams
+	if err := json.Unmarshal([]byte(fb.lastBody), &sent); err != nil || fb.asked[len(fb.asked)-1] != "stack.backup.schedule" {
+		t.Fatalf("sent %s", fb.lastBody)
+	}
+	if sent.OnCalendar != "daily" || sent.Keep != 5 || !sent.StopFirst {
+		t.Fatalf("params %+v", sent)
+	}
+	r.Params["on_calendar"] = "never"
+	if p, _ := a.Plan(context.Background(), r); len(p.Blocked) != 1 || p.State != nil || !strings.Contains(p.Blocked[0].Detail, "Failed to parse") {
+		t.Fatalf("%+v", p)
+	}
+	for _, bad := range []string{"daily\nExecStart=/bin/sh", " daily", "daily;rm"} {
+		if a.Validate(actions.Request{Target: "web", Params: map[string]string{"on_calendar": bad}}) == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+	off := actions.Request{Target: "web", Params: map[string]string{"on_calendar": ""}}
+	if p, err := a.Plan(context.Background(), off); err != nil || p.State.(scheduleState).Params.OnCalendar != "" {
+		t.Fatalf("off: %+v %v", p, err)
+	}
+}
+
+func TestBackupsNextRuns(t *testing.T) {
+	_, fb := backupRig(t)
+	fb.list = broker.BackupList{Name: "web", Archives: []broker.BackupEntry{}, Schedule: &broker.BackupSchedule{OnCalendar: "daily", Keep: 7}}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/app-backups/web", nil)
+	r.SetPathValue("name", "web")
+	HandleBackups(fb, fakeAnalyze)(w, r)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"next":[1794009600000]`) || !strings.Contains(w.Body.String(), `"on_calendar":"daily"`) {
+		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 }

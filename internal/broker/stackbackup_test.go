@@ -4,14 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/godbus/dbus/v5"
+	"golang.org/x/sys/unix"
+
 	"github.com/mohammed-w-mosabeh/hearth/internal/pathcheck"
+	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
 	"github.com/mohammed-w-mosabeh/hearth/internal/stacks/backup"
 )
 
@@ -34,6 +40,10 @@ func (f fakeVolumes) BackupVolumes(_ context.Context, names []string) (map[strin
 
 type backupRig struct {
 	*lifeRig
+	cfg      StackConfig
+	bus      *recBus
+	units    string
+	audited  []AuditRecord
 	dir      string
 	free     uint64
 	vols     fakeVolumes
@@ -58,10 +68,22 @@ func newBackupRig(t *testing.T) *backupRig {
 		r.Sizes = map[string]pathcheck.Size{"/srv/site": {Bytes: 100}, "/mnt/disk/media": {Bytes: 5000, Partial: true}}
 		return r, nil
 	}
+	b.bus = &recBus{}
+	b.units = t.TempDir()
 	b.lifeRig = newLifeRigWith(t, func(_ *lifeRig, c *StackConfig) {
 		c.Measure, c.Volumes, c.Backups = measure, b.vols, b.dir
 		c.FreeSpace = func(string) (uint64, error) { return b.free, nil }
 		c.Now = func() time.Time { return b.clock }
+		c.UnitDir = b.units
+		c.Bus = func(context.Context) (SystemBus, error) { return b.bus, nil }
+		c.Analyze = func(_ context.Context, name string, args ...string) (safeexec.Result, error) {
+			if name != "calendar-check" || args[len(args)-1] == "never" {
+				return safeexec.Result{ExitCode: 1}, errors.New("exit 1")
+			}
+			return safeexec.Result{}, nil
+		}
+		c.Audit = auditFunc(func(r AuditRecord) { b.audited = append(b.audited, r) })
+		b.cfg = *c
 	})
 	b.unit = func(unit string) error {
 		if b.unitErr != nil {
@@ -255,8 +277,12 @@ func TestStackBackupUnitFails(t *testing.T) {
 		t.Fatalf("the app was not started again: %v", b.ran)
 	}
 	entries, _ := os.ReadDir(filepath.Join(b.dir, "web"))
-	if len(entries) != 0 {
+	if len(entries) != 1 || entries[0].Name() != ".last.json" {
 		t.Fatalf("left %v", entries)
+	}
+	list, _ := b.call(t, "stack.backup.list", map[string]any{"name": "web"})
+	if l := list.(BackupList).Last; l == nil || l.OK || l.Scheduled || !strings.Contains(l.Error, "the backup failed") {
+		t.Fatalf("last %+v", l)
 	}
 }
 
@@ -431,4 +457,136 @@ func mustJSON(t *testing.T, v any) json.RawMessage {
 		t.Fatal(err)
 	}
 	return b
+}
+
+type recBus struct{ calls []string }
+
+func (b *recBus) Call(_ context.Context, _ string, _ dbus.ObjectPath, method string, _ []any, args ...any) error {
+	b.calls = append(b.calls, strings.TrimPrefix(method, sdManager+".")+strings.TrimSuffix(fmt.Sprintln(args...), "\n"))
+	return nil
+}
+
+func (b *recBus) GetAll(context.Context, string, dbus.ObjectPath, string) (map[string]dbus.Variant, error) {
+	return nil, errors.New("not here")
+}
+
+func (b *recBus) Close() error { return nil }
+
+type auditFunc func(AuditRecord)
+
+func (f auditFunc) Record(r AuditRecord) { f(r) }
+
+func TestStackBackupSchedule(t *testing.T) {
+	b := newBackupRig(t)
+	m := b.methods["stack.backup.schedule"]
+	if !m.Privileged || m.Action != ActionStackBackup {
+		t.Fatal("schedule is not behind the backup action")
+	}
+	for name, params := range map[string]map[string]any{
+		"injection":   {"name": "web", "on_calendar": "daily\nExecStart=/bin/sh"},
+		"unit line":   {"name": "web", "on_calendar": "daily [Service]"},
+		"meaningless": {"name": "web", "on_calendar": "never"},
+		"keep":        {"name": "web", "on_calendar": "daily", "keep": 40},
+		"not a bind":  {"name": "web", "on_calendar": "daily", "include": []string{"/etc"}},
+		"no stack":    {"name": "db", "on_calendar": "daily"},
+		"bad name":    {"name": "web.timer", "on_calendar": "daily"},
+	} {
+		if err := m.Check(context.Background(), mustJSON(t, params)); errCode(err) != CodeBadParams {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if len(b.bus.calls) != 0 {
+		t.Fatalf("bus used before polkit: %v", b.bus.calls)
+	}
+	if _, err := b.call(t, "stack.backup.schedule", map[string]any{"name": "web", "on_calendar": "Sun *-*-* 03:00", "keep": 5, "stop_first": true}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(b.units, "hearth-backup-web.timer"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"OnCalendar=Sun *-*-* 03:00\n", "Unit=hearth-backup-scheduled@web.service\n", "Persistent=true"} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("timer lacks %q:\n%s", want, raw)
+		}
+	}
+	if strings.Contains(string(raw), "Exec") {
+		t.Fatal("the timer holds a command")
+	}
+	want := []string{"Reload", "EnableUnitFiles[hearth-backup-web.timer] false true", "RestartUnithearth-backup-web.timer replace"}
+	if !slices.Equal(b.bus.calls, want) {
+		t.Fatalf("bus %q", b.bus.calls)
+	}
+	list, _ := b.call(t, "stack.backup.list", map[string]any{"name": "web"})
+	if sc := list.(BackupList).Schedule; sc == nil || sc.OnCalendar != "Sun *-*-* 03:00" || sc.Keep != 5 || !sc.StopFirst {
+		t.Fatalf("schedule %+v", sc)
+	}
+	// Off: the timer and the settings go.
+	b.bus.calls = nil
+	if _, err := b.call(t, "stack.backup.schedule", map[string]any{"name": "web", "on_calendar": ""}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(b.units, "hearth-backup-web.timer")); err == nil {
+		t.Fatal("the timer stayed")
+	}
+	if _, err := b.store.Read("web", FileBackup); err == nil {
+		t.Fatal("the settings stayed")
+	}
+	if len(b.bus.calls) != 3 || !strings.HasPrefix(b.bus.calls[0], "StopUnit") {
+		t.Fatalf("bus %q", b.bus.calls)
+	}
+}
+
+func TestScheduledBackup(t *testing.T) {
+	b := newBackupRig(t)
+	if err := ScheduledBackup(context.Background(), b.cfg, "web"); err == nil {
+		t.Fatal("ran without a schedule")
+	}
+	if _, err := b.call(t, "stack.backup.schedule", map[string]any{"name": "web", "on_calendar": "daily", "keep": 3, "stop_first": true,
+		"include": []string{"/mnt/disk/media"}}); err != nil {
+		t.Fatal(err)
+	}
+	b.ran = nil
+	if err := ScheduledBackup(context.Background(), b.cfg, "web"); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(b.ran, []string{"stop", "start"}) || len(b.plans) != 1 || !slices.Contains(b.plans[0].Paths, "/mnt/disk/media") {
+		t.Fatalf("ran %v, plans %+v", b.ran, b.plans)
+	}
+	list, _ := b.call(t, "stack.backup.list", map[string]any{"name": "web"})
+	l := list.(BackupList)
+	if len(l.Archives) != 1 || l.Last == nil || !l.Last.OK || !l.Last.Scheduled || l.Archives[0].Keep != 3 {
+		t.Fatalf("list %+v", l)
+	}
+	if len(b.audited) == 0 || b.audited[len(b.audited)-1].Method != "stack.backup.scheduled" || !strings.Contains(b.audited[len(b.audited)-1].Result, "web: ok") {
+		t.Fatalf("audit %+v", b.audited)
+	}
+	// Removing the app removes its schedule; the archive stays.
+	if _, err := b.call(t, "stack.remove", map[string]any{"name": "web"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(b.units, "hearth-backup-web.timer")); err == nil {
+		t.Fatal("the timer outlived the app")
+	}
+	if _, err := os.Stat(filepath.Join(b.dir, "web", l.Archives[0].Archive)); err != nil {
+		t.Fatal("the archive went with the app")
+	}
+}
+
+func TestStackLockIsAFile(t *testing.T) {
+	dir := t.TempDir()
+	l := &stackLocks{m: map[string]*sync.Mutex{}, dir: dir}
+	unlock := l.lock("web")
+	f, err := os.OpenFile(filepath.Join(dir, ".web.lock"), os.O_RDWR, 0) // #nosec G304 -- a test's temporary folder
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err == nil {
+		t.Fatal("another holder got the lock")
+	}
+	unlock()
+	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		t.Fatalf("not released: %v", err)
+	}
 }

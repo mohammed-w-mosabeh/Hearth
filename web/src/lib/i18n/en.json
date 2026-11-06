@@ -2219,5 +2219,19 @@
   "stacks.backupBody": "The archive goes to Hearth's backup folder; the oldest past the number kept are removed.",
   "stacks.backupRunning": "Backing up; this can take a while.",
   "stacks.backedUp": "{name} is backed up.",
-  "stacks.restored": "{name} is restored."
+  "stacks.restored": "{name} is restored.",
+  "stacks.schedule": "Back up on a schedule",
+  "stacks.schedule.off": "Off",
+  "stacks.schedule.daily": "Daily at 03:00",
+  "stacks.schedule.weekly": "Sundays at 03:00",
+  "stacks.schedule.monthly": "Monthly, on the 1st at 03:00",
+  "stacks.schedule.custom": "Custom (systemd calendar)",
+  "stacks.scheduleSave": "Save schedule",
+  "stacks.scheduleSaved": "{name} is backed up on its schedule.",
+  "stacks.scheduleOff": "{name} is no longer backed up on a schedule.",
+  "stacks.scheduled": "Backed up on {when}",
+  "stacks.nextRun": "next {when}",
+  "stacks.notScheduled": "No schedule: backups run only when you start one.",
+  "stacks.lastOk": "Last backup {when}: done.",
+  "stacks.lastFailed": "Last backup {when} failed: {why}"
 }

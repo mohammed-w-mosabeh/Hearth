@@ -669,6 +669,15 @@ check "a restore without a preview is refused" call_says 'preview it again' stac
 check "a path as an archive name is refused" call_says 'not an archive name' stack.restore.preview '{"name":"probe","archive":"../x/20261106T000000Z.tar.zst"}'
 check "a listing of no backups is empty" call_says '"archives":\[\]' stack.backup.list '{"name":"probe"}'
 check "no backup folder was made" not test -e /var/lib/hearth/backups
+echo "== scheduled backups (9.11)"
+check "scheduled unit installed" test -f /usr/lib/systemd/system/hearth-backup-scheduled@.service
+check "it holds no capability" test -z "$(systemctl show -p CapabilityBoundingSet --value hearth-backup-scheduled@probe.service | sed 's/^0*$//')"
+check "it cannot see home" test "$(systemctl show -p ProtectHome --value hearth-backup-scheduled@probe.service)" = yes
+systemctl start hearth-backup-scheduled@probe.service 2>/dev/null || true
+check "it does not run without a saved schedule" test "$(systemctl show -p ConditionResult --value hearth-backup-scheduled@probe.service)" = "no"
+check "a schedule for a missing stack is refused" call_says 'no such stack' stack.backup.schedule '{"name":"probe","on_calendar":"daily"}'
+check "a calendar holding a unit line is refused" call_says 'not a calendar expression' stack.backup.schedule '{"name":"probe","on_calendar":"daily\nExecStart=/bin/sh"}'
+check "no timer was written" not test -e /etc/systemd/system/hearth-backup-probe.timer
 echo "== stack import (9.8)"
 imark=ITEST-IMPORT-4d2a
 ispec='{"version":1,"name":"probe","services":{"web":{"image":"nginx:1.27","secrets":["PW","DB_PASSWORD=WEB_DB_PASSWORD"]}}}'
@@ -1151,11 +1160,14 @@ check "still one hearthd" test "$(hearthds)" = 1
 pkill -f hearth-stub-browser || true
 
 echo "== purge"
+# A schedule's timer (9.11), as the broker would leave it: purge removes it.
+printf '[Timer]\nOnCalendar=daily\nUnit=hearth-backup-scheduled@probe.service\n' >/etc/systemd/system/hearth-backup-probe.timer
 # An app backup (9.10): purge keeps it, and only it.
 mkdir -p -m 0700 /var/lib/hearth/backups/probe
 echo archive >/var/lib/hearth/backups/probe/20261106T000000Z.tar.zst
 touch /var/lib/hearth/backups/probe/.plan.json
 purge_out=$(apt-get purge -y -qq hearth 2>&1 >/dev/null || true)
+check "purge removes backup timers" not test -e /etc/systemd/system/hearth-backup-probe.timer
 check "purge keeps app backups" test -f /var/lib/hearth/backups/probe/20261106T000000Z.tar.zst
 check "and says so" grep -q 'app backups kept in /var/lib/hearth/backups' <<<"$purge_out"
 check "and keeps nothing else" test "$(ls -A /var/lib/hearth)" = backups
@@ -1177,6 +1189,7 @@ for f in /usr/bin/hearth-broker /usr/lib/systemd/system/hearth-broker.socket \
 	/usr/share/polkit-1/actions/org.hearth.policy \
 	/usr/lib/systemd/system/hearth-pathcheck.socket /usr/lib/systemd/system/hearth-pathcheck@.service \
 	/usr/lib/systemd/system/hearth-backup@.service /usr/lib/systemd/system/hearth-restore@.service \
+	/usr/lib/systemd/system/hearth-backup-scheduled@.service \
 	/etc/systemd/system/sockets.target.wants/hearth-broker.socket \
 	/etc/systemd/system/sockets.target.wants/hearth-pathcheck.socket /run/hearth; do
 	check "removed $f" test ! -e "$f"
