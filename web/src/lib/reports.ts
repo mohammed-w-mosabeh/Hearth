@@ -108,6 +108,19 @@ export interface MachineReport {
   disks: Disk[];
   batteries: Battery[];
   covered: number;
+  /** Managed apps when the report was made; absent when unknown. */
+  apps?: ReportApp[];
+}
+
+export interface ReportApp {
+  name: string;
+  state: string;
+  unhealthy: string[];
+  /** The last backup's time and result; absent before a first. */
+  backup?: string;
+  backup_ok: boolean;
+  scheduled: boolean;
+  updates: number;
 }
 
 export interface ItemReport {

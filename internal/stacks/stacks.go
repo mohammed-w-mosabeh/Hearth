@@ -51,7 +51,8 @@ type removeState struct{ Params broker.StackRemoveParams }
 
 // Register adds stack/deploy, stack/start, stack/stop, stack/restart,
 // stack/update, stack/remove, stack/backup and stack/restore.
-func Register(reg *actions.Registry, b Broker, tags docker.TagChecker) {
+// notes, which may be nil, remembers what each update preview found.
+func Register(reg *actions.Registry, b Broker, tags docker.TagChecker, notes *UpdateNotes) {
 	reg.Register(actions.Action{Kind: Kind, Name: "deploy", Risk: actions.Destructive,
 		Validate: func(r actions.Request) error {
 			if !spec.ValidName(r.Target) {
@@ -106,7 +107,7 @@ func Register(reg *actions.Registry, b Broker, tags docker.TagChecker) {
 	reg.Register(actions.Action{Kind: Kind, Name: "update", Risk: actions.Destructive,
 		Validate: nameOnly,
 		Plan: func(ctx context.Context, r actions.Request) (actions.Plan, error) {
-			return planUpdate(ctx, b, tags, r.Target)
+			return planUpdate(ctx, b, tags, notes, r.Target)
 		},
 		Run: func(ctx context.Context, _ actions.Request, p actions.Plan) (actions.Result, error) {
 			st, ok := p.State.(updateState)
@@ -270,7 +271,7 @@ func containerItems(info broker.StackInfo) []actions.Item {
 	return out
 }
 
-func planUpdate(ctx context.Context, b Broker, tags docker.TagChecker, name string) (actions.Plan, error) {
+func planUpdate(ctx context.Context, b Broker, tags docker.TagChecker, notes *UpdateNotes, name string) (actions.Plan, error) {
 	info, p, err := find(ctx, b, name, "update")
 	if err != nil || len(p.Blocked) > 0 {
 		return p, err
@@ -284,6 +285,7 @@ func planUpdate(ctx context.Context, b Broker, tags docker.TagChecker, name stri
 		images[c.Service] = c.ImageID
 	}
 	pins := map[string]string{}
+	unknown := false // a registry not asked: an earlier note stays
 	names := make([]string, 0, len(sp.Services))
 	for n := range sp.Services {
 		names = append(names, n)
@@ -303,10 +305,18 @@ func planUpdate(ctx context.Context, b Broker, tags docker.TagChecker, name stri
 			continue
 		}
 		detail, remote := digestChange(ctx, b, tags, images[n], svc.Image)
+		unknown = unknown || strings.HasSuffix(detail, "unknown")
 		if remote != "" {
 			pins[n] = remote
 		}
 		p.Items = append(p.Items, actions.Item{ID: n, Name: n, Detail: svc.Image + ": " + detail})
+	}
+	found := make([]string, 0, len(pins))
+	for n := range pins {
+		found = append(found, n)
+	}
+	if len(found) > 0 || !unknown {
+		notes.Note(ctx, info, found)
 	}
 	if len(pins) == 0 {
 		p.Summary = name + " is up to date, or its registries could not be asked"

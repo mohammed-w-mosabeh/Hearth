@@ -7,7 +7,6 @@
   import { api } from '../lib/api';
   import type { Forecasts } from '../lib/disks';
   import {
-    RESERVED,
     RULES,
     collect,
     queue,
@@ -24,6 +23,7 @@
   import type { LynisView } from '../lib/lynis';
   import { href } from '../lib/router.svelte';
   import type { Report } from '../lib/security';
+  import type { AppHealth } from '../lib/stacks';
   import { key, type ServicesMsg, type Unit } from '../lib/services';
   import type { Health } from '../lib/smart';
   import { toast } from '../lib/toast.svelte';
@@ -56,6 +56,7 @@
     void load('forecasts', '/forecasts', (r: Forecasts) => r);
     void load('smart', '/disks/health', (r: Health) => r);
     void load('lynis', '/security/lynis', (r: LynisView) => r);
+    void load('apps', '/app-health', (r: AppHealth[]) => r);
   }
 
   $effect(() => {
@@ -226,7 +227,7 @@
       {#if missing.length > 0}
         <p class="warn">{t('health.unchecked', { list: missing.map((f) => t(`health.feed.${f}` as MessageKey)).join(', ') })}</p>
       {/if}
-      <p class="muted">{t('health.reserved', { n: RESERVED.length })}</p>
+      <p class="muted">{t('health.reserved')}</p>
     </div>
   {/if}
 

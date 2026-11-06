@@ -161,6 +161,26 @@ describe('health', () => {
     expect(score([...units, ...smart, item('u', 'updates'), item('f', 'forecast'), item('g', 'forecast')]).score).toBe(0);
   });
 
+  it('counts unhealthy apps, failed backups and found updates', () => {
+    const last = (ok: boolean) => ({ at: '2026-11-06T03:00:00Z', scheduled: true, ok });
+    const items = collect({
+      apps: [
+        { name: 'cloud', state: 'partial', unhealthy: ['cloud-db-1'], backup: last(false), updates: ['web'], scheduled: true },
+        { name: 'wiki', state: 'running', unhealthy: [], backup: last(true), updates: [], scheduled: false },
+        { name: 'new', state: 'stopped', unhealthy: [], backup: null, updates: [], scheduled: false },
+      ],
+    });
+    expect(items.map((i) => [i.id, i.source, i.subject])).toEqual([
+      ['app:cloud', 'app', 'cloud (cloud-db-1)'],
+      ['backup:cloud:2026-11-06T03:00:00Z', 'backup', 'cloud'],
+      ['appUpdate:cloud', 'appUpdate', 'cloud (web)'],
+    ]);
+    expect(items.every((i) => i.action.kind === 'open' && i.action.route === 'stacks')).toBe(true);
+    // 10 + 15 + 5
+    expect(score(items).score).toBe(70);
+    expect(unchecked({ apps: null })).toEqual(['apps']);
+  });
+
   it('lists what it could not read', () => {
     expect(unchecked({ units: null, alerts: [], security: undefined })).toEqual(['units']);
   });

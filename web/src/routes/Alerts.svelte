@@ -134,6 +134,8 @@
     if (e.metric === 'job.failed') return t('alerts.event.job', { name: e.instance });
     if (e.metric === 'container.unhealthy') return t('alerts.event.unhealthy', { name: e.instance });
     if (e.metric === 'container.oom') return t('alerts.event.oom', { name: e.instance });
+    if (e.metric === 'app.unhealthy') return t('alerts.event.app', { name: e.instance });
+    if (e.metric === 'backup.failed') return t('alerts.event.backup', { name: e.instance });
     if (e.metric === 'log.match') return t('alerts.event.log', { pattern: e.instance });
     if (e.metric === 'disk.smart_failing') return t('alerts.event.smart', { name: e.instance });
     if (e.metric === 'usb.new_device') return t('alerts.event.usb', { name: e.instance });

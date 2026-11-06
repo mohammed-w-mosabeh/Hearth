@@ -56,7 +56,7 @@ func backupRig(t *testing.T) (*actions.Registry, *backupBroker) {
 			Secrets: []string{"DB_PASSWORD"}, Binds: []backup.Bind{{Real: "/srv/site", Included: true}}, Flags: []string{}},
 	}
 	reg := actions.NewRegistry(nil)
-	Register(reg, fb, fakeTags{})
+	Register(reg, fb, fakeTags{}, nil)
 	return reg, fb
 }
 

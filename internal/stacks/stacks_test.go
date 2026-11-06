@@ -66,7 +66,7 @@ func rig(t *testing.T, tags fakeTags) (*actions.Registry, *fakeBroker) {
 	fb := &fakeBroker{status: []broker.StackInfo{{Name: "web", SpecSHA256: strings.Repeat("a", 64), Spec: json.RawMessage(testSpec), State: "running",
 		Containers: []broker.StackContainer{{ID: "c1", Name: "web-app-1", Service: "app", State: "running", ImageID: "sha256:" + strings.Repeat("2", 64)}}}}}
 	reg := actions.NewRegistry(nil)
-	Register(reg, fb, tags)
+	Register(reg, fb, tags, nil)
 	return reg, fb
 }
 

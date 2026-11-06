@@ -140,6 +140,15 @@ func MachineMarkdown(m Machine) []byte {
 		w.table([]string{"battery", ">health", ">cycles", ">charge"}, rows)
 	}
 
+	if m.Apps != nil {
+		w.h2("apps")
+		if len(m.Apps) == 0 {
+			w.note("apps.none")
+		} else {
+			w.table([]string{"name", "app.state", "app.unhealthy", "app.backup", "app.scheduled", ">app.updates"}, appRows(m.Apps))
+		}
+	}
+
 	if m.Posture != nil {
 		w.h2("posture")
 		rows := [][]string{}
@@ -213,4 +222,30 @@ func ItemMarkdown(it Item) []byte {
 		w.table([]string{"hour", ">cpu.avg", ">cpu.peak", ">mem.avg", ">mem.peak"}, rows)
 	}
 	return []byte(w.b.String())
+}
+
+func appRows(apps []App) [][]string {
+	rows := make([][]string, 0, len(apps))
+	for _, a := range apps {
+		sick := make([]string, len(a.Unhealthy))
+		for i, c := range a.Unhealthy {
+			sick[i] = md(c)
+		}
+		backup := msg("app.backup.none")
+		if a.Backup != "" {
+			backup = a.Backup
+			if !a.BackupOK {
+				backup += " · " + msg("app.backup.failed")
+			}
+		}
+		sched, updates := msg("no"), ""
+		if a.Scheduled {
+			sched = msg("yes")
+		}
+		if a.Updates > 0 {
+			updates = fmt.Sprint(a.Updates)
+		}
+		rows = append(rows, []string{md(a.Name), md(a.State), strings.Join(sick, ", "), md(backup), sched, updates})
+	}
+	return rows
 }

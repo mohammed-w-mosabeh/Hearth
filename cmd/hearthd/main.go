@@ -528,7 +528,17 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	srv.API.HandleFunc("GET /api/v1/docker/volumes/sizes", docker.HandleVolumeSizes(brokerClient))
 	images := &docker.Images{B: brokerClient, Registry: docker.NewRegistry(), Run: safeexec.Run, CacheDir: filepath.Join(paths.DataDir, "trivy")}
 	docker.RegisterUpdate(reg, brokerClient, images.Registry, safeexec.Run)
-	stacks.Register(reg, brokerClient, images.Registry)
+	appUpdates := &stacks.UpdateNotes{Settings: db}
+	stacks.Register(reg, brokerClient, images.Registry, appUpdates)
+	srv.API.HandleFunc("GET /api/v1/app-health", stacks.HandleHealth(brokerClient, appUpdates))
+	// Managed apps' alerts (9.12): an unhealthy app, a failed backup.
+	appsWatchCtx, stopAppsWatch := context.WithCancel(ctx)
+	appsWatchDone := make(chan struct{})
+	go func() {
+		stacks.Watch(appsWatchCtx, brokerClient, appUpdates, engine.Observe, 2*time.Minute)
+		close(appsWatchDone)
+	}()
+	defer func() { stopAppsWatch(); <-appsWatchDone }()
 	srv.API.HandleFunc("GET /api/v1/stacks", stacks.HandleList(brokerClient))
 	srv.API.HandleFunc("GET /api/v1/stacks/{name}", stacks.HandleOne(brokerClient))
 	srv.API.HandleFunc("GET /api/v1/app-backups/{name}", stacks.HandleBackups(brokerClient, safeexec.Run))
@@ -734,6 +744,9 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		changes.SourceContainers: func(ctx context.Context) (map[string]string, error) {
 			return docker.ContainerImages(ctx, brokerClient)
 		},
+		changes.SourceApps: func(ctx context.Context) (map[string]string, error) {
+			return stacks.Snapshot(ctx, brokerClient)
+		},
 		changes.SourceListeners: func(context.Context) (map[string]string, error) {
 			socks, err := netAPI.Resolver.Read(netinfo.Dump, collect.Users())
 			if err != nil {
@@ -812,7 +825,9 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	insight.New(insight.Config{Store: db, Samples: sampler.Ring().Snapshot, Probe: probe.Collect, Busy: usage.Now}).Register(srv.API)
 	reportBuilder := reports.New(reports.Config{Store: db, Now: func(context.Context) reports.Now {
 		return reportNow(sampler, pw)
-	}, Posture: security.Scan, Timeline: func(ctx context.Context, from, to time.Time, limit int) ([]changes.Event, error) {
+	}, Posture: security.Scan, Apps: func(ctx context.Context) ([]reports.App, error) {
+		return stacks.ReportApps(ctx, brokerClient, appUpdates)
+	}, Timeline: func(ctx context.Context, from, to time.Time, limit int) ([]changes.Event, error) {
 		events, _, err := tracker.Timeline(ctx, from, to, nil, limit)
 		return events, err
 	}, Markers: func(ctx context.Context, from, to time.Time) ([]int64, error) {

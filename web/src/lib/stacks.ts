@@ -212,6 +212,18 @@ export interface BackupLast {
   error?: string;
 }
 
+/** GET /app-health: one managed app as Home sees it. */
+export interface AppHealth {
+  name: string;
+  state: string;
+  /** Containers unhealthy, restarting, or exited while the app should run. */
+  unhealthy: string[];
+  backup: BackupLast | null;
+  /** Services the owner's last update preview found a new digest for. */
+  updates: string[];
+  scheduled: boolean;
+}
+
 export interface BackupList {
   name: string;
   dir: string;

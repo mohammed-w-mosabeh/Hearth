@@ -183,6 +183,11 @@ const machineTmpl = `{{template "head" (printf "%s — %s" (t "title.machine") (
 {{range .Batteries}}<tr><td>{{line .ID}}{{if .Model}} · {{line .Model}}{{end}}</td><td class="n">{{num .HealthPct 0}} %</td><td class="n">{{if .Cycles}}{{.Cycles}}{{end}}</td><td class="n">{{num .Pct 0}} %</td></tr>
 {{end}}</tbody></table>{{end}}
 
+{{if ne .Apps nil}}<h2>{{t "apps"}}</h2>
+{{if .Apps}}<table><thead><tr><th>{{t "name"}}</th><th>{{t "app.state"}}</th><th>{{t "app.unhealthy"}}</th><th>{{t "app.backup"}}</th><th>{{t "app.scheduled"}}</th><th class="n">{{t "app.updates"}}</th></tr></thead><tbody>
+{{range .Apps}}<tr><td>{{line .Name}}</td><td>{{line .State}}</td><td>{{range $i, $c := .Unhealthy}}{{if $i}}, {{end}}{{line $c}}{{end}}</td><td{{if and .Backup (not .BackupOK)}} class="k critical"{{end}}>{{if .Backup}}{{line .Backup}}{{if not .BackupOK}} · {{t "app.backup.failed"}}{{end}}{{else}}{{t "app.backup.none"}}{{end}}</td><td>{{if .Scheduled}}{{t "yes"}}{{else}}{{t "no"}}{{end}}</td><td class="n">{{if .Updates}}{{.Updates}}{{end}}</td></tr>
+{{end}}</tbody></table>{{else}}<p class="note">{{t "apps.none"}}</p>{{end}}{{end}}
+
 {{with .Posture}}<h2>{{t "posture"}}</h2>
 <table><thead><tr><th>{{t "check"}}</th><th>{{t "status"}}</th><th>{{t "findings"}}</th></tr></thead><tbody>
 {{range .Checks}}<tr><td>{{check .ID}}</td><td class="k {{.Status}}">{{status .Status}}</td><td>{{range $i, $f := findings .}}{{if $i}}<br>{{end}}{{line $f}}{{end}}</td></tr>

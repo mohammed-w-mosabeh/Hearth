@@ -19,12 +19,13 @@ const (
 	SourceUnits      = "units"
 	SourceContainers = "containers"
 	SourceListeners  = "listeners"
+	SourceApps       = "apps"   // apps Hearth manages: state, spec, last backup
 	SourceHearth     = "hearth" // the audit log: actions taken through Hearth
 	SourceSystem     = "system" // the machine itself: boots
 )
 
 // Snapshotted are the sources a snapshot holds.
-var Snapshotted = []string{SourcePackages, SourceUnits, SourceContainers, SourceListeners}
+var Snapshotted = []string{SourcePackages, SourceUnits, SourceContainers, SourceListeners, SourceApps}
 
 // State is the machine at one time: per source, a key and its value
 // (a package "name:arch" and its version, a unit "system/cups.service"
