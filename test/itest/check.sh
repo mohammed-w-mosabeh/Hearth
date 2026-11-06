@@ -1166,7 +1166,8 @@ printf '[Timer]\nOnCalendar=daily\nUnit=hearth-backup-scheduled@probe.service\n'
 mkdir -p -m 0700 /var/lib/hearth/backups/probe
 echo archive >/var/lib/hearth/backups/probe/20261106T000000Z.tar.zst
 touch /var/lib/hearth/backups/probe/.plan.json
-purge_out=$(apt-get purge -y -qq hearth 2>&1 >/dev/null || true)
+# apt may hand the scripts' messages to stdout (a pty), so read both.
+purge_out=$(apt-get purge -y -qq hearth 2>&1 || true)
 check "purge removes backup timers" not test -e /etc/systemd/system/hearth-backup-probe.timer
 check "purge keeps app backups" test -f /var/lib/hearth/backups/probe/20261106T000000Z.tar.zst
 check "and says so" grep -q 'app backups kept in /var/lib/hearth/backups' <<<"$purge_out"
