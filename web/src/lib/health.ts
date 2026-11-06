@@ -160,7 +160,7 @@ export function collect(inp: Inputs): Item[] {
     if (a.unhealthy.length > 0) out.push({ id: `app:${a.name}`, source: 'app', subject: `${a.name} (${a.unhealthy.join(', ')})`, action: open });
     // Keyed by the backup's time: a new failure is a new row, unsnoozed.
     if (a.backup && !a.backup.ok) out.push({ id: `backup:${a.name}:${a.backup.at}`, source: 'backup', subject: a.name, action: open });
-    if (a.updates.length > 0) out.push({ id: `appUpdate:${a.name}`, source: 'appUpdate', subject: `${a.name} (${a.updates.join(', ')})`, action: open });
+    if (a.updates.length > 0) out.push({ id: `update:${a.name}`, source: 'appUpdate', subject: `${a.name} (${a.updates.join(', ')})`, action: open });
   }
   return out;
 }

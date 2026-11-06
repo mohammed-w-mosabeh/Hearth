@@ -173,12 +173,14 @@ describe('health', () => {
     expect(items.map((i) => [i.id, i.source, i.subject])).toEqual([
       ['app:cloud', 'app', 'cloud (cloud-db-1)'],
       ['backup:cloud:2026-11-06T03:00:00Z', 'backup', 'cloud'],
-      ['appUpdate:cloud', 'appUpdate', 'cloud (web)'],
+      ['update:cloud', 'appUpdate', 'cloud (web)'],
     ]);
     expect(items.every((i) => i.action.kind === 'open' && i.action.route === 'stacks')).toBe(true);
     // 10 + 15 + 5
     expect(score(items).score).toBe(70);
     expect(unchecked({ apps: null })).toEqual(['apps']);
+    // Every id passes the server's home.snoozed check (internal/api/settings.go).
+    for (const i of items) expect(i.id).toMatch(/^[a-z][a-z.]{0,31}:/);
   });
 
   it('lists what it could not read', () => {
