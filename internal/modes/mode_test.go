@@ -67,8 +67,11 @@ func TestParseValid(t *testing.T) {
 		t.Fatalf("%+v", m)
 	}
 	items := m.ActionItems()
-	if len(items) != 4 || items[0].Kind != "unit" || items[1] != (Item{"stack", "notes", "start"}) || items[2] != (Item{"stack", "photos", "stop"}) ||
-		items[3].Kind != "app" || items[3].Target != "org.gnome.TextEditor" || items[3].Do != "start" {
+	// Session settings and connections first, then items, stacks and apps.
+	if len(items) != 9 || items[0] != (Item{Kind: "setting", Target: "power-profile", Do: "balanced"}) || items[2] != (Item{Kind: "setting", Target: "dnd", Do: "on"}) ||
+		items[4] != (Item{Kind: "connection", Target: "0b5b1f6e-7c43-4c8e-9a3e-2f1d9b0c6a11", Do: "start"}) || items[5].Kind != "unit" ||
+		items[6] != (Item{Kind: "stack", Target: "notes", Do: "start"}) || items[7] != (Item{Kind: "stack", Target: "photos", Do: "stop"}) ||
+		items[8].Kind != "app" || items[8].Target != "org.gnome.TextEditor" || items[8].Do != "start" {
 		t.Fatalf("%+v", items)
 	}
 	// The smallest mode: one session setting, no lists.

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -198,14 +199,27 @@ func apply(m Mode, p store.Profile) (Mode, error) {
 	if err := json.Unmarshal([]byte(p.Items), &items); err != nil {
 		return m, fmt.Errorf("modes: items: %w", err)
 	}
-	m.Name, m.Items, m.Stacks, m.Session.Open = p.Name, []Item{}, []StackAction{}, nil
+	m.Name, m.Items, m.Stacks = p.Name, []Item{}, []StackAction{}
+	ss := &m.Session
+	ss.Open, ss.Connect, ss.Disconnect, ss.PowerProfile, ss.Brightness, ss.DoNotDisturb, ss.Wallpaper = nil, nil, nil, "", nil, nil, ""
 	for _, it := range items {
 		switch it.Kind {
 		case KindApp:
-			m.Session.Open = append(m.Session.Open, it.Target)
+			ss.Open = append(ss.Open, it.Target)
 		case KindStack:
 			m.Stacks = append(m.Stacks, StackAction{Name: it.Target, Do: it.Do})
+		case KindConnection:
+			if it.Do == DoStart {
+				ss.Connect = append(ss.Connect, it.Target)
+			} else {
+				ss.Disconnect = append(ss.Disconnect, it.Target)
+			}
+		case KindSetting:
+			if err := setSession(ss, it.Target, it.Do); err != nil {
+				return m, err
+			}
 		default:
+			it.Expect = ""
 			m.Items = append(m.Items, it)
 		}
 	}
@@ -217,6 +231,31 @@ func apply(m Mode, p store.Profile) (Mode, error) {
 		m.Triggers = slices.DeleteFunc(slices.Clone(m.Triggers), func(t Trigger) bool { return t.Kind == TriggerGame })
 	}
 	return m, nil
+}
+
+// setSession puts a setting item's value in its session field.
+func setSession(ss *Session, name, value string) error {
+	switch name {
+	case SettingPower:
+		ss.PowerProfile = value
+	case SettingWallpaper:
+		ss.Wallpaper = value
+	case SettingDND:
+		if value != "on" && value != "off" {
+			return errors.New("modes: Do Not Disturb is on or off")
+		}
+		on := value == "on"
+		ss.DoNotDisturb = &on
+	case SettingBrightness:
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return errors.New("modes: brightness is a percent")
+		}
+		ss.Brightness = &n
+	default:
+		return fmt.Errorf("modes: no setting %q", name)
+	}
+	return nil
 }
 
 // save writes m over the file that had hash (none for a new file), reads

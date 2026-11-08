@@ -829,8 +829,18 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 			}
 			return reasons
 		},
+		// Session settings a mode sets: what each was is read before it
+		// changes, so revert puts back exactly that (ROADMAP 10.5).
+		Settings: modes.SessionSettings{Session: sess, Power: func() (string, bool) {
+			if p := pw.Snapshot().Profile; p != nil {
+				return p.Active, true
+			}
+			return "", false
+		}},
 		Active: func(ctx context.Context, it profiles.Item) (bool, error) {
 			switch it.Kind {
+			case profiles.KindConnection:
+				return sysSettings.ConnectionActive(ctx, it.Target)
 			case profiles.KindStack:
 				// partial counts as running for a stop, not for a start.
 				state, err := stacks.State(ctx, brokerClient, it.Target)

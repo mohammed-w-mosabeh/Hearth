@@ -7,7 +7,7 @@ import type { Unit } from './services';
 
 /** A stack is a managed app from a mode file (ROADMAP 10.4): shown and kept,
  *  picked in the mode editor (10.9), not here. */
-export type Kind = 'unit' | 'container' | 'project' | 'app' | 'stack';
+export type Kind = 'unit' | 'container' | 'project' | 'app' | 'stack' | 'setting' | 'connection';
 export type Do = 'start' | 'stop';
 
 export const KINDS: Kind[] = ['unit', 'container', 'project', 'app'];
@@ -59,13 +59,18 @@ export function kindKey(k: Kind): MessageKey {
   return `profiles.kind.${k}`;
 }
 
+/** Whether d is start or stop; a setting's value is shown as it is. */
+export function isDo(d: string): d is Do {
+  return d === 'start' || d === 'stop';
+}
+
 export function doKey(d: Do): MessageKey {
   return d === 'start' ? 'profiles.do.start' : 'profiles.do.stop';
 }
 
 /** Whether it can run with nobody there: others may ask for a password (S15a). */
 export function unattended(it: Pick<Item, 'kind' | 'target'>): boolean {
-  return it.kind === 'app' || (it.kind === 'unit' && it.target.startsWith('user/'));
+  return it.kind === 'app' || it.kind === 'setting' || it.kind === 'connection' || (it.kind === 'unit' && it.target.startsWith('user/'));
 }
 
 /** Apps are started but never closed: that could lose unsaved work. */
@@ -95,6 +100,8 @@ export function candidates(kind: Kind, units: readonly Unit[], docker: Snapshot 
       out = apps.map((a) => ({ value: a.id, label: a.name }));
       break;
     case 'stack':
+    case 'setting':
+    case 'connection':
       out = []; // picked in the mode editor
       break;
   }

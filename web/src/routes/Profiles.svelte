@@ -6,7 +6,10 @@
   import { preview, reasonKey, run, type Plan, type Result } from '../lib/actions';
   import { api } from '../lib/api';
   import { locale, t } from '../lib/i18n';
-  import { TEMPLATES, doKey, draftFrom, kindKey, templateKey, type Do, type Draft, type Profile } from '../lib/profiles';
+  import { TEMPLATES, doKey, draftFrom, isDo, kindKey, templateKey, type Draft, type Profile } from '../lib/profiles';
+
+  /** start or stop in words; a setting's value as it is. */
+  const doText = (d: string): string => (isDo(d) ? t(doKey(d)) : d);
   import { toast } from '../lib/toast.svelte';
   import type { Live } from '../lib/ws';
 
@@ -56,7 +59,7 @@
     try {
       const plan = await preview('profile', 'activate', String(p.id));
       if (plan.token || plan.blocked.length > 0) {
-        const items = plan.items.map((it) => ({ ...it, detail: t(doKey(it.detail as Do)) }));
+        const items = plan.items.map((it) => ({ ...it, detail: doText(it.detail ?? '') }));
         pending = { profile: p, plan: { ...plan, items } };
         return;
       }
@@ -149,7 +152,7 @@
         <ul>
           {#each p.items as it (it.kind + it.target)}
             <li>
-              <span class="do {it.do}">{t(doKey(it.do))}</span>
+              <span class="do {it.do}">{doText(it.do)}</span>
               <span class="target">{it.target}</span>
               <span class="kind">{t(kindKey(it.kind))}</span>
             </li>

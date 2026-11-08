@@ -335,8 +335,9 @@ func (s *Session) blockDesktop(id, name string) actions.Plan {
 	return p
 }
 
-// Register adds session/wallpaper (target: a wallpaper path) and session/dnd
-// (target: on or off). Both are safe: no preview token, and audited.
+// Register adds session/wallpaper (target: a wallpaper path),
+// session/wallpaper-uris (both settings as read before) and session/dnd
+// (target: on or off). All are safe: no preview token, and audited.
 func (s *Session) Register(reg *actions.Registry) {
 	reg.Register(actions.Action{Kind: "session", Name: "wallpaper", Risk: actions.Safe,
 		Validate: func(r actions.Request) error {
@@ -364,6 +365,26 @@ func (s *Session) Register(reg *actions.Registry) {
 			}
 			uri := fileURI(abs)
 			return s.result(p, s.SetWallpaperURIs(ctx, Wallpaper{URI: uri, DarkURI: uri}))
+		}})
+	// Putting back a wallpaper read earlier (ROADMAP 10.5): both settings
+	// as they were, which may differ between the light and dark styles.
+	reg.Register(actions.Action{Kind: "session", Name: "wallpaper-uris", Risk: actions.Safe,
+		Validate: func(r actions.Request) error {
+			if r.Target != "wallpaper" || len(r.Params) != 2 ||
+				safeexec.GSettingsFileURI(r.Params["uri"]) != nil || safeexec.GSettingsFileURI(r.Params["dark_uri"]) != nil {
+				return errors.New(`target must be "wallpaper" and params {"uri", "dark_uri"} quoted file URIs`)
+			}
+			return nil
+		},
+		Plan: func(_ context.Context, r actions.Request) (actions.Plan, error) {
+			if !s.cfg.Desktop.GNOME {
+				return s.blockDesktop("wallpaper", "wallpaper"), nil
+			}
+			name := Wallpaper{URI: r.Params["uri"]}.File()
+			return one("put the wallpaper back to "+name, "wallpaper", name), nil
+		},
+		Run: func(ctx context.Context, r actions.Request, p actions.Plan) (actions.Result, error) {
+			return s.result(p, s.SetWallpaperURIs(ctx, Wallpaper{URI: r.Params["uri"], DarkURI: r.Params["dark_uri"]}))
 		}})
 	reg.Register(actions.Action{Kind: "session", Name: "dnd", Risk: actions.Safe,
 		Validate: func(r actions.Request) error {

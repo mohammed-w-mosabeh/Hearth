@@ -450,3 +450,27 @@ func (s *Settings) nmCallOut(ctx context.Context, p actions.Plan, out []any, pat
 	res.Done = 1
 	return res, nil
 }
+
+// ConnectionActive reports whether the NetworkManager connection uuid is
+// active now (a mode's connection items, ROADMAP 10.5).
+func (s *Settings) ConnectionActive(ctx context.Context, uuid string) (bool, error) {
+	if !uuidRe.MatchString(uuid) {
+		return false, errors.New("settings: not a connection UUID")
+	}
+	bus, err := s.cfg.System(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = bus.Close() }()
+	props, err := bus.GetAll(ctx, nm, nmPath, nm)
+	if err != nil {
+		return false, err
+	}
+	actives, _ := props["ActiveConnections"].Value().([]dbus.ObjectPath)
+	for _, a := range actives {
+		if p, err := bus.GetAll(ctx, nm, a, nmActive); err == nil && str(p, "Uuid") == uuid {
+			return true, nil
+		}
+	}
+	return false, nil
+}

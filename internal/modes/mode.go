@@ -101,11 +101,12 @@ type StackAction struct {
 }
 
 // Item is a profile item (a unit, container or Compose project); apps are
-// Session.Open. Its JSON is a profiles.Item's.
+// Session.Open. Its JSON is a profiles.Item's. Expect is never in a file.
 type Item struct {
 	Kind   string `toml:"kind" json:"kind"`
 	Target string `toml:"target" json:"target"`
 	Do     string `toml:"do" json:"do"`
+	Expect string `toml:"-" json:"expect,omitempty"`
 }
 
 // Trigger switches a mode on by itself once armed by a click. Only the
@@ -138,10 +139,10 @@ type Mode struct {
 	Triggers []Trigger     `json:"triggers"`
 }
 
-// ActionItems is what a mode asks of the profile actions: its items, its
-// stacks, then its apps to open.
+// ActionItems is everything a switch does, as profile items: its session
+// settings and connections, its items, its stacks, then its apps to open.
 func (m Mode) ActionItems() []Item {
-	out := make([]Item, 0, len(m.Items)+len(m.Stacks)+len(m.Session.Open))
+	out := m.sessionItems()
 	out = append(out, m.Items...)
 	for _, st := range m.Stacks {
 		out = append(out, Item{Kind: KindStack, Target: st.Name, Do: st.Do})

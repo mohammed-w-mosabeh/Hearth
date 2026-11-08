@@ -35,6 +35,13 @@ const (
 	// KindStack is a managed app (a mode's [[stack]], ROADMAP 10.4): its
 	// steps run together in one stack.batch, with one polkit check.
 	KindStack = "stack"
+	// KindSetting is a session setting a mode sets (ROADMAP 10.5): Target
+	// names it (Settings), Do is the value. Restoring puts back the value
+	// read before, only while the setting still has the value read after.
+	KindSetting = "setting"
+	// KindConnection is a NetworkManager connection by UUID: start connects,
+	// stop disconnects.
+	KindConnection = "connection"
 )
 
 // What to do to an item.
@@ -53,6 +60,9 @@ const (
 const (
 	ReasonSystem = "system" // it would need a typed confirmation
 	ReasonError  = "error"
+	// ReasonChanged: the setting was changed by hand after the switch, so
+	// restoring leaves it as it is.
+	ReasonChanged = "changed"
 )
 
 // Limits of a profile.
@@ -71,6 +81,18 @@ type Item struct {
 	Kind   string `json:"kind"`
 	Target string `json:"target"`
 	Do     string `json:"do"`
+	// Expect, on a setting in a restore list, is the value the switch left;
+	// a setting that no longer has it is not restored.
+	Expect string `json:"expect,omitempty"`
+}
+
+// Settings reads session settings and names the action that sets one
+// (modes.SessionSettings in production).
+type Settings interface {
+	// Current is the setting's value now, in the form Request takes.
+	Current(ctx context.Context, name string) (string, error)
+	// Request is the registered action and request that set name to value.
+	Request(name, value string) (key string, r actions.Request, err error)
 }
 
 // Store is what profiles keep (store.DB in production).
@@ -106,8 +128,10 @@ type Config struct {
 	// when done or the reason it failed. Without it, stack steps run one by
 	// one through their actions.
 	Batch func(ctx context.Context, items []Item, interactive bool) []string
-	Log   *slog.Logger
-	Clock func() time.Time
+	// Settings, if set, allows setting items.
+	Settings Settings
+	Log      *slog.Logger
+	Clock    func() time.Time
 }
 
 // Manager applies and restores profiles.
@@ -133,12 +157,24 @@ func New(cfg Config) *Manager {
 	return &Manager{cfg: cfg}
 }
 
-// actionKey is the action that does it.
-func actionKey(it Item) string {
-	if it.Kind == KindApp {
-		return "app/launch"
+// request is the action that does it, and its request.
+func (m *Manager) request(it Item) (string, actions.Request, error) {
+	r := actions.Request{Target: it.Target, Params: map[string]string{}}
+	switch it.Kind {
+	case KindApp:
+		return "app/launch", r, nil
+	case KindConnection:
+		if it.Do == DoStart {
+			return "network/connect", r, nil
+		}
+		return "network/disconnect", r, nil
+	case KindSetting:
+		if m.cfg.Settings == nil {
+			return "", r, errors.New("session settings are not available")
+		}
+		return m.cfg.Settings.Request(it.Target, it.Do)
 	}
-	return it.Kind + "/" + it.Do
+	return it.Kind + "/" + it.Do, r, nil
 }
 
 // inverse undoes it; apps are never closed (that could lose work).
@@ -155,9 +191,14 @@ func inverse(it Item) (Item, bool) {
 }
 
 // unattended reports whether it can run with nobody there: a system unit
-// or a container may open a password dialog (SECURITY S15a).
+// or a container may open a password dialog (SECURITY S15a). Session
+// settings and connections are the user's own (S15b).
 func unattended(it Item) bool {
-	return it.Kind == KindApp || (it.Kind == KindUnit && strings.HasPrefix(it.Target, "user/"))
+	switch it.Kind {
+	case KindApp, KindSetting, KindConnection:
+		return true
+	}
+	return it.Kind == KindUnit && strings.HasPrefix(it.Target, "user/")
 }
 
 // validate checks a profile before it is stored.
@@ -184,19 +225,33 @@ func (m *Manager) validate(name string, items []Item, auto bool) error {
 			if it.Do != DoStart {
 				return fmt.Errorf("%s: apps are not closed by a profile: that could lose unsaved work", it.Target)
 			}
+		case KindConnection:
+			if it.Do != DoStart && it.Do != DoStop {
+				return errors.New("a connection either connects or disconnects")
+			}
+		case KindSetting:
+			if m.cfg.Settings == nil {
+				return fmt.Errorf("%s: session settings are not available", it.Target)
+			}
 		default:
-			return errors.New("an item is a unit, container, project, stack or app")
+			return errors.New("an item is a unit, container, project, stack, setting, connection or app")
 		}
-		key := Item{Kind: it.Kind, Target: it.Target}
-		if seen[key] {
+		if it.Expect != "" {
+			return errors.New("expect is only for restoring")
+		}
+		once := Item{Kind: it.Kind, Target: it.Target}
+		if seen[once] {
 			return fmt.Errorf("%s is listed twice", it.Target)
 		}
-		seen[key] = true
-		a, ok := m.cfg.Actions.Lookup(actionKey(it))
+		seen[once] = true
+		key, r, err := m.request(it)
+		if err != nil {
+			return fmt.Errorf("%s: %w", it.Target, err)
+		}
+		a, ok := m.cfg.Actions.Lookup(key)
 		if !ok {
 			return fmt.Errorf("%s: not available", it.Kind)
 		}
-		r := actions.Request{Target: it.Target, Params: map[string]string{}}
 		if err := a.Validate(r); err != nil {
 			return fmt.Errorf("%s: %w", it.Target, err)
 		}
@@ -234,6 +289,7 @@ type step struct {
 	a    actions.Action
 	r    actions.Request
 	plan actions.Plan
+	prev string // a setting's value before the step
 }
 
 // prepared is what activation or deactivation will do.
@@ -255,12 +311,12 @@ func (m *Manager) prepare(ctx context.Context, items []Item, auto bool) ([]step,
 		blocked = append(blocked, actions.Blocked{Item: toItem(it), Reason: reason})
 	}
 	for _, it := range items {
-		a, ok := m.cfg.Actions.Lookup(actionKey(it))
-		if !ok || (auto && !unattended(it)) {
+		key, r, rerr := m.request(it)
+		a, ok := m.cfg.Actions.Lookup(key)
+		if rerr != nil || !ok || (auto && !unattended(it)) {
 			block(it, ReasonSystem)
 			continue
 		}
-		r := actions.Request{Target: it.Target, Params: map[string]string{}}
 		if err := a.Validate(r); err != nil {
 			block(it, ReasonError)
 			continue
@@ -275,6 +331,21 @@ func (m *Manager) prepare(ctx context.Context, items []Item, auto bool) ([]step,
 			continue
 		case plan.Risk == actions.Destructive:
 			block(it, ReasonSystem)
+			continue
+		}
+		if it.Kind == KindSetting {
+			// What it is now is what restoring puts back; a setting
+			// changed by hand since the switch is left alone.
+			cur, err := m.cfg.Settings.Current(ctx, it.Target)
+			switch {
+			case err != nil:
+				block(it, ReasonError)
+			case it.Expect != "" && cur != it.Expect:
+				block(it, ReasonChanged)
+			case cur == it.Do:
+			default:
+				steps = append(steps, step{item: it, a: a, r: r, plan: plan, prev: cur})
+			}
 			continue
 		}
 		running, err := m.cfg.Active(ctx, it)
@@ -294,7 +365,11 @@ func (m *Manager) prepare(ctx context.Context, items []Item, auto bool) ([]step,
 // failed. A client going away does not stop it half way. Stack steps run
 // together through Batch when the first of them is reached; interactive
 // says whether its polkit check may show a dialog.
-func (m *Manager) execute(ctx context.Context, profile string, steps []step, interactive bool) (res actions.Result, done, left []Item, err error) {
+//
+// undo lists, in the order they ran, what restores each step that was done:
+// the inverse of a start or stop, or a setting's earlier value with the
+// value it has now as Expect. Apps have none.
+func (m *Manager) execute(ctx context.Context, profile string, steps []step, interactive bool) (res actions.Result, done, left, undo []Item, err error) {
 	res.Failed = []actions.Blocked{}
 	ctx = context.WithoutCancel(ctx)
 	var batched map[int]string // step index to its batch reason
@@ -328,6 +403,15 @@ func (m *Manager) execute(ctx context.Context, profile string, steps []step, int
 		if runErr == nil && len(r.Failed) == 0 {
 			res.Done++
 			done = append(done, s.item)
+			if s.item.Kind == KindSetting {
+				now, cerr := m.cfg.Settings.Current(ctx, s.item.Target)
+				if cerr != nil {
+					now = s.item.Do
+				}
+				undo = append(undo, Item{Kind: KindSetting, Target: s.item.Target, Do: s.prev, Expect: now})
+			} else if u, ok := inverse(s.item); ok {
+				undo = append(undo, u)
+			}
 		} else {
 			left = append(left, s.item)
 		}
@@ -336,7 +420,7 @@ func (m *Manager) execute(ctx context.Context, profile string, steps []step, int
 			err = aerr // the step ran; finish so that it can be restored
 		}
 	}
-	return res, done, left, err
+	return res, done, left, undo, err
 }
 
 // runBatch runs every stack step in one Batch call, in order, and maps each
@@ -405,15 +489,13 @@ func (m *Manager) applyActivate(ctx context.Context, pr prepared, by string) (ac
 	} else if !p.ActivatedAt.IsZero() {
 		return actions.Result{}, actions.Errorf(http.StatusConflict, "this profile is already active")
 	}
-	res, done, left, err := m.execute(ctx, pr.name, pr.steps, by == ByUser)
+	res, done, left, undone, err := m.execute(ctx, pr.name, pr.steps, by == ByUser)
 	if len(done) == 0 && len(left) > 0 {
 		return res, err // nothing changed: not active
 	}
 	undo := []Item{}
-	for i := len(done) - 1; i >= 0; i-- {
-		if u, ok := inverse(done[i]); ok {
-			undo = append(undo, u)
-		}
+	for i := len(undone) - 1; i >= 0; i-- {
+		undo = append(undo, undone[i])
 	}
 	text, jerr := encodeItems(undo)
 	if jerr != nil {
@@ -440,7 +522,7 @@ func (m *Manager) planDeactivate(ctx context.Context, p store.Profile) (prepared
 func (m *Manager) applyDeactivate(ctx context.Context, pr prepared, interactive bool) (actions.Result, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	res, _, left, err := m.execute(ctx, pr.name, pr.steps, interactive)
+	res, _, left, _, err := m.execute(ctx, pr.name, pr.steps, interactive)
 	ctx = context.WithoutCancel(ctx)
 	if len(left) == 0 {
 		if serr := m.cfg.Store.ClearProfileActive(ctx, pr.id); serr != nil {

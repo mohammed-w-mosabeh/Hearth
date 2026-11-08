@@ -1692,6 +1692,8 @@
   "profiles.kind.project": "مشروع Compose",
   "profiles.kind.app": "تطبيق",
   "profiles.kind.stack": "تطبيق مُدار",
+  "profiles.kind.setting": "إعداد الجلسة",
+  "profiles.kind.connection": "اتصال شبكة",
   "profiles.target": "أيها",
   "profiles.do": "الإجراء",
   "profiles.do.start": "تشغيل",

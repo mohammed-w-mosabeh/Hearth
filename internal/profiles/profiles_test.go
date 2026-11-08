@@ -26,6 +26,26 @@ type host struct {
 	gameErr error
 	notes   []string
 	batches []batchCall
+	// settings are session settings by name; conns the active connections.
+	settings map[string]string
+	conns    map[string]bool
+}
+
+// Current implements Settings.
+func (h *host) Current(_ context.Context, name string) (string, error) {
+	v, ok := h.settings[name]
+	if !ok {
+		return "", errors.New("unsupported")
+	}
+	return v, nil
+}
+
+// Request implements Settings: each setting is the action "set/<name>".
+func (h *host) Request(name, value string) (string, actions.Request, error) {
+	if _, ok := h.settings[name]; !ok && name != "dnd" {
+		return "", actions.Request{}, errors.New("no such setting")
+	}
+	return "set/" + name, actions.Request{Target: value, Params: map[string]string{}}, nil
 }
 
 // batchCall is one Batch call: its items and whether it could prompt.
@@ -86,6 +106,43 @@ func (h *host) register(reg *actions.Registry) {
 		add(kind, "stop", actions.Reversible, DoStop)
 	}
 	add("app", "launch", actions.Safe, DoStart)
+	for _, name := range []string{"dnd", "brightness", "wallpaper"} {
+		reg.Register(actions.Action{Kind: "set", Name: name, Risk: actions.Safe,
+			Validate: func(r actions.Request) error {
+				if r.Target == "" || strings.HasPrefix(r.Target, "-") {
+					return errors.New("bad value")
+				}
+				return nil
+			},
+			Plan: func(_ context.Context, r actions.Request) (actions.Plan, error) {
+				return actions.Plan{Items: []actions.Item{{ID: name, Name: r.Target}}}, nil
+			},
+			Run: func(_ context.Context, r actions.Request, _ actions.Plan) (actions.Result, error) {
+				call := "set/" + name + " " + r.Target
+				h.calls = append(h.calls, call)
+				if h.failOn[call] {
+					return actions.Result{Failed: []actions.Blocked{{Item: actions.Item{ID: name}, Reason: "error"}}}, nil
+				}
+				v := r.Target
+				if name == "brightness" { // the hardware rounds
+					v = r.Target + "~"
+				}
+				h.settings[name] = v
+				return actions.Result{Done: 1}, nil
+			}})
+	}
+	for verb, on := range map[string]bool{"connect": true, "disconnect": false} {
+		reg.Register(actions.Action{Kind: "network", Name: verb, Risk: actions.Reversible,
+			Validate: func(actions.Request) error { return nil },
+			Plan: func(_ context.Context, r actions.Request) (actions.Plan, error) {
+				return actions.Plan{Items: []actions.Item{{ID: r.Target, Name: r.Target}}}, nil
+			},
+			Run: func(_ context.Context, r actions.Request, _ actions.Plan) (actions.Result, error) {
+				h.calls = append(h.calls, "network/"+verb+" "+r.Target)
+				h.conns[r.Target] = on
+				return actions.Result{Done: 1}, nil
+			}})
+	}
 }
 
 // testStore is a Store the tests can also plant rows in, as if edited
@@ -120,15 +177,21 @@ func setup(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	h := &host{on: map[string]bool{}, failOn: map[string]bool{}}
+	h := &host{on: map[string]bool{}, failOn: map[string]bool{}, settings: map[string]string{}, conns: map[string]bool{}}
 	reg := actions.NewRegistry(db)
 	h.register(reg)
 	st := newStore(t, db)
 	m := New(Config{Store: st, Actions: reg,
-		Active:  func(_ context.Context, it Item) (bool, error) { return h.on[h.key(it)], nil },
-		Playing: func() ([]string, error) { return h.games, h.gameErr },
-		Notify:  func(_ context.Context, s, _ string) { h.notes = append(h.notes, s) },
-		Batch:   h.batch,
+		Active: func(_ context.Context, it Item) (bool, error) {
+			if it.Kind == KindConnection {
+				return h.conns[it.Target], nil
+			}
+			return h.on[h.key(it)], nil
+		},
+		Settings: h,
+		Playing:  func() ([]string, error) { return h.games, h.gameErr },
+		Notify:   func(_ context.Context, s, _ string) { h.notes = append(h.notes, s) },
+		Batch:    h.batch,
 	})
 	m.Register(reg)
 	mux := http.NewServeMux()

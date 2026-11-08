@@ -167,11 +167,16 @@ func TestLoadCheck(t *testing.T) {
 		if game {
 			games++
 		}
-		return errors.New("user/syncnotes.service: a profile cannot stop this unit")
+		for _, it := range items {
+			if it.Kind == KindUnit {
+				return errors.New("user/syncnotes.service: a profile cannot stop this unit")
+			}
+		}
+		return nil
 	}})
 	s.Load(context.Background())
-	// quiet.toml asks nothing of the profile actions, so it is not checked.
-	if calls != 1 || games != 1 || len(got) != 4 || len(s.Modes()) != 1 || !strings.Contains(errorFor(s.Errors(), "work.toml"), "cannot stop") {
+	// Both are checked; only work.toml's unit is refused. got is the last.
+	if calls != 2 || games != 1 || len(got) != 9 || len(s.Modes()) != 1 || !strings.Contains(errorFor(s.Errors(), "work.toml"), "cannot stop") {
 		t.Fatalf("%d %+v %+v", calls, got, s.Errors())
 	}
 }

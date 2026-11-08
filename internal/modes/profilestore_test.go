@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -82,7 +83,15 @@ func TestProfileStoreKeepsTheRestOfTheMode(t *testing.T) {
 	}
 	p := list[0]
 	p.Name, p.AutoGame = "Office", true
-	p.Items = `[{"kind":"stack","target":"notes","do":"start"},{"kind":"stack","target":"photos","do":"stop"},{"kind":"app","target":"org.gnome.Calculator","do":"start"}]`
+	// The profile view holds everything; drop the unit and the app, add one.
+	var items []Item
+	if err := json.Unmarshal([]byte(p.Items), &items); err != nil {
+		t.Fatal(err)
+	}
+	items = slices.DeleteFunc(items, func(it Item) bool { return it.Kind == KindUnit || it.Kind == KindApp })
+	items = append(items, Item{Kind: KindApp, Target: "org.gnome.Calculator", Do: DoStart})
+	raw, _ := json.Marshal(items)
+	p.Items = string(raw)
 	if err := ps.UpdateProfile(ctx, p); err != nil {
 		t.Fatal(err)
 	}

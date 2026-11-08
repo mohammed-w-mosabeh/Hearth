@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { App } from './apps';
 import type { Snapshot } from './docker';
 import en from './i18n/en.json';
-import { KINDS, TEMPLATES, canStop, candidates, doKey, draftFrom, kindKey, listed, templateKey, unattended } from './profiles';
+import { KINDS, TEMPLATES, canStop, candidates, doKey, draftFrom, isDo, kindKey, listed, templateKey, unattended } from './profiles';
 import type { Unit } from './services';
 
 const unit = (scope: Unit['scope'], name: string, critical = false): Unit => ({ name, scope, load: 'loaded', active: 'active', sub: 'running', critical });
@@ -11,6 +11,14 @@ const docker = { containers: [{ name: 'web', image: 'nginx' }], projects: [{ nam
 const apps = [{ id: 'calc', name: 'Calculator' }] as unknown as App[];
 
 describe('profiles', () => {
+  it('names the kinds modes add, and shows a setting value as it is', () => {
+    for (const k of ['stack', 'setting', 'connection'] as const) expect(en).toHaveProperty(kindKey(k));
+    expect(isDo('start') && isDo('stop')).toBe(true);
+    expect(isDo('70') || isDo('on')).toBe(false);
+    expect(unattended({ kind: 'setting', target: 'dnd' }) && unattended({ kind: 'connection', target: 'x' })).toBe(true);
+    expect(unattended({ kind: 'stack', target: 'photos' })).toBe(false);
+    expect(KINDS).not.toContain('setting');
+  });
   it('has a message for every key it builds', () => {
     const keys: string[] = [doKey('start'), doKey('stop')];
     for (const k of KINDS) keys.push(kindKey(k));

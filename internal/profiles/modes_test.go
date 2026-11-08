@@ -51,6 +51,12 @@ func TestProfilesOnModes(t *testing.T) {
 		{"StacksRunInOneBatch", TestStacksRunInOneBatch},
 		{"StackBatchPartial", TestStackBatchPartial},
 		{"GameRefusesStacks", TestGameRefusesStacks},
+		{"SettingsSnapshotAndRevert", TestSettingsSnapshotAndRevert},
+		{"RevertLeavesHandChanges", TestRevertLeavesHandChanges},
+		{"SettingsPartial", TestSettingsPartial},
+		{"SettingsRestoreAfterRestart", TestSettingsRestoreAfterRestart},
+		{"ExpectIsNotSaved", TestExpectIsNotSaved},
+		{"GameMaySetSettings", TestGameMaySetSettings},
 	} {
 		t.Run(tc.name, tc.fn)
 	}

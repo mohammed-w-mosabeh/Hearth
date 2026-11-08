@@ -71,6 +71,15 @@ disconnect = ["11111111-2222-3333-4444-555555555555"]
 			t.Errorf("%s refuses %q: %v", s.Action, s.Target, err)
 		}
 	}
+	// Putting a wallpaper back, as revert does.
+	back, err := modes.StepFor(modes.Item{Kind: modes.KindSetting, Target: modes.SettingWallpaper,
+		Do: "'file:///usr/share/backgrounds/l.svg'|'file:///usr/share/backgrounds/d.svg'"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a, ok := reg.Lookup(back.Action); !ok || a.Validate(actions.Request{Target: back.Target, Params: back.Params}) != nil {
+		t.Errorf("%s does not accept %+v", back.Action, back)
+	}
 	for _, key := range []string{"app/launch", "unit/start", "unit/stop", "container/start", "container/stop", "project/start", "project/stop"} {
 		if _, ok := reg.Lookup(key); !ok {
 			t.Errorf("%s is not registered", key)

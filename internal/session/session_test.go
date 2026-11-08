@@ -221,6 +221,25 @@ func TestActions(t *testing.T) {
 	if _, err := wp.Plan(ctx, actions.Request{Target: "~/missing.jpg", Params: map[string]string{}}); err == nil {
 		t.Fatal("planned a missing file")
 	}
+	back, _ := reg.Lookup("session/wallpaper-uris")
+	for _, bad := range []actions.Request{
+		{Target: "wallpaper", Params: map[string]string{"uri": "'file:///a.jpg'"}},
+		{Target: "x", Params: map[string]string{"uri": "'file:///a.jpg'", "dark_uri": "'file:///b.jpg'"}},
+		{Target: "wallpaper", Params: map[string]string{"uri": "'file:///a.jpg' x", "dark_uri": "'file:///b.jpg'"}},
+	} {
+		if back.Validate(bad) == nil {
+			t.Errorf("accepted %+v", bad)
+		}
+	}
+	r = actions.Request{Target: "wallpaper", Params: map[string]string{"uri": "'file:///usr/share/backgrounds/l.svg'", "dark_uri": "'file:///usr/share/backgrounds/d.svg'"}}
+	p, err = back.Plan(ctx, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res, err := back.Run(ctx, r, p); err != nil || res.Done != 1 ||
+		g.values["org.gnome.desktop.background picture-uri-dark"] != "'file:///usr/share/backgrounds/d.svg'" {
+		t.Fatalf("%v %+v %v", err, res, g.values)
+	}
 	dnd, _ := reg.Lookup("session/dnd")
 	if dnd.Validate(actions.Request{Target: "maybe", Params: map[string]string{}}) == nil {
 		t.Fatal("accepted maybe")
