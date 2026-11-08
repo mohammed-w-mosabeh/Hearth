@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AlertEvent } from './alerts';
-import { MAX_SNOOZED, RULES, SNOOZE_MS, collect, queue, readSnoozed, score, snooze, unchecked, type Item } from './health';
+import { FEED_SOURCES, MAX_SNOOZED, RULES, SNOOZE_MS, collect, queue, readSnoozed, score, snooze, unchecked, type Item, type Source } from './health';
+import en from './i18n/en.json';
 import type { Report } from './security';
 import type { Unit } from './services';
 
@@ -229,5 +230,27 @@ describe('needs attention', () => {
     expect(readSnoozed(null, now)).toEqual({});
     expect(readSnoozed({ until: [1] }, now)).toEqual({});
     expect(readSnoozed({ until: { a: now + 1, b: 'x', c: 1.5, d: now - 1 } }, now)).toEqual({ a: now + 1 });
+  });
+});
+
+describe('health strings and mode approvals', () => {
+  it('has a label and an item text for every source and feed', () => {
+    const keys = en as Record<string, string>;
+    for (const source of Object.keys(RULES) as Source[]) {
+      expect(keys).toHaveProperty([`health.src.${source}`]);
+      if (!source.startsWith('alert.') && source !== 'restart') expect(keys).toHaveProperty([`health.item.${source}`]);
+    }
+    for (const feed of Object.keys(FEED_SOURCES)) expect(keys).toHaveProperty([`health.feed.${feed}`]);
+    expect(keys).toHaveProperty(['health.open.modes']);
+  });
+  it('lists a waiting approval without lowering the score', () => {
+    const items = collect({ modes: [{ id: 7, mode: 'battery', name: 'Battery', reason: 'battery' }, { id: 8, mode: 'gone', name: '', reason: 'wifi' }] });
+    expect(items.map((i) => [i.id, i.subject])).toEqual([
+      ['approval:7', 'Battery'],
+      ['approval:8', 'gone'],
+    ]);
+    expect(items[0]?.action).toEqual({ kind: 'open', route: 'modes' });
+    expect(score(items).score).toBe(100);
+    expect(unchecked({ modes: null })).toEqual(['modes']);
   });
 });

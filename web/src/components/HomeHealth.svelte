@@ -18,6 +18,7 @@
     type FeedData,
     type Inputs,
     type Item,
+    type PendingApproval,
   } from '../lib/health';
   import { t, type MessageKey } from '../lib/i18n';
   import type { LynisView } from '../lib/lynis';
@@ -57,6 +58,7 @@
     void load('smart', '/disks/health', (r: Health) => r);
     void load('lynis', '/security/lynis', (r: LynisView) => r);
     void load('apps', '/app-health', (r: AppHealth[]) => r);
+    void load('modes', '/modes', (r: { approvals: PendingApproval[] }) => r.approvals);
   }
 
   $effect(() => {
@@ -227,7 +229,6 @@
       {#if missing.length > 0}
         <p class="warn">{t('health.unchecked', { list: missing.map((f) => t(`health.feed.${f}` as MessageKey)).join(', ') })}</p>
       {/if}
-      <p class="muted">{t('health.reserved')}</p>
     </div>
   {/if}
 

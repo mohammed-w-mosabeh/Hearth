@@ -130,8 +130,14 @@ type Config struct {
 	Batch func(ctx context.Context, items []Item, interactive bool) []string
 	// Settings, if set, allows setting items.
 	Settings Settings
-	Log      *slog.Logger
-	Clock    func() time.Time
+	// Defer, if set, takes the stack steps an automatic switch would make
+	// (ROADMAP 10.7): they need authorization, which nobody is there to
+	// give, so they wait for the user to approve them; the rest of the
+	// switch runs. Without it, an automatic switch leaves stacks out and a
+	// profile that has them cannot have the game trigger.
+	Defer func(ctx context.Context, p store.Profile, by string, items []Item) error
+	Log   *slog.Logger
+	Clock func() time.Time
 }
 
 // Manager applies and restores profiles.
@@ -255,7 +261,7 @@ func (m *Manager) validate(name string, items []Item, auto bool) error {
 		if err := a.Validate(r); err != nil {
 			return fmt.Errorf("%s: %w", it.Target, err)
 		}
-		if auto && !unattended(it) {
+		if auto && !unattended(it) && (it.Kind != KindStack || m.cfg.Defer == nil) {
 			return fmt.Errorf("%s: it may ask for a password, so it cannot run while a game starts", it.Target)
 		}
 		if it.Kind == KindUnit { // planning a unit touches nothing
@@ -297,6 +303,8 @@ type prepared struct {
 	id    int64
 	name  string
 	steps []step
+	// deferred are stack items an automatic switch leaves for approval.
+	deferred []Item
 }
 
 func toItem(it Item) actions.Item {
@@ -304,8 +312,9 @@ func toItem(it Item) actions.Item {
 }
 
 // prepare plans items in order, leaving out what is already as wanted.
-func (m *Manager) prepare(ctx context.Context, items []Item, auto bool) ([]step, []actions.Blocked) {
+func (m *Manager) prepare(ctx context.Context, items []Item, auto bool) ([]step, []actions.Blocked, []Item) {
 	var steps []step
+	var deferred []Item
 	blocked := []actions.Blocked{}
 	block := func(it Item, reason string) {
 		blocked = append(blocked, actions.Blocked{Item: toItem(it), Reason: reason})
@@ -313,7 +322,8 @@ func (m *Manager) prepare(ctx context.Context, items []Item, auto bool) ([]step,
 	for _, it := range items {
 		key, r, rerr := m.request(it)
 		a, ok := m.cfg.Actions.Lookup(key)
-		if rerr != nil || !ok || (auto && !unattended(it)) {
+		wait := auto && it.Kind == KindStack && m.cfg.Defer != nil
+		if rerr != nil || !ok || (auto && !unattended(it) && !wait) {
 			block(it, ReasonSystem)
 			continue
 		}
@@ -356,9 +366,13 @@ func (m *Manager) prepare(ctx context.Context, items []Item, auto bool) ([]step,
 		if running == (it.Do == DoStart) {
 			continue
 		}
+		if wait {
+			deferred = append(deferred, it)
+			continue
+		}
 		steps = append(steps, step{item: it, a: a, r: r, plan: plan})
 	}
-	return steps, blocked
+	return steps, blocked, deferred
 }
 
 // execute runs steps, each audited. done lists what happened, left what
@@ -476,8 +490,8 @@ func (m *Manager) planActivate(ctx context.Context, p store.Profile, auto bool) 
 			starts = append(starts, it)
 		}
 	}
-	steps, blocked := m.prepare(ctx, append(stops, starts...), auto)
-	return prepared{id: p.ID, name: p.Name, steps: steps}, blocked, nil
+	steps, blocked, deferred := m.prepare(ctx, append(stops, starts...), auto)
+	return prepared{id: p.ID, name: p.Name, steps: steps, deferred: deferred}, blocked, nil
 }
 
 // applyActivate runs a plan and records what will restore it.
@@ -513,7 +527,7 @@ func (m *Manager) planDeactivate(ctx context.Context, p store.Profile) (prepared
 	if err != nil {
 		return prepared{}, nil, err
 	}
-	steps, blocked := m.prepare(ctx, undo, false)
+	steps, blocked, _ := m.prepare(ctx, undo, false)
 	return prepared{id: p.ID, name: p.Name, steps: steps}, blocked, nil
 }
 
@@ -683,14 +697,70 @@ func (m *Manager) poll(ctx context.Context) {
 // why says so in the notification.
 func (m *Manager) autoActivate(ctx context.Context, p store.Profile, by, why string) {
 	pr, blocked, err := m.planActivate(ctx, p, true)
-	if err == nil {
+	if err == nil && len(pr.steps) == 0 && len(pr.deferred) > 0 {
+		// Only stacks would change: the mode is on, and they wait.
+		err = m.cfg.Store.SetProfileActive(context.WithoutCancel(ctx), pr.id, m.cfg.Clock(), by, "[]")
+		if err == nil {
+			m.cfg.Notify(ctx, p.Name+" is on, "+why, "Its apps wait for your approval in Hearth.")
+		}
+	} else if err == nil {
 		var res actions.Result
 		res, err = m.applyActivate(ctx, pr, by)
 		if err == nil {
-			m.cfg.Notify(ctx, p.Name+" is on, "+why, fmt.Sprintf("%d changed, %d failed, %d skipped.", res.Done, len(res.Failed), len(blocked)))
+			body := fmt.Sprintf("%d changed, %d failed, %d skipped.", res.Done, len(res.Failed), len(blocked))
+			if len(pr.deferred) > 0 {
+				body += fmt.Sprintf(" %d apps wait for your approval in Hearth.", len(pr.deferred))
+			}
+			m.cfg.Notify(ctx, p.Name+" is on, "+why, body)
+		}
+	}
+	if err == nil && len(pr.deferred) > 0 {
+		if derr := m.cfg.Defer(ctx, p, by, pr.deferred); derr != nil {
+			m.cfg.Log.Warn("profiles: cannot ask for approval", "profile", p.Name, "err", derr)
 		}
 	}
 	m.autoAuditBy(ctx, p, "profile.activate", by, err)
+}
+
+// ApplyDeferred runs items an automatic switch of profile id left for
+// approval, now that the user approved them (ROADMAP 10.7): the stack steps
+// in one batch that may prompt once, then their inverses join the front of
+// the restore list, so revert undoes them first. The profile must still be
+// active. Items no longer needed are left out.
+func (m *Manager) ApplyDeferred(ctx context.Context, id int64, items []Item) (actions.Result, error) {
+	for _, it := range items {
+		if it.Kind != KindStack || (it.Do != DoStart && it.Do != DoStop) || it.Expect != "" {
+			return actions.Result{}, errors.New("profiles: only stack steps wait for approval")
+		}
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	p, err := m.cfg.Store.Profile(ctx, id)
+	if err != nil {
+		return actions.Result{}, err
+	}
+	if p.ActivatedAt.IsZero() {
+		return actions.Result{}, actions.Errorf(http.StatusConflict, "this mode is no longer on")
+	}
+	undo, err := decodeItems(p.Undo)
+	if err != nil {
+		return actions.Result{}, err
+	}
+	steps, blocked, _ := m.prepare(ctx, items, false)
+	res, _, _, undone, err := m.execute(ctx, p.Name, steps, true)
+	res.Blocked = append(res.Blocked, blocked...)
+	front := []Item{}
+	for i := len(undone) - 1; i >= 0; i-- {
+		front = append(front, undone[i])
+	}
+	text, jerr := encodeItems(append(front, undo...))
+	if jerr != nil {
+		return res, jerr
+	}
+	if serr := m.cfg.Store.SetProfileActive(context.WithoutCancel(ctx), p.ID, p.ActivatedAt, p.ActivatedBy, text); serr != nil {
+		return res, serr
+	}
+	return res, err
 }
 
 // AutoActivate switches profile id on for a trigger (ROADMAP 10.6): as

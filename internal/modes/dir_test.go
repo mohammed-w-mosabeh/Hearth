@@ -270,7 +270,7 @@ func TestHandler(t *testing.T) {
 		active: []store.ActiveMode{{ModeID: "work", FileHash: "old", Since: time.UnixMilli(1793359297763), By: "user"}},
 	}
 	mux := http.NewServeMux()
-	s.HandleRegister(mux, db)
+	s.HandleRegister(mux, db, nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/v1/modes", nil))
 	if rec.Code != 200 || rec.Header().Get("Content-Type") != "application/json" {

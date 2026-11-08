@@ -79,7 +79,7 @@ The ring is 100 minus the points below, never under 0. Each item takes fixed poi
 | Unhealthy app: a container unhealthy, restarting or dead, or exited while the app should run (9.12) | `GET /app-health` | 10 | 30 | Apps page |
 | App whose last backup failed (9.12) | same | 15 | 30 | Apps page |
 | App the owner's last update preview found a new digest for (9.12) | same | 5 | 10 | Apps page |
-| Pending mode approval | Phase 10 | 0 | 0 | reserved, inactive |
+| Pending mode approval: stack steps an automatic switch left for a click (10.7) | `GET /modes` (`approvals`) | 0 | 0 | Open modes |
 
 The update row never asks a registry itself (SECURITY S21a): it repeats what the owner's last update preview of the app found, kept in the `stacks.updates` setting, and lapses once the app's spec or a running image changes. A failed backup's row is keyed by the backup's time, so a snooze covers that failure only. A listener behind an active firewall is info on the Security page and is not counted here. A source that cannot be read deducts nothing and is named as not checked. Everything is read when Home opens and every 5 minutes after; alerts also arrive as they fire. A row snoozes for 24 hours, per viewer, in the `home.snoozed` setting (at most 200 items, each `{"until": {"<item id>": <unix ms>}}`); a snoozed item still counts in the ring. On Ember, Home's restart banner gives way to the restart row.
 

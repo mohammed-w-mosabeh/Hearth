@@ -795,6 +795,20 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 			return profileManager.ValidateItems(list, game)
 		}})
 	modeProfiles := &modes.ProfileStore{Set: modeSet, DB: db}
+	// Approvals (ROADMAP 10.7): an automatic switch never asks for a
+	// password; its stack steps wait here for the user's click.
+	approvals := modes.NewApprovals(modes.ApprovalConfig{Set: modeSet, DB: db, Log: log,
+		Apply: func(ctx context.Context, modeID string, items []modes.Item) (actions.Result, error) {
+			nums, err := db.ModeNumbers(ctx, []string{modeID})
+			if err != nil {
+				return actions.Result{}, err
+			}
+			list := make([]profiles.Item, len(items))
+			for i, it := range items {
+				list[i] = profiles.Item(it)
+			}
+			return profileManager.ApplyDeferred(ctx, nums[modeID], list)
+		}})
 
 	// Profiles: sets of things to start or stop together, by hand or while
 	// a game runs (only then is the running state polled).
@@ -831,6 +845,17 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		},
 		// Session settings a mode sets: what each was is read before it
 		// changes, so revert puts back exactly that (ROADMAP 10.5).
+		Defer: func(ctx context.Context, p store.Profile, by string, items []profiles.Item) error {
+			m, ok := modeProfiles.ModeFor(ctx, p.ID)
+			if !ok {
+				return errors.New("modes: the mode's file is gone or broken")
+			}
+			list := make([]modes.Item, len(items))
+			for i, it := range items {
+				list[i] = modes.Item(it)
+			}
+			return approvals.Defer(ctx, m.ID, m.Hash, by, list)
+		},
 		Settings: modes.SessionSettings{Session: sess, Power: func() (string, bool) {
 			if p := pw.Snapshot().Profile; p != nil {
 				return p.Active, true
@@ -878,7 +903,12 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	} else if n > 0 {
 		log.Info("modes: profiles migrated to mode files", "count", n)
 	}
-	modeSet.HandleRegister(srv.API, db)
+	modeSet.HandleRegister(srv.API, db, approvals)
+	approvals.Register(reg)
+	approvalsCtx, stopApprovals := context.WithCancel(ctx)
+	approvalsDone := make(chan struct{})
+	go func() { approvals.Run(approvalsCtx, time.Minute); close(approvalsDone) }()
+	defer func() { stopApprovals(); <-approvalsDone }()
 	// Triggers (ROADMAP 10.6): armed only by a click (mode/arm) for the file
 	// shown, they switch a mode on when what they wait for changes:
 	// unattended items only, never a dialog.

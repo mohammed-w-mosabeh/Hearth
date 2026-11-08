@@ -41,12 +41,20 @@ type List struct {
 	Modes  []View      `json:"modes"`
 	Errors []FileError `json:"errors"`
 	Active []Active    `json:"active"`
+	// Approvals are stack steps automatic switches left for a click.
+	Approvals []ApprovalView `json:"approvals"`
 }
 
-// HandleRegister adds the mode routes.
-func (s *Set) HandleRegister(mux Mux, db StateStore) {
+// HandleRegister adds the mode routes. approvals may be nil.
+func (s *Set) HandleRegister(mux Mux, db StateStore, approvals *Approvals) {
 	mux.HandleFunc("GET /api/v1/modes", func(w http.ResponseWriter, r *http.Request) {
 		out, err := s.list(r.Context(), db)
+		if err == nil {
+			out.Approvals = []ApprovalView{}
+			if approvals != nil {
+				out.Approvals, err = approvals.Pending(r.Context())
+			}
+		}
 		if err != nil {
 			http.Error(w, "cannot read modes", http.StatusInternalServerError)
 			return

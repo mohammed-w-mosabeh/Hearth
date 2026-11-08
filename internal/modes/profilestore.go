@@ -173,6 +173,15 @@ func (e entry) modeID() string {
 	return e.p.Name
 }
 
+// ModeFor is the valid mode numbered id.
+func (ps *ProfileStore) ModeFor(ctx context.Context, id int64) (Mode, bool) {
+	e, err := ps.find(ctx, id)
+	if err != nil || e.mode == nil {
+		return Mode{}, false
+	}
+	return *e.mode, true
+}
+
 // Profiles lists the modes as profiles, by name.
 func (ps *ProfileStore) Profiles(ctx context.Context) ([]store.Profile, error) {
 	list, err := ps.entries(ctx)

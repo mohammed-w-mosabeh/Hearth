@@ -29,6 +29,14 @@ type host struct {
 	// settings are session settings by name; conns the active connections.
 	settings map[string]string
 	conns    map[string]bool
+	// deferred are the stack steps automatic switches left for approval.
+	deferred []deferCall
+}
+
+type deferCall struct {
+	id    int64
+	by    string
+	items []Item
 }
 
 // Current implements Settings.
@@ -189,9 +197,13 @@ func setup(t *testing.T) *fixture {
 			return h.on[h.key(it)], nil
 		},
 		Settings: h,
-		Playing:  func() ([]string, error) { return h.games, h.gameErr },
-		Notify:   func(_ context.Context, s, _ string) { h.notes = append(h.notes, s) },
-		Batch:    h.batch,
+		Defer: func(_ context.Context, p store.Profile, by string, items []Item) error {
+			h.deferred = append(h.deferred, deferCall{p.ID, by, slices.Clone(items)})
+			return nil
+		},
+		Playing: func() ([]string, error) { return h.games, h.gameErr },
+		Notify:  func(_ context.Context, s, _ string) { h.notes = append(h.notes, s) },
+		Batch:   h.batch,
 	})
 	m.Register(reg)
 	mux := http.NewServeMux()
