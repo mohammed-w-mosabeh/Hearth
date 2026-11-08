@@ -162,6 +162,16 @@
       <allow_active>auth_admin_keep</allow_active>
     </defaults>
   </action>
+  <action id="org.hearth.stack.grant">
+    <description>Let Hearth stop an app by itself, when a mode is switched on with nobody there</description>
+    <message>Authentication is required to let Hearth stop this app by itself for 90 days</message>
+    <icon_name>preferences-system</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
   <action id="org.hearth.stack.remove">
     <description>Remove an app through Hearth</description>
     <message>Authentication is required to remove this app</message>

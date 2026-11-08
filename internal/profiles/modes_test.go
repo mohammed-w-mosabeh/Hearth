@@ -54,6 +54,7 @@ func TestProfilesOnModes(t *testing.T) {
 		{"AutomaticSwitchDefersStacks", TestAutomaticSwitchDefersStacks},
 		{"ApplyDeferredRefusals", TestApplyDeferredRefusals},
 		{"AutoActivateForATrigger", TestAutoActivateForATrigger},
+		{"GrantedStacksRunUnattended", TestGrantedStacksRunUnattended},
 		{"SettingsSnapshotAndRevert", TestSettingsSnapshotAndRevert},
 		{"RevertLeavesHandChanges", TestRevertLeavesHandChanges},
 		{"SettingsPartial", TestSettingsPartial},

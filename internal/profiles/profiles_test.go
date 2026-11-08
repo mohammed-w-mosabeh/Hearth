@@ -31,6 +31,8 @@ type host struct {
 	conns    map[string]bool
 	// deferred are the stack steps automatic switches left for approval.
 	deferred []deferCall
+	// grants are the unattended grants: stack to verbs.
+	grants map[string][]string
 }
 
 type deferCall struct {
@@ -197,6 +199,7 @@ func setup(t *testing.T) *fixture {
 			return h.on[h.key(it)], nil
 		},
 		Settings: h,
+		Granted:  func(context.Context) (map[string][]string, error) { return h.grants, nil },
 		Defer: func(_ context.Context, p store.Profile, by string, items []Item) error {
 			h.deferred = append(h.deferred, deferCall{p.ID, by, slices.Clone(items)})
 			return nil

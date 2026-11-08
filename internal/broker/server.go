@@ -65,21 +65,14 @@ type Method struct {
 	// of Action, and details for the dialog to show (polkit.message among
 	// them). It runs after Check; an empty action means Action.
 	Authorize func(params json.RawMessage) (action string, details map[string]string)
-	// Interactive, if set, reports whether polkit may ask the user for these
-	// params. When it returns false, only a QuietAuthority is asked, so no
-	// dialog can appear; any other Authority refuses.
-	Interactive func(params json.RawMessage) bool
+	// Authorized, if set, may decide a call before polkit: decided true
+	// means ok alone allows or refuses it, and polkit is not asked.
+	Authorized func(ctx context.Context, c Caller, params json.RawMessage) (decided, ok bool)
 }
 
 // Authority decides privileged calls (polkit in production).
 type Authority interface {
 	Check(ctx context.Context, c Caller, action string) (bool, error)
-}
-
-// QuietAuthority can answer without asking the user: no dialog, and a
-// challenge is a refusal (SECURITY S15b).
-type QuietAuthority interface {
-	CheckQuiet(ctx context.Context, c Caller, action string) (bool, error)
 }
 
 // DetailedAuthority also shows details in the dialog.
@@ -353,7 +346,15 @@ func (s *Server) call(ctx context.Context, c Caller, line []byte, conn net.Conn,
 			return fail(be) // before polkit: no dialog for a request that is refused anyway
 		}
 	}
-	if m.Privileged {
+	decided := false
+	if m.Privileged && m.Authorized != nil {
+		var ok bool
+		if decided, ok = m.Authorized(ctx, c, req.Params); decided && !ok {
+			s.audit(c, req.Method, audited, "refused: not authorized without a password")
+			return send(Response{ID: req.ID, Error: Errorf(CodeUnauthorized, "not authorized")}) == nil
+		}
+	}
+	if m.Privileged && !decided {
 		action, details := m.Action, map[string]string(nil)
 		if m.Authorize != nil {
 			if a, d := m.Authorize(req.Params); a != "" {
@@ -363,16 +364,9 @@ func (s *Server) call(ctx context.Context, c Caller, line []byte, conn net.Conn,
 		actx, cancel := context.WithTimeout(ctx, timeout)
 		var ok bool
 		var err error
-		quiet := m.Interactive != nil && !m.Interactive(req.Params)
-		qa, isQA := s.cfg.Authority.(QuietAuthority)
-		switch da, isDA := s.cfg.Authority.(DetailedAuthority); {
-		case quiet && !isQA:
-			err = errors.New("no way to ask without a dialog")
-		case quiet:
-			ok, err = qa.CheckQuiet(actx, c, action)
-		case isDA && len(details) > 0:
+		if da, isDA := s.cfg.Authority.(DetailedAuthority); isDA && len(details) > 0 {
 			ok, err = da.CheckDetails(actx, c, action, details)
-		default:
+		} else {
 			ok, err = s.cfg.Authority.Check(actx, c, action)
 		}
 		cancel()

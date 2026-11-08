@@ -17,8 +17,9 @@ type StackBatchItem struct {
 }
 
 // StackBatchParams is stack.batch's params (ROADMAP 10.4): a mode's stack
-// actions, one polkit check for all of them. Interactive false asks polkit
-// without allowing a dialog (SECURITY S15b), and is the default.
+// actions, one polkit check for all of them. Interactive false, the
+// default, never asks polkit: only the owner's unattended grants allow it
+// (10.8, SECURITY S15b).
 type StackBatchParams struct {
 	Items       []StackBatchItem `json:"items"`
 	Interactive bool             `json:"interactive"`
@@ -118,9 +119,18 @@ func (s *stacks) batchMethod() Method {
 			_, _, err := s.checkBatch(ctx, p, true)
 			return pre(err)
 		},
-		Interactive: func(p json.RawMessage) bool {
+		// Unattended, a batch is allowed by the owner's grants alone: every
+		// item must have one. Polkit is never asked, so a password typed
+		// earlier for something else cannot count (SECURITY S15b).
+		Authorized: func(_ context.Context, c Caller, p json.RawMessage) (bool, bool) {
 			var v StackBatchParams
-			return decodeParams(p, &v) == nil && v.Interactive
+			if decodeParams(p, &v) != nil {
+				return true, false
+			}
+			if v.Interactive {
+				return false, false
+			}
+			return true, s.unattended.allows(c.UID, v.Items, s.c.Now())
 		},
 		Handle: s.batch}
 }

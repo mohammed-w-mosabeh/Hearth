@@ -163,3 +163,23 @@ func TestAutoActivateForATrigger(t *testing.T) {
 		t.Fatal(err, f.h.deferred)
 	}
 }
+
+// A stack the owner granted runs in the automatic switch, in a batch that
+// cannot prompt; the rest still wait (ROADMAP 10.8).
+func TestGrantedStacksRunUnattended(t *testing.T) {
+	f := setup(t)
+	f.h.on["stack:photos"], f.h.on["stack:feeds"], f.h.on["stack:notes"] = true, true, false
+	f.h.grants = map[string][]string{"photos": {"stop"}, "notes": {"stop"}} // notes may not be started
+	id := f.add(t, "Game", true, photos, feeds, notes)
+	f.h.games = []string{"steam.1"}
+	f.m.poll(context.Background())
+	if len(f.h.batches) != 1 || f.h.batches[0].interactive || len(f.h.batches[0].items) != 1 || f.h.batches[0].items[0] != photos {
+		t.Fatalf("%+v", f.h.batches)
+	}
+	if len(f.h.deferred) != 1 || len(f.h.deferred[0].items) != 2 || f.h.deferred[0].items[0] != feeds || f.h.deferred[0].items[1] != notes {
+		t.Fatalf("%+v", f.h.deferred)
+	}
+	if !strings.Contains(f.profile(t, id).Undo, `"target":"photos","do":"start"`) {
+		t.Fatal(f.profile(t, id).Undo)
+	}
+}

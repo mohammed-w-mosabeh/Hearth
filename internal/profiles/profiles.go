@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -136,8 +137,13 @@ type Config struct {
 	// switch runs. Without it, an automatic switch leaves stacks out and a
 	// profile that has them cannot have the game trigger.
 	Defer func(ctx context.Context, p store.Profile, by string, items []Item) error
-	Log   *slog.Logger
-	Clock func() time.Time
+	// Granted, if set, lists the stacks the owner allowed a trigger to
+	// change with nobody there (ROADMAP 10.8): stack name to verbs. Such a
+	// step runs in the automatic switch's batch, which never prompts and
+	// which the broker allows by the grant alone; the rest wait for approval.
+	Granted func(ctx context.Context) (map[string][]string, error)
+	Log     *slog.Logger
+	Clock   func() time.Time
 }
 
 // Manager applies and restores profiles.
@@ -315,6 +321,8 @@ func toItem(it Item) actions.Item {
 func (m *Manager) prepare(ctx context.Context, items []Item, auto bool) ([]step, []actions.Blocked, []Item) {
 	var steps []step
 	var deferred []Item
+	var granted map[string][]string // read once, when an automatic switch has stacks
+	grantRead := false
 	blocked := []actions.Blocked{}
 	block := func(it Item, reason string) {
 		blocked = append(blocked, actions.Blocked{Item: toItem(it), Reason: reason})
@@ -367,8 +375,17 @@ func (m *Manager) prepare(ctx context.Context, items []Item, auto bool) ([]step,
 			continue
 		}
 		if wait {
-			deferred = append(deferred, it)
-			continue
+			if !grantRead && m.cfg.Granted != nil {
+				var err error
+				if granted, err = m.cfg.Granted(ctx); err != nil {
+					m.cfg.Log.Warn("profiles: cannot read unattended grants", "err", err)
+				}
+				grantRead = true
+			}
+			if !slices.Contains(granted[it.Target], it.Do) {
+				deferred = append(deferred, it)
+				continue
+			}
 		}
 		steps = append(steps, step{item: it, a: a, r: r, plan: plan})
 	}

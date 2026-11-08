@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
-	"strings"
 	"testing"
+	"time"
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/pathcheck"
 )
@@ -72,76 +72,80 @@ func TestStackBatchRefusals(t *testing.T) {
 	if len(r.ran) != 0 {
 		t.Fatalf("ran %v", r.ran)
 	}
-	if m := r.methods["stack.batch"]; m.Action != ActionStackControl || m.Interactive == nil {
+	if m := r.methods["stack.batch"]; m.Action != ActionStackControl || m.Authorized == nil {
 		t.Fatal("batch method")
 	}
 }
 
-// quietAuthority counts how polkit was asked.
-type quietAuthority struct{ interactive, quiet int }
+// countingAuthority counts how often polkit was asked, and always allows.
+type countingAuthority struct{ interactive int }
 
-func (q *quietAuthority) Check(context.Context, Caller, string) (bool, error) {
+func (q *countingAuthority) Check(context.Context, Caller, string) (bool, error) {
 	q.interactive++
 	return true, nil
 }
 
-func (q *quietAuthority) CheckQuiet(context.Context, Caller, string) (bool, error) {
-	q.quiet++
-	return true, nil
-}
-
-// interactiveOnly cannot ask without a dialog.
-type interactiveOnly struct{ calls int }
-
-func (a *interactiveOnly) Check(context.Context, Caller, string) (bool, error) {
-	a.calls++
-	return true, nil
-}
-
-// TestStackBatchQuiet: interactive false never asks polkit in a way that
-// could show a dialog (SECURITY S15b); true asks once for the whole batch.
-func TestStackBatchQuiet(t *testing.T) {
+// TestStackBatchUnattended: interactive false never asks polkit at all, so
+// no dialog can appear and no password typed earlier counts; only the
+// owner's grants allow it, for every item (SECURITY S15b). Interactive
+// true asks once for the whole batch.
+func TestStackBatchUnattended(t *testing.T) {
 	r := newLifeRig(t)
 	for _, s := range []string{lifeSpec, otherSpec} {
-		r.engine.containers = nil // the fake answers every project with the last one's containers
+		r.engine.containers = nil
 		if _, err := r.call(t, "stack.deploy", deployParams(s)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	methods := StackLifeMethods(StackConfig{Store: r.store, Paths: r.paths, Engine: r.engine, ProcRoot: r.proc,
+	now := time.UnixMilli(1793359297763)
+	methods := StackLifeMethods(StackConfig{Store: r.store, Paths: r.paths, Engine: r.engine, ProcRoot: r.proc, Now: func() time.Time { return now },
 		Run: func(context.Context, string) error { return nil }})
-	items := `[{"name":"web","verb":"stop"},{"name":"notes","verb":"stop"}]`
-
-	auth := &quietAuthority{}
+	auth := &countingAuthority{}
 	h := start(t, true, func(c *Config) { c.Methods = append(c.Methods, methods...); c.Authority = auth })
-	for _, line := range []string{
-		`{"id":1,"method":"stack.batch","params":{"items":` + items + `}}`,
-		`{"id":2,"method":"stack.batch","params":{"items":` + items + `,"interactive":false}}`,
-	} {
-		if resp := h.raw(line); len(resp) != 1 || resp[0].Error != nil {
+	stops := `[{"name":"web","verb":"stop"},{"name":"notes","verb":"stop"}]`
+	call := func(line string) []Response { t.Helper(); return h.raw(line) }
+	refused := func(line string) {
+		t.Helper()
+		if resp := call(line); len(resp) != 1 || resp[0].Error == nil || resp[0].Error.Code != CodeUnauthorized {
 			t.Fatalf("%s: %+v", line, resp)
 		}
 	}
-	if auth.quiet != 2 || auth.interactive != 0 {
-		t.Fatalf("quiet %d, interactive %d", auth.quiet, auth.interactive)
+	// No grants: refused, and polkit never asked.
+	refused(`{"id":1,"method":"stack.batch","params":{"items":` + stops + `}}`)
+	refused(`{"id":2,"method":"stack.batch","params":{"items":` + stops + `,"interactive":false}}`)
+	if auth.interactive != 0 {
+		t.Fatalf("%+v", auth)
 	}
-	resp := h.raw(`{"id":3,"method":"stack.batch","params":{"items":` + items + `,"interactive":true}}`)
-	if len(resp) != 1 || resp[0].Error != nil || auth.interactive != 1 {
+	// A grant for web only: a batch that also stops notes is refused.
+	if resp := call(`{"id":3,"method":"stack.grant.set","params":{"name":"web"}}`); len(resp) != 1 || resp[0].Error != nil || auth.interactive != 1 {
+		t.Fatalf("%+v %+v", resp, auth)
+	}
+	refused(`{"id":4,"method":"stack.batch","params":{"items":` + stops + `}}`)
+	if resp := call(`{"id":5,"method":"stack.batch","params":{"items":[{"name":"web","verb":"stop"}]}}`); len(resp) != 1 || resp[0].Error != nil {
+		t.Fatalf("%+v", resp)
+	}
+	// Stop only, unless start was chosen; restart never.
+	refused(`{"id":6,"method":"stack.batch","params":{"items":[{"name":"web","verb":"start"}]}}`)
+	refused(`{"id":7,"method":"stack.batch","params":{"items":[{"name":"web","verb":"restart"}]}}`)
+	if resp := call(`{"id":8,"method":"stack.grant.set","params":{"name":"web","start":true}}`); resp[0].Error != nil {
+		t.Fatalf("%+v", resp)
+	}
+	if resp := call(`{"id":9,"method":"stack.batch","params":{"items":[{"name":"web","verb":"start"}]}}`); resp[0].Error != nil {
+		t.Fatalf("%+v", resp)
+	}
+	// After 90 days it lapses.
+	now = now.Add(GrantTTL)
+	refused(`{"id":10,"method":"stack.batch","params":{"items":[{"name":"web","verb":"stop"}]}}`)
+	if auth.interactive != 2 {
+		t.Fatalf("polkit was asked for an unattended batch: %+v", auth)
+	}
+	// Interactive asks once for the whole batch, grants or not.
+	if resp := call(`{"id":11,"method":"stack.batch","params":{"items":` + stops + `,"interactive":true}}`); resp[0].Error != nil || auth.interactive != 3 {
 		t.Fatalf("%+v %+v", resp, auth)
 	}
 	var reply StackBatchReply
+	resp := call(`{"id":12,"method":"stack.batch","params":{"items":` + stops + `,"interactive":true}}`)
 	if err := json.Unmarshal(resp[0].Result, &reply); err != nil || len(reply.Results) != 2 {
 		t.Fatalf("%v %s", err, resp[0].Result)
-	}
-
-	// An authority that cannot stay quiet refuses, and is never asked.
-	only := &interactiveOnly{}
-	h2 := start(t, true, func(c *Config) { c.Methods = append(c.Methods, methods...); c.Authority = only })
-	resp = h2.raw(`{"id":1,"method":"stack.batch","params":{"items":` + items + `}}`)
-	if len(resp) != 1 || resp[0].Error == nil || resp[0].Error.Code != CodeUnauthorized || only.calls != 0 {
-		t.Fatalf("%+v calls %d", resp, only.calls)
-	}
-	if !strings.Contains(resp[0].Error.Message, "not authorized") {
-		t.Fatal(resp[0].Error.Message)
 	}
 }

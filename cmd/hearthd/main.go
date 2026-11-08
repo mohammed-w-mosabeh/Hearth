@@ -542,6 +542,10 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	docker.RegisterUpdate(reg, brokerClient, images.Registry, safeexec.Run)
 	appUpdates := &stacks.UpdateNotes{Settings: db}
 	stacks.Register(reg, brokerClient, images.Registry, appUpdates)
+	// Unattended grants (ROADMAP 10.8): one password, then a trigger may
+	// stop (or start) that stack with nobody there, for 90 days.
+	stacks.RegisterGrants(reg, brokerClient)
+	srv.API.HandleFunc("GET /api/v1/stack-grants", stacks.HandleGrants(brokerClient))
 	srv.API.HandleFunc("GET /api/v1/app-health", stacks.HandleHealth(brokerClient, appUpdates))
 	// App names at http://<app>.localhost:<port>/ (9.13): off until the
 	// owner turns it on, 127.0.0.1 only, never Hearth.
@@ -856,6 +860,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 			}
 			return approvals.Defer(ctx, m.ID, m.Hash, by, list)
 		},
+		Granted: func(ctx context.Context) (map[string][]string, error) { return stacks.Grants(ctx, brokerClient) },
 		Settings: modes.SessionSettings{Session: sess, Power: func() (string, bool) {
 			if p := pw.Snapshot().Profile; p != nil {
 				return p.Active, true
