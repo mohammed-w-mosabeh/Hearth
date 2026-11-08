@@ -16,8 +16,6 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
-
-	"github.com/mohammed-w-mosabeh/hearth/internal/profiles"
 )
 
 // maxFiles is how many mode files are read; the rest are reported.
@@ -39,8 +37,9 @@ type Config struct {
 	// Dir is the modes directory, created 0700 when missing.
 	Dir string
 	// Check validates what a mode asks of the profile actions, as a saved
-	// profile is checked (profiles.Manager.ValidateImported in production).
-	Check func(items []profiles.Item) error
+	// profile is checked, with the game trigger's limits when game is true
+	// (profiles.Manager.ValidateItems in production).
+	Check func(items []Item, game bool) error
 	// Store disarms the triggers of a file that changed or went away.
 	Store Store
 	// Changed is called after a reload that changed something.
@@ -188,8 +187,8 @@ func (s *Set) read() (modes []Mode, errs []FileError, hashes map[string]string) 
 		}
 		m, err := Parse(id, raw)
 		if err == nil && s.cfg.Check != nil {
-			if items := m.ProfileItems(); len(items) > 0 {
-				if cerr := s.cfg.Check(items); cerr != nil {
+			if items := m.ActionItems(); len(items) > 0 {
+				if cerr := s.cfg.Check(items, m.HasGame()); cerr != nil {
 					err = errors.New(Clean(cerr.Error()))
 				}
 			}

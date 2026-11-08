@@ -67,10 +67,21 @@ func (h *host) register(reg *actions.Registry) {
 	add("app", "launch", actions.Safe, DoStart)
 }
 
+// testStore is a Store the tests can also plant rows in, as if edited
+// behind the API, and read the audit log of.
+type testStore interface {
+	Store
+	AuditBetween(ctx context.Context, from, to time.Time, limit int) ([]store.AuditRow, error)
+}
+
+// newStore is the Store under test: the database, or mode files when
+// TestProfilesOnModes runs the suite again (ROADMAP 10.2).
+var newStore = func(_ *testing.T, db *store.DB) testStore { return db }
+
 type fixture struct {
 	h   *host
 	m   *Manager
-	db  *store.DB
+	db  testStore
 	reg *actions.Registry
 	mux *http.ServeMux
 }
@@ -91,7 +102,8 @@ func setup(t *testing.T) *fixture {
 	h := &host{on: map[string]bool{}, failOn: map[string]bool{}}
 	reg := actions.NewRegistry(db)
 	h.register(reg)
-	m := New(Config{Store: db, Actions: reg,
+	st := newStore(t, db)
+	m := New(Config{Store: st, Actions: reg,
 		Active:  func(_ context.Context, it Item) (bool, error) { return h.on[h.key(it)], nil },
 		Playing: func() ([]string, error) { return h.games, h.gameErr },
 		Notify:  func(_ context.Context, s, _ string) { h.notes = append(h.notes, s) },
@@ -100,7 +112,7 @@ func setup(t *testing.T) *fixture {
 	mux := http.NewServeMux()
 	m.HandleRegister(muxer{mux})
 	mux.HandleFunc("POST /api/v1/actions/{kind}/{action}", reg.Handle)
-	return &fixture{h: h, m: m, db: db, reg: reg, mux: mux}
+	return &fixture{h: h, m: m, db: st, reg: reg, mux: mux}
 }
 
 func (f *fixture) do(t *testing.T, method, target, body string) *httptest.ResponseRecorder {

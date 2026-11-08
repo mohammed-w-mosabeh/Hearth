@@ -1666,7 +1666,6 @@
   "reports.col.what": "What",
   "reports.col.detail": "Detail",
   "reports.timeline.none": "No changes were recorded.",
-  "nav.profiles": "Profiles",
   "profiles.title": "Profiles",
   "profiles.intro": "Sets of services, containers and apps to start or stop together, and put back afterwards.",
   "profiles.loading": "Loading…",

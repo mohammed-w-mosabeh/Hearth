@@ -30,15 +30,26 @@ export const routes: Route[] = [
   { id: 'alerts', label: 'nav.alerts', icon: 'bell' },
   { id: 'security', label: 'nav.security', icon: 'shield' },
   { id: 'tokens', label: 'nav.tokens', icon: 'shield' },
-  { id: 'profiles', label: 'nav.profiles', icon: 'layers' },
+  { id: 'modes', label: 'nav.modes', icon: 'layers' },
   { id: 'changes', label: 'nav.changes', icon: 'history' },
   { id: 'reports', label: 'nav.reports', icon: 'report' },
   { id: 'settings', label: 'nav.settings', icon: 'sliders' },
 ];
 
-/** Names of pages that open another page for now: Modes opens the Profiles
- *  page until Phase 10. */
-export const aliases: Readonly<Record<string, string>> = { modes: 'profiles' };
+/** Names of pages that open another page for now. */
+export const aliases: Readonly<Record<string, string>> = {};
+
+/** Old addresses and where they went: Profiles became Modes (ROADMAP 10.2). */
+export const redirects: Readonly<Record<string, string>> = { profiles: 'modes' };
+
+/** hash with an old page name replaced by its new one, query kept; the same
+ *  hash when nothing moved. */
+export function redirected(hash: string): string {
+  const to = redirects[routeId(hash)];
+  if (!to) return hash;
+  const i = hash.indexOf('?');
+  return `#/${to}${i < 0 ? '' : hash.slice(i)}`;
+}
 
 /** The page a route id shows. */
 export const pageOf = (id: string): string => aliases[id] ?? id;
@@ -69,12 +80,22 @@ export function routeParam(hash: string, name: string): string {
   return new URLSearchParams(hash.slice(i + 1)).get(name) ?? '';
 }
 
-export const router = $state({ id: routeId(location.hash), q: routeQuery(location.hash), inspect: routeParam(location.hash, 'inspect') });
+/** The current hash, with an old page name moved in the address bar too
+ *  (replaceState: Back does not return to the old name). */
+function currentHash(): string {
+  const hash = redirected(location.hash);
+  if (hash !== location.hash) history.replaceState(history.state, '', hash);
+  return hash;
+}
+
+const initial = currentHash();
+export const router = $state({ id: routeId(initial), q: routeQuery(initial), inspect: routeParam(initial, 'inspect') });
 
 window.addEventListener('hashchange', () => {
-  router.id = routeId(location.hash);
-  router.q = routeQuery(location.hash);
-  router.inspect = routeParam(location.hash, 'inspect');
+  const hash = currentHash();
+  router.id = routeId(hash);
+  router.q = routeQuery(hash);
+  router.inspect = routeParam(hash, 'inspect');
 });
 
 export function href(id: string, q = ''): string {

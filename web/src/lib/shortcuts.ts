@@ -22,7 +22,7 @@ export const GOTO: Readonly<Record<string, string>> = {
   i: 'insight',
   x: 'security',
   b: 'tokens',
-  m: 'profiles',
+  m: 'modes',
   y: 'changes',
   f: 'reports',
 };

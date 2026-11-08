@@ -771,9 +771,24 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	defer func() { stopTracker(); <-trackerDone }()
 	tracker.Register(srv.API)
 
+	// Modes: TOML files the user edits, untrusted, reloaded on change. An
+	// invalid file is ignored and listed with its reason; a changed file
+	// disarms its triggers (SECURITY S15b). Profiles are kept as modes
+	// (ROADMAP 10.2): the profile engine below reads and writes mode files.
+	var profileManager *profiles.Manager
+	modeSet := modes.NewSet(modes.Config{Dir: filepath.Join(paths.ConfigDir, "modes"), Store: db, Log: log,
+		Check: func(items []modes.Item, game bool) error {
+			list := make([]profiles.Item, len(items))
+			for i, it := range items {
+				list[i] = profiles.Item(it)
+			}
+			return profileManager.ValidateItems(list, game)
+		}})
+	modeProfiles := &modes.ProfileStore{Set: modeSet, DB: db}
+
 	// Profiles: sets of things to start or stop together, by hand or while
 	// a game runs (only then is the running state polled).
-	profileManager := profiles.New(profiles.Config{Store: db, Actions: reg, Log: log,
+	profileManager = profiles.New(profiles.Config{Store: modeProfiles, Actions: reg, Log: log,
 		Playing: games.Playing,
 		Notify: func(ctx context.Context, summary, body string) {
 			if err := notifier.Notify(ctx, summary, body, "info"); err != nil {
@@ -808,25 +823,22 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	})
 	profileManager.Register(reg)
 	profileManager.HandleRegister(srv.API)
+	// Profiles left in the database move to mode files once, before either
+	// loop runs; one that cannot move stays and is tried at the next start.
+	if n, err := modes.Migrate(ctx, db, modeSet, os.Getuid()); err != nil {
+		log.Warn("modes: some profiles were not migrated", "moved", n, "err", err)
+	} else if n > 0 {
+		log.Info("modes: profiles migrated to mode files", "count", n)
+	}
+	modeSet.HandleRegister(srv.API, db)
+	modesCtx, stopModes := context.WithCancel(ctx)
+	modesDone := make(chan struct{})
+	go func() { modeSet.Run(modesCtx); close(modesDone) }()
+	defer func() { stopModes(); <-modesDone }()
 	profilesCtx, stopProfiles := context.WithCancel(ctx)
 	profilesDone := make(chan struct{})
 	go func() { profileManager.Run(profilesCtx, 15*time.Second); close(profilesDone) }()
 	defer func() { stopProfiles(); <-profilesDone }()
-
-	// Modes: TOML files the user edits, untrusted, reloaded on change. An
-	// invalid file is ignored and listed with its reason; a changed file
-	// disarms its triggers (SECURITY S15b).
-	if cfgHome, err := os.UserConfigDir(); err != nil {
-		log.Warn("modes: no config folder", "err", err)
-	} else {
-		modeSet := modes.NewSet(modes.Config{Dir: filepath.Join(cfgHome, "hearth", "modes"), Store: db, Log: log,
-			Check: func(items []profiles.Item) error { return profileManager.ValidateImported("mode", items) }})
-		modeSet.HandleRegister(srv.API, db)
-		modesCtx, stopModes := context.WithCancel(ctx)
-		modesDone := make(chan struct{})
-		go func() { modeSet.Run(modesCtx); close(modesDone) }()
-		defer func() { stopModes(); <-modesDone }()
-	}
 
 	// Reports: hourly usage per app, service and container from the
 	// cgroups, and a weekly machine report saved when enabled.
@@ -874,7 +886,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	(&reports.API{B: reportBuilder, Weekly: weekly, Audit: db}).Register(srv.API)
 
 	backups := backup.New(backup.Config{
-		DB: db, Dir: filepath.Join(paths.DataDir, "backups"), ValidateProfile: profileManager.ValidateImported,
+		DB: db, Dir: filepath.Join(paths.DataDir, "backups"), ValidateProfile: profileManager.ValidateImported, Profiles: modeProfiles,
 		Weekly:       reports.Toggle{W: weekly},
 		RulesChanged: func(ctx context.Context) { _ = engine.Reload(ctx) },
 		TilesChanged: checker.Changed, Log: log,

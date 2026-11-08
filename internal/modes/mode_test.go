@@ -66,7 +66,7 @@ func TestParseValid(t *testing.T) {
 	if len(m.Stacks) != 2 || m.Stacks[1] != (StackAction{"photos", "stop"}) || len(m.Items) != 1 || len(m.Triggers) != 5 || *m.Triggers[2].Below != 30 {
 		t.Fatalf("%+v", m)
 	}
-	items := m.ProfileItems()
+	items := m.ActionItems()
 	if len(items) != 2 || items[0].Kind != "unit" || items[1].Kind != "app" || items[1].Target != "org.gnome.TextEditor" || items[1].Do != "start" {
 		t.Fatalf("%+v", items)
 	}

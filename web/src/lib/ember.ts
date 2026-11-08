@@ -62,8 +62,8 @@ export const railGroups: RailGroup[] = [
   },
 ];
 
-/** Whether a rail item is the page on screen. Modes is also #/profiles. */
-export const railCurrent = (item: string, routeId: string): boolean => item === routeId || (item === 'modes' && routeId === 'profiles');
+/** Whether a rail item is the page on screen. */
+export const railCurrent = (item: string, routeId: string): boolean => item === routeId;
 
 const RAIL_KEY = 'hearth.rail';
 const GROUPS_KEY = 'hearth.rail.groups';

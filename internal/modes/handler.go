@@ -3,7 +3,6 @@ package modes
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"time"
 
@@ -18,7 +17,7 @@ type Mux interface {
 // StateStore reads what the database holds about modes (store.DB).
 type StateStore interface {
 	ModeArmings(ctx context.Context) ([]store.ModeArming, error)
-	ActiveMode(ctx context.Context) (store.ActiveMode, error)
+	ActiveModes(ctx context.Context) ([]store.ActiveMode, error)
 }
 
 // View is a mode as the API shows it. Armed lists the indexes of its armed
@@ -28,7 +27,7 @@ type View struct {
 	Armed []int `json:"armed"`
 }
 
-// Active is the mode switched on now.
+// Active is a mode switched on now.
 type Active struct {
 	ID    string    `json:"id"`
 	Since time.Time `json:"since"`
@@ -41,7 +40,7 @@ type Active struct {
 type List struct {
 	Modes  []View      `json:"modes"`
 	Errors []FileError `json:"errors"`
-	Active *Active     `json:"active,omitempty"`
+	Active []Active    `json:"active"`
 }
 
 // HandleRegister adds the mode routes.
@@ -72,14 +71,14 @@ func (s *Set) list(ctx context.Context, db StateStore) (List, error) {
 		}
 		out.Modes = append(out.Modes, v)
 	}
-	act, err := db.ActiveMode(ctx)
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-	case err != nil:
+	act, err := db.ActiveModes(ctx)
+	if err != nil {
 		return List{}, err
-	default:
-		m, ok := s.Mode(act.ModeID)
-		out.Active = &Active{ID: act.ModeID, Since: act.Since, By: act.By, Changed: !ok || m.Hash != act.FileHash}
+	}
+	out.Active = []Active{}
+	for _, a := range act {
+		m, ok := s.Mode(a.ModeID)
+		out.Active = append(out.Active, Active{ID: a.ModeID, Since: a.Since, By: a.By, Changed: !ok || m.Hash != a.FileHash})
 	}
 	return out, nil
 }

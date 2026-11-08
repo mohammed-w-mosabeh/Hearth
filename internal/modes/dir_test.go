@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mohammed-w-mosabeh/hearth/internal/profiles"
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
 )
 
@@ -23,7 +22,7 @@ const quiet = "name = \"Quiet\"\n[session]\ndo_not_disturb = true\n"
 type fakeStore struct {
 	mu       sync.Mutex
 	armings  []store.ModeArming
-	active   *store.ActiveMode
+	active   []store.ActiveMode
 	disarmed []string
 }
 
@@ -50,11 +49,8 @@ func (f *fakeStore) ModeArmings(context.Context) ([]store.ModeArming, error) {
 	return append([]store.ModeArming{}, f.armings...), nil
 }
 
-func (f *fakeStore) ActiveMode(context.Context) (store.ActiveMode, error) {
-	if f.active == nil {
-		return store.ActiveMode{}, store.ErrNotFound
-	}
-	return *f.active, nil
+func (f *fakeStore) ActiveModes(context.Context) ([]store.ActiveMode, error) {
+	return append([]store.ActiveMode{}, f.active...), nil
 }
 
 func write(t *testing.T, dir, name, src string) {
@@ -163,16 +159,19 @@ func TestLoadCheck(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, "work.toml", work)
 	write(t, dir, "quiet.toml", quiet)
-	var got []profiles.Item
-	calls := 0
-	s := NewSet(Config{Dir: dir, Check: func(items []profiles.Item) error {
+	var got []Item
+	calls, games := 0, 0
+	s := NewSet(Config{Dir: dir, Check: func(items []Item, game bool) error {
 		calls++
 		got = items
+		if game {
+			games++
+		}
 		return errors.New("user/syncnotes.service: a profile cannot stop this unit")
 	}})
 	s.Load(context.Background())
 	// quiet.toml asks nothing of the profile actions, so it is not checked.
-	if calls != 1 || len(got) != 2 || len(s.Modes()) != 1 || !strings.Contains(errorFor(s.Errors(), "work.toml"), "cannot stop") {
+	if calls != 1 || games != 1 || len(got) != 2 || len(s.Modes()) != 1 || !strings.Contains(errorFor(s.Errors(), "work.toml"), "cannot stop") {
 		t.Fatalf("%d %+v %+v", calls, got, s.Errors())
 	}
 }
@@ -263,7 +262,7 @@ func TestHandler(t *testing.T) {
 			{ModeID: "work", Trigger: 0, FileHash: "old"}, // another version of the file
 			{ModeID: "work", Trigger: 99, FileHash: m.Hash},
 		},
-		active: &store.ActiveMode{ModeID: "work", FileHash: "old", Since: time.UnixMilli(1793359297763), By: "user"},
+		active: []store.ActiveMode{{ModeID: "work", FileHash: "old", Since: time.UnixMilli(1793359297763), By: "user"}},
 	}
 	mux := http.NewServeMux()
 	s.HandleRegister(mux, db)
@@ -277,7 +276,7 @@ func TestHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(out.Modes) != 1 || len(out.Modes[0].Armed) != 1 || out.Modes[0].Armed[0] != 1 || len(out.Errors) != 1 ||
-		out.Active == nil || !out.Active.Changed || out.Active.ID != "work" {
+		len(out.Active) != 1 || !out.Active[0].Changed || out.Active[0].ID != "work" {
 		t.Fatalf("%s", rec.Body.String())
 	}
 }

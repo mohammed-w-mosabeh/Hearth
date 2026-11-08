@@ -128,7 +128,7 @@
         <Games />
       {:else if route?.id === 'reports'}
         <Reports />
-      {:else if route?.id === 'profiles'}
+      {:else if route?.id === 'modes'}
         {#if live}<Profiles {live} />{/if}
       {:else if route?.id === 'hardware'}
         <Hardware />

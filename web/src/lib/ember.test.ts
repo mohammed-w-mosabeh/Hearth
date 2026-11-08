@@ -14,11 +14,11 @@ describe('ember rail', () => {
     expect([...pages].sort()).toEqual(routes.map((r) => r.id).sort());
   });
 
-  it('opens Apps as its own page, Modes on Profiles for now', () => {
+  it('opens Apps and Modes as their own pages', () => {
     expect(pageOf('stacks')).toBe('stacks');
-    expect(pageOf('modes')).toBe('profiles');
+    expect(pageOf('modes')).toBe('modes');
     expect(pageOf('apps')).toBe('apps');
-    expect(railCurrent('modes', 'profiles')).toBe(true);
+    expect(railCurrent('modes', 'modes')).toBe(true);
     expect(railCurrent('docker', 'stacks')).toBe(false);
   });
 

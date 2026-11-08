@@ -96,26 +96,30 @@ func (db *DB) ModeArmings(ctx context.Context) ([]ModeArming, error) {
 	return out, rows.Err()
 }
 
-// ActiveMode returns the active mode, or ErrNotFound when none is.
-func (db *DB) ActiveMode(ctx context.Context) (ActiveMode, error) {
-	var m ActiveMode
-	var since int64
-	err := db.QueryRowContext(ctx, `SELECT mode_id, file_hash, since, activated_by, snapshot FROM mode_active WHERE id = 1`).
-		Scan(&m.ModeID, &m.FileHash, &since, &m.By, &m.Snapshot)
-	if errors.Is(err, sql.ErrNoRows) {
-		return m, ErrNotFound
-	}
+// ActiveModes lists the active modes, oldest first.
+func (db *DB) ActiveModes(ctx context.Context) ([]ActiveMode, error) {
+	rows, err := db.QueryContext(ctx, `SELECT mode_id, file_hash, since, activated_by, snapshot FROM mode_active ORDER BY since, mode_id`)
 	if err != nil {
-		return m, fmt.Errorf("store: active mode: %w", err)
+		return nil, fmt.Errorf("store: active modes: %w", err)
 	}
-	m.Since = time.UnixMilli(since)
-	return m, nil
+	defer func() { _ = rows.Close() }()
+	out := []ActiveMode{}
+	for rows.Next() {
+		var m ActiveMode
+		var since int64
+		if err := rows.Scan(&m.ModeID, &m.FileHash, &since, &m.By, &m.Snapshot); err != nil {
+			return nil, fmt.Errorf("store: active modes: %w", err)
+		}
+		m.Since = time.UnixMilli(since)
+		out = append(out, m)
+	}
+	return out, rows.Err()
 }
 
-// SetActiveMode records m as the active mode, replacing any other.
+// SetActiveMode records m as active, replacing an earlier record of it.
 func (db *DB) SetActiveMode(ctx context.Context, m ActiveMode) error {
-	if _, err := db.ExecContext(ctx, `INSERT INTO mode_active (id, mode_id, file_hash, since, activated_by, snapshot) VALUES (1, ?, ?, ?, ?, ?)
-		ON CONFLICT (id) DO UPDATE SET mode_id = excluded.mode_id, file_hash = excluded.file_hash, since = excluded.since,
+	if _, err := db.ExecContext(ctx, `INSERT INTO mode_active (mode_id, file_hash, since, activated_by, snapshot) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT (mode_id) DO UPDATE SET file_hash = excluded.file_hash, since = excluded.since,
 		activated_by = excluded.activated_by, snapshot = excluded.snapshot`,
 		m.ModeID, m.FileHash, m.Since.UnixMilli(), m.By, m.Snapshot); err != nil {
 		return fmt.Errorf("store: set active mode: %w", err)
@@ -123,10 +127,85 @@ func (db *DB) SetActiveMode(ctx context.Context, m ActiveMode) error {
 	return nil
 }
 
-// ClearActiveMode records that no mode is active.
-func (db *DB) ClearActiveMode(ctx context.Context) error {
-	if _, err := db.ExecContext(ctx, `DELETE FROM mode_active`); err != nil {
+// ClearActiveMode records that modeID is no longer active.
+func (db *DB) ClearActiveMode(ctx context.Context, modeID string) error {
+	if _, err := db.ExecContext(ctx, `DELETE FROM mode_active WHERE mode_id = ?`, modeID); err != nil {
 		return fmt.Errorf("store: clear active mode: %w", err)
+	}
+	return nil
+}
+
+// ModeNumbers maps mode IDs to their numbers, giving a number to each of
+// ids that has none yet.
+func (db *DB) ModeNumbers(ctx context.Context, ids []string) (map[string]int64, error) {
+	for _, id := range ids {
+		if _, err := db.ExecContext(ctx, `INSERT INTO mode_ids (mode_id) VALUES (?) ON CONFLICT (mode_id) DO NOTHING`, id); err != nil {
+			return nil, fmt.Errorf("store: number mode: %w", err)
+		}
+	}
+	rows, err := db.QueryContext(ctx, `SELECT id, mode_id FROM mode_ids`)
+	if err != nil {
+		return nil, fmt.Errorf("store: mode numbers: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string]int64{}
+	for rows.Next() {
+		var n int64
+		var id string
+		if err := rows.Scan(&n, &id); err != nil {
+			return nil, fmt.Errorf("store: mode numbers: %w", err)
+		}
+		out[id] = n
+	}
+	return out, rows.Err()
+}
+
+// AdoptedProfile is a profile whose definition now lives in a mode file.
+type AdoptedProfile struct {
+	ProfileID int64
+	ModeID    string
+	Active    *ActiveMode // what restores it, when it was active
+	Arm       *ModeArming // its game trigger, when it was on
+}
+
+// AdoptProfile moves a profile's state to mode a.ModeID in one transaction:
+// the mode takes the profile's number, its activation and game trigger
+// carry over, and the profile row goes, so adopting is done once.
+func (db *DB) AdoptProfile(ctx context.Context, a AdoptedProfile) (err error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store: adopt profile: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	if _, err = tx.ExecContext(ctx, `INSERT INTO mode_ids (id, mode_id) VALUES (?, ?)`, a.ProfileID, a.ModeID); err != nil {
+		return fmt.Errorf("store: adopt profile: %w", err)
+	}
+	if m := a.Active; m != nil {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO mode_active (mode_id, file_hash, since, activated_by, snapshot) VALUES (?, ?, ?, ?, ?)`,
+			a.ModeID, m.FileHash, m.Since.UnixMilli(), m.By, m.Snapshot); err != nil {
+			return fmt.Errorf("store: adopt profile: %w", err)
+		}
+	}
+	if r := a.Arm; r != nil {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO mode_arming (mode_id, trigger_idx, file_hash, armed_at) VALUES (?, ?, ?, ?)`,
+			a.ModeID, r.Trigger, r.FileHash, r.ArmedAt.UnixMilli()); err != nil {
+			return fmt.Errorf("store: adopt profile: %w", err)
+		}
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM profiles WHERE id = ?`, a.ProfileID)
+	if err != nil {
+		return fmt.Errorf("store: adopt profile: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		err = ErrNotFound
+		return err
+	}
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("store: adopt profile: %w", err)
 	}
 	return nil
 }

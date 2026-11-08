@@ -23,7 +23,6 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/mohammed-w-mosabeh/hearth/internal/profiles"
 	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
 	"github.com/mohammed-w-mosabeh/hearth/internal/stacks/spec"
 )
@@ -39,6 +38,20 @@ const (
 	maxTriggers  = 8
 	maxTarget    = 255
 	maxWallpaper = 1024
+)
+
+// Kinds of action item, as the profile actions name them.
+const (
+	KindUnit      = "unit"
+	KindContainer = "container"
+	KindProject   = "project"
+	KindApp       = "app"
+)
+
+// What an item or a stack action does.
+const (
+	DoStart = "start"
+	DoStop  = "stop"
 )
 
 // Stack verbs a mode may ask for.
@@ -74,13 +87,13 @@ var (
 // Session holds the session settings a mode sets. A nil or empty field is
 // left alone.
 type Session struct {
-	Wallpaper    string   `toml:"wallpaper" json:"wallpaper,omitempty"`
-	DoNotDisturb *bool    `toml:"do_not_disturb" json:"do_not_disturb,omitempty"`
-	Brightness   *int     `toml:"brightness" json:"brightness,omitempty"` // percent, 1–100
-	PowerProfile string   `toml:"power_profile" json:"power_profile,omitempty"`
-	Open         []string `toml:"open" json:"open,omitempty"`             // desktop app IDs; never closed
-	Connect      []string `toml:"connect" json:"connect,omitempty"`       // NetworkManager connection UUIDs, VPNs included
-	Disconnect   []string `toml:"disconnect" json:"disconnect,omitempty"` // as Connect
+	Wallpaper    string   `toml:"wallpaper,omitempty" json:"wallpaper,omitempty"`
+	DoNotDisturb *bool    `toml:"do_not_disturb,omitempty" json:"do_not_disturb,omitempty"`
+	Brightness   *int     `toml:"brightness,omitempty" json:"brightness,omitempty"` // percent, 1–100
+	PowerProfile string   `toml:"power_profile,omitempty" json:"power_profile,omitempty"`
+	Open         []string `toml:"open,omitempty" json:"open,omitempty"`             // desktop app IDs; never closed
+	Connect      []string `toml:"connect,omitempty" json:"connect,omitempty"`       // NetworkManager connection UUIDs, VPNs included
+	Disconnect   []string `toml:"disconnect,omitempty" json:"disconnect,omitempty"` // as Connect
 }
 
 func (s Session) empty() bool {
@@ -95,7 +108,7 @@ type StackAction struct {
 }
 
 // Item is a profile item (a unit, container or Compose project); apps are
-// Session.Open.
+// Session.Open. Its JSON is a profiles.Item's.
 type Item struct {
 	Kind   string `toml:"kind" json:"kind"`
 	Target string `toml:"target" json:"target"`
@@ -106,19 +119,19 @@ type Item struct {
 // fields of its kind may be set.
 type Trigger struct {
 	Kind       string `toml:"kind" json:"kind"`
-	OnCalendar string `toml:"on_calendar" json:"on_calendar,omitempty"` // schedule
-	Connection string `toml:"connection" json:"connection,omitempty"`   // wifi: a connection UUID, never an SSID
-	Below      *int   `toml:"below" json:"below,omitempty"`             // battery: percent, 5–95
-	Event      string `toml:"event" json:"event,omitempty"`             // display: connect or disconnect
+	OnCalendar string `toml:"on_calendar,omitempty" json:"on_calendar,omitempty"` // schedule
+	Connection string `toml:"connection,omitempty" json:"connection,omitempty"`   // wifi: a connection UUID, never an SSID
+	Below      *int   `toml:"below,omitempty" json:"below,omitempty"`             // battery: percent, 5–95
+	Event      string `toml:"event,omitempty" json:"event,omitempty"`             // display: connect or disconnect
 }
 
 // file is the TOML document.
 type file struct {
 	Name    string        `toml:"name"`
-	Session Session       `toml:"session"`
-	Stacks  []StackAction `toml:"stack"`
-	Items   []Item        `toml:"item"`
-	Trigger []Trigger     `toml:"trigger"`
+	Session Session       `toml:"session,omitempty"`
+	Stacks  []StackAction `toml:"stack,omitempty"`
+	Items   []Item        `toml:"item,omitempty"`
+	Trigger []Trigger     `toml:"trigger,omitempty"`
 }
 
 // Mode is a valid mode file.
@@ -132,17 +145,26 @@ type Mode struct {
 	Triggers []Trigger     `json:"triggers"`
 }
 
-// ProfileItems is what a mode asks of the profile actions: its items, and
+// ActionItems is what a mode asks of the profile actions: its items, then
 // its apps to open.
-func (m Mode) ProfileItems() []profiles.Item {
-	out := make([]profiles.Item, 0, len(m.Items)+len(m.Session.Open))
-	for _, it := range m.Items {
-		out = append(out, profiles.Item{Kind: it.Kind, Target: it.Target, Do: it.Do})
-	}
+func (m Mode) ActionItems() []Item {
+	out := make([]Item, 0, len(m.Items)+len(m.Session.Open))
+	out = append(out, m.Items...)
 	for _, a := range m.Session.Open {
-		out = append(out, profiles.Item{Kind: profiles.KindApp, Target: a, Do: profiles.DoStart})
+		out = append(out, Item{Kind: KindApp, Target: a, Do: DoStart})
 	}
 	return out
+}
+
+// HasGame reports whether the mode has a game trigger, whose items must be
+// able to run with nobody there (SECURITY S15a).
+func (m Mode) HasGame() bool {
+	for _, t := range m.Triggers {
+		if t.Kind == TriggerGame {
+			return true
+		}
+	}
+	return false
 }
 
 // ValidID reports whether id can name a mode file.
@@ -234,8 +256,8 @@ func (m Mode) check() error {
 	items := map[[2]string]bool{}
 	for _, it := range m.Items {
 		switch it.Kind {
-		case profiles.KindUnit, profiles.KindContainer, profiles.KindProject:
-		case profiles.KindApp:
+		case KindUnit, KindContainer, KindProject:
+		case KindApp:
 			return errors.New(`apps are opened by session.open, not by an item`)
 		default:
 			return fmt.Errorf("item %q: kind is unit, container or project", it.Kind)
@@ -243,7 +265,7 @@ func (m Mode) check() error {
 		if err := checkTarget(it.Target); err != nil {
 			return fmt.Errorf("%s item: %w", it.Kind, err)
 		}
-		if it.Do != profiles.DoStart && it.Do != profiles.DoStop {
+		if it.Do != DoStart && it.Do != DoStop {
 			return fmt.Errorf("%s: do is start or stop", it.Target)
 		}
 		key := [2]string{it.Kind, it.Target}

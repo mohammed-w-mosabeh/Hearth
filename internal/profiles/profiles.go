@@ -213,6 +213,12 @@ func (m *Manager) ValidateImported(name string, items []Item) error {
 	return m.validate(name, items, false)
 }
 
+// ValidateItems checks a mode's items and apps as a saved profile's, with
+// the game trigger's limits when game is true (ROADMAP 10.2).
+func (m *Manager) ValidateItems(items []Item, game bool) error {
+	return m.validate("mode", items, game)
+}
+
 // step is one planned action.
 type step struct {
 	item Item
