@@ -57,6 +57,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/launcher"
 	"github.com/mohammed-w-mosabeh/hearth/internal/logview"
 	"github.com/mohammed-w-mosabeh/hearth/internal/lynis"
+	"github.com/mohammed-w-mosabeh/hearth/internal/modes"
 	"github.com/mohammed-w-mosabeh/hearth/internal/netinfo"
 	"github.com/mohammed-w-mosabeh/hearth/internal/pkgs"
 	"github.com/mohammed-w-mosabeh/hearth/internal/posture"
@@ -811,6 +812,21 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	profilesDone := make(chan struct{})
 	go func() { profileManager.Run(profilesCtx, 15*time.Second); close(profilesDone) }()
 	defer func() { stopProfiles(); <-profilesDone }()
+
+	// Modes: TOML files the user edits, untrusted, reloaded on change. An
+	// invalid file is ignored and listed with its reason; a changed file
+	// disarms its triggers (SECURITY S15b).
+	if cfgHome, err := os.UserConfigDir(); err != nil {
+		log.Warn("modes: no config folder", "err", err)
+	} else {
+		modeSet := modes.NewSet(modes.Config{Dir: filepath.Join(cfgHome, "hearth", "modes"), Store: db, Log: log,
+			Check: func(items []profiles.Item) error { return profileManager.ValidateImported("mode", items) }})
+		modeSet.HandleRegister(srv.API, db)
+		modesCtx, stopModes := context.WithCancel(ctx)
+		modesDone := make(chan struct{})
+		go func() { modeSet.Run(modesCtx); close(modesDone) }()
+		defer func() { stopModes(); <-modesDone }()
+	}
 
 	// Reports: hourly usage per app, service and container from the
 	// cgroups, and a weekly machine report saved when enabled.
