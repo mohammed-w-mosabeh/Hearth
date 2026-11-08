@@ -879,6 +879,43 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		log.Info("modes: profiles migrated to mode files", "count", n)
 	}
 	modeSet.HandleRegister(srv.API, db)
+	// Triggers (ROADMAP 10.6): armed only by a click (mode/arm) for the file
+	// shown, they switch a mode on when what they wait for changes:
+	// unattended items only, never a dialog.
+	modes.RegisterArming(reg, modeSet, db, nil)
+	triggers := modes.NewTriggers(modes.TriggerConfig{Set: modeSet, DB: db, Log: log,
+		Sources: modes.Sources{
+			Next: func(ctx context.Context, cal string) (time.Time, error) {
+				c := scheduler.CheckSchedule(ctx, safeexec.Run, scheduler.Schedule{Kind: scheduler.KindCalendar, Value: cal})
+				now := time.Now()
+				for _, ms := range c.Next {
+					if t := time.UnixMilli(ms); t.After(now) {
+						return t, nil
+					}
+				}
+				return time.Time{}, fmt.Errorf("no next run for %q: %s", cal, c.Error)
+			},
+			Connections: sysSettings.ActiveConnections,
+			Battery: func() (float64, bool, bool) {
+				bats := pw.Snapshot().Batteries
+				if len(bats) == 0 {
+					return 0, false, false
+				}
+				return bats[0].Pct, bats[0].State == "discharging", true
+			},
+			Displays: func() (int, error) { return session.ConnectedDisplays("/sys") },
+		},
+		Activate: func(ctx context.Context, modeID, by, why string) error {
+			nums, err := db.ModeNumbers(ctx, []string{modeID})
+			if err != nil {
+				return err
+			}
+			return profileManager.AutoActivate(ctx, nums[modeID], by, why)
+		}})
+	triggersCtx, stopTriggers := context.WithCancel(ctx)
+	triggersDone := make(chan struct{})
+	go func() { triggers.Run(triggersCtx, 15*time.Second); close(triggersDone) }()
+	defer func() { stopTriggers(); <-triggersDone }()
 	modesCtx, stopModes := context.WithCancel(ctx)
 	modesDone := make(chan struct{})
 	go func() { modeSet.Run(modesCtx); close(modesDone) }()

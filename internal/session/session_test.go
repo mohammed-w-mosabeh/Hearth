@@ -291,3 +291,22 @@ func TestPreferredBacklight(t *testing.T) {
 		t.Fatalf("%+v", st)
 	}
 }
+
+func TestConnectedDisplays(t *testing.T) {
+	sys := t.TempDir()
+	for name, status := range map[string]string{
+		"card0-eDP-1": "connected", "card0-HDMI-A-1": "disconnected", "card1-DP-2": "connected\n", "card0": "", "renderD128": "connected", "version": "",
+	} {
+		d := filepath.Join(sys, "class", "drm", name)
+		_ = os.MkdirAll(d, 0o700)
+		if status != "" {
+			_ = os.WriteFile(filepath.Join(d, "status"), []byte(status), 0o600)
+		}
+	}
+	if n, err := ConnectedDisplays(sys); err != nil || n != 2 {
+		t.Fatal(n, err)
+	}
+	if _, err := ConnectedDisplays(filepath.Join(sys, "none")); err == nil {
+		t.Fatal("no error without sysfs")
+	}
+}

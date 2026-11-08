@@ -663,7 +663,7 @@ func (m *Manager) poll(ctx context.Context) {
 		if !m.playing { // once per game: the user may deactivate during it
 			m.playing = true
 			for _, p := range auto {
-				m.autoActivate(ctx, p)
+				m.autoActivate(ctx, p, ByGame, "a game started")
 			}
 		}
 		return
@@ -678,16 +678,38 @@ func (m *Manager) poll(ctx context.Context) {
 	}
 }
 
-func (m *Manager) autoActivate(ctx context.Context, p store.Profile) {
+// autoActivate switches p on with nobody there: only what can run
+// unattended, never a dialog. by is who switched it (a trigger's kind) and
+// why says so in the notification.
+func (m *Manager) autoActivate(ctx context.Context, p store.Profile, by, why string) {
 	pr, blocked, err := m.planActivate(ctx, p, true)
 	if err == nil {
 		var res actions.Result
-		res, err = m.applyActivate(ctx, pr, ByGame)
+		res, err = m.applyActivate(ctx, pr, by)
 		if err == nil {
-			m.cfg.Notify(ctx, p.Name+" is on, a game started", fmt.Sprintf("%d changed, %d failed, %d skipped.", res.Done, len(res.Failed), len(blocked)))
+			m.cfg.Notify(ctx, p.Name+" is on, "+why, fmt.Sprintf("%d changed, %d failed, %d skipped.", res.Done, len(res.Failed), len(blocked)))
 		}
 	}
-	m.autoAudit(ctx, p, "profile.activate", err)
+	m.autoAuditBy(ctx, p, "profile.activate", by, err)
+}
+
+// AutoActivate switches profile id on for a trigger (ROADMAP 10.6): as
+// the game trigger does, unattended items only and no dialog. by names the
+// trigger; a profile already active is left as it is. by must not be
+// ByUser, which would allow a dialog.
+func (m *Manager) AutoActivate(ctx context.Context, id int64, by, why string) error {
+	if by == ByUser || by == "" {
+		return errors.New("profiles: an automatic switch names its trigger")
+	}
+	p, err := m.cfg.Store.Profile(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !p.ActivatedAt.IsZero() {
+		return nil
+	}
+	m.autoActivate(ctx, p, by, why)
+	return nil
 }
 
 func (m *Manager) autoDeactivate(ctx context.Context, p store.Profile) {
@@ -703,17 +725,17 @@ func (m *Manager) autoDeactivate(ctx context.Context, p store.Profile) {
 			m.cfg.Notify(ctx, p.Name+" is off, the game ended", fmt.Sprintf("%d restored.", res.Done))
 		}
 	}
-	m.autoAudit(ctx, p, "profile.deactivate", err)
+	m.autoAuditBy(ctx, p, "profile.deactivate", ByGame, err)
 }
 
-func (m *Manager) autoAudit(ctx context.Context, p store.Profile, action string, err error) {
+func (m *Manager) autoAuditBy(ctx context.Context, p store.Profile, action, by string, err error) {
 	result := "ok"
 	if err != nil {
 		result = "error: " + err.Error()
 		m.cfg.Log.Warn("profiles: automatic change", "profile", p.Name, "err", err)
 	}
 	if aerr := m.cfg.Store.Audit(ctx, store.AuditEntry{Origin: store.OriginLocal, UID: os.Getuid(), Action: action,
-		Target: strconv.FormatInt(p.ID, 10), Params: map[string]string{"by": ByGame, "profile": p.Name}, Result: result}); aerr != nil {
+		Target: strconv.FormatInt(p.ID, 10), Params: map[string]string{"by": by, "profile": p.Name}, Result: result}); aerr != nil {
 		m.cfg.Log.Warn("profiles: audit", "err", aerr)
 	}
 }

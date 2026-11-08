@@ -554,3 +554,11 @@ func TestConnectionActive(t *testing.T) {
 		t.Fatal("accepted a name")
 	}
 }
+
+func TestActiveConnections(t *testing.T) {
+	s := newSettings(t, nmBus())
+	got, err := s.ActiveConnections(context.Background())
+	if err != nil || len(got) != 1 || !got["11111111-2222-3333-4444-555555555555"] {
+		t.Fatal(got, err)
+	}
+}

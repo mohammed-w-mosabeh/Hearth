@@ -411,3 +411,27 @@ func (s *Session) result(p actions.Plan, err error) (actions.Result, error) {
 	}
 	return actions.Result{Done: 1, Failed: []actions.Blocked{}}, nil
 }
+
+var drmConnectorRe = regexp.MustCompile(`^card[0-9]+-[A-Za-z0-9-]{1,32}$`)
+
+// ConnectedDisplays counts the display connectors the kernel reports as
+// connected, from <sys>/class/drm/card*-*/status (a mode's display
+// trigger, ROADMAP 10.6). sys is "/sys" in production.
+func ConnectedDisplays(sys string) (int, error) {
+	dir := filepath.Join(sys, "class", "drm")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, e := range entries {
+		if !drmConnectorRe.MatchString(e.Name()) {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(dir, e.Name(), "status")) // #nosec G304 -- name matched, under the sysfs class dir
+		if err == nil && strings.TrimSpace(string(b)) == "connected" {
+			n++
+		}
+	}
+	return n, nil
+}

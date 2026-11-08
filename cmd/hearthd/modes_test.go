@@ -80,7 +80,7 @@ disconnect = ["11111111-2222-3333-4444-555555555555"]
 	if a, ok := reg.Lookup(back.Action); !ok || a.Validate(actions.Request{Target: back.Target, Params: back.Params}) != nil {
 		t.Errorf("%s does not accept %+v", back.Action, back)
 	}
-	for _, key := range []string{"app/launch", "unit/start", "unit/stop", "container/start", "container/stop", "project/start", "project/stop"} {
+	for _, key := range []string{"app/launch", "unit/start", "unit/stop", "container/start", "container/stop", "project/start", "project/stop", "mode/arm", "mode/disarm"} {
 		if _, ok := reg.Lookup(key); !ok {
 			t.Errorf("%s is not registered", key)
 		}

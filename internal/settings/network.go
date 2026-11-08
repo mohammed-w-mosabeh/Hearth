@@ -457,20 +457,30 @@ func (s *Settings) ConnectionActive(ctx context.Context, uuid string) (bool, err
 	if !uuidRe.MatchString(uuid) {
 		return false, errors.New("settings: not a connection UUID")
 	}
+	active, err := s.ActiveConnections(ctx)
+	return active[uuid], err
+}
+
+// ActiveConnections are the UUIDs of the active NetworkManager connections
+// (a mode's Wi-Fi trigger, ROADMAP 10.6).
+func (s *Settings) ActiveConnections(ctx context.Context) (map[string]bool, error) {
 	bus, err := s.cfg.System(ctx)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	defer func() { _ = bus.Close() }()
 	props, err := bus.GetAll(ctx, nm, nmPath, nm)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	actives, _ := props["ActiveConnections"].Value().([]dbus.ObjectPath)
+	out := map[string]bool{}
 	for _, a := range actives {
-		if p, err := bus.GetAll(ctx, nm, a, nmActive); err == nil && str(p, "Uuid") == uuid {
-			return true, nil
+		if p, err := bus.GetAll(ctx, nm, a, nmActive); err == nil {
+			if u := str(p, "Uuid"); uuidRe.MatchString(u) {
+				out[u] = true
+			}
 		}
 	}
-	return false, nil
+	return out, nil
 }
