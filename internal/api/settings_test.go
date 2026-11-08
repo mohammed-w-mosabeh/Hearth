@@ -85,7 +85,7 @@ func TestSettings(t *testing.T) {
 	}
 	for _, bad := range []string{
 		`{}`, `{"until": null}`, `{"until": []}`, `{"until": {"a": 0}}`, `{"until": {"a": -1}}`, `{"until": {"a": 1.5}}`,
-		`{"until": {"a": "1"}}`, `{"until": {"A:x": 1}}`, `{"until": {"a:\n": 1}}`, `{"until": {"a:": 1}}`, `{"until": {"": 1}}`,
+		`{"until": {"a": "1"}}`, `{"until": {"A:x": 1}}`, `{"until": {"a:\n": 1}}`, `{"until": {"a:\u0085": 1}}`, `{"until": {"a:": 1}}`, `{"until": {"": 1}}`,
 		`{"until": {"a": 1}, "x": 1}`, `{"until": {"a:` + strings.Repeat("x", 300) + `": 1}}`,
 		`{"until": {` + manyIDs(201) + `}}`,
 	} {
