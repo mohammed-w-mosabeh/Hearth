@@ -1691,6 +1691,7 @@
   "profiles.kind.container": "Container",
   "profiles.kind.project": "Compose project",
   "profiles.kind.app": "App",
+  "profiles.kind.stack": "Managed app",
   "profiles.target": "Which",
   "profiles.do": "Action",
   "profiles.do.start": "Start",

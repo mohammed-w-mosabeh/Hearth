@@ -82,7 +82,7 @@ func TestProfileStoreKeepsTheRestOfTheMode(t *testing.T) {
 	}
 	p := list[0]
 	p.Name, p.AutoGame = "Office", true
-	p.Items = `[{"kind":"app","target":"org.gnome.Calculator","do":"start"}]`
+	p.Items = `[{"kind":"stack","target":"notes","do":"start"},{"kind":"stack","target":"photos","do":"stop"},{"kind":"app","target":"org.gnome.Calculator","do":"start"}]`
 	if err := ps.UpdateProfile(ctx, p); err != nil {
 		t.Fatal(err)
 	}

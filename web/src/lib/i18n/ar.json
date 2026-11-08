@@ -1691,6 +1691,7 @@
   "profiles.kind.container": "حاوية",
   "profiles.kind.project": "مشروع Compose",
   "profiles.kind.app": "تطبيق",
+  "profiles.kind.stack": "تطبيق مُدار",
   "profiles.target": "أيها",
   "profiles.do": "الإجراء",
   "profiles.do.start": "تشغيل",

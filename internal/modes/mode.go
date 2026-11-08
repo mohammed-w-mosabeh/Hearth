@@ -45,6 +45,7 @@ const (
 	KindContainer = "container"
 	KindProject   = "project"
 	KindApp       = "app"
+	KindStack     = "stack" // a [[stack]], run by stack.batch
 )
 
 // What an item or a stack action does.
@@ -137,11 +138,14 @@ type Mode struct {
 	Triggers []Trigger     `json:"triggers"`
 }
 
-// ActionItems is what a mode asks of the profile actions: its items, then
-// its apps to open.
+// ActionItems is what a mode asks of the profile actions: its items, its
+// stacks, then its apps to open.
 func (m Mode) ActionItems() []Item {
-	out := make([]Item, 0, len(m.Items)+len(m.Session.Open))
+	out := make([]Item, 0, len(m.Items)+len(m.Stacks)+len(m.Session.Open))
 	out = append(out, m.Items...)
+	for _, st := range m.Stacks {
+		out = append(out, Item{Kind: KindStack, Target: st.Name, Do: st.Do})
+	}
 	for _, a := range m.Session.Open {
 		out = append(out, Item{Kind: KindApp, Target: a, Do: DoStart})
 	}
@@ -251,6 +255,8 @@ func (m Mode) check() error {
 		case KindUnit, KindContainer, KindProject:
 		case KindApp:
 			return errors.New(`apps are opened by session.open, not by an item`)
+		case KindStack:
+			return errors.New(`stacks are listed as [[stack]], not as an item`)
 		default:
 			return fmt.Errorf("item %q: kind is unit, container or project", it.Kind)
 		}

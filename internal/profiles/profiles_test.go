@@ -25,6 +25,27 @@ type host struct {
 	games   []string
 	gameErr error
 	notes   []string
+	batches []batchCall
+}
+
+// batchCall is one Batch call: its items and whether it could prompt.
+type batchCall struct {
+	items       []Item
+	interactive bool
+}
+
+// batch is a pretend stack.batch over the host.
+func (h *host) batch(_ context.Context, items []Item, interactive bool) []string {
+	h.batches = append(h.batches, batchCall{items: slices.Clone(items), interactive: interactive})
+	out := make([]string, len(items))
+	for i, it := range items {
+		if h.failOn["stack/"+it.Do+" "+it.Target] {
+			out[i] = "error"
+			continue
+		}
+		h.on[h.key(it)] = it.Do == DoStart
+	}
+	return out
 }
 
 func (h *host) key(it Item) string { return it.Kind + ":" + it.Target }
@@ -60,7 +81,7 @@ func (h *host) register(reg *actions.Registry) {
 				return actions.Result{Done: 1}, nil
 			}})
 	}
-	for _, kind := range []string{"unit", "container", "project"} {
+	for _, kind := range []string{"unit", "container", "project", "stack"} {
 		add(kind, "start", actions.Safe, DoStart)
 		add(kind, "stop", actions.Reversible, DoStop)
 	}
@@ -107,6 +128,7 @@ func setup(t *testing.T) *fixture {
 		Active:  func(_ context.Context, it Item) (bool, error) { return h.on[h.key(it)], nil },
 		Playing: func() ([]string, error) { return h.games, h.gameErr },
 		Notify:  func(_ context.Context, s, _ string) { h.notes = append(h.notes, s) },
+		Batch:   h.batch,
 	})
 	m.Register(reg)
 	mux := http.NewServeMux()

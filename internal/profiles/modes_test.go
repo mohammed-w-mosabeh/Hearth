@@ -48,6 +48,9 @@ func TestProfilesOnModes(t *testing.T) {
 		{"AutoRestoreFailureStaysForTheUser", TestAutoRestoreFailureStaysForTheUser},
 		{"AutoRefusesPasswordItems", TestAutoRefusesPasswordItems},
 		{"Handlers", TestHandlers},
+		{"StacksRunInOneBatch", TestStacksRunInOneBatch},
+		{"StackBatchPartial", TestStackBatchPartial},
+		{"GameRefusesStacks", TestGameRefusesStacks},
 	} {
 		t.Run(tc.name, tc.fn)
 	}

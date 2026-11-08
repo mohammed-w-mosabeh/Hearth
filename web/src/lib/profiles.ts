@@ -5,7 +5,9 @@ import type { Snapshot } from './docker';
 import type { MessageKey } from './i18n';
 import type { Unit } from './services';
 
-export type Kind = 'unit' | 'container' | 'project' | 'app';
+/** A stack is a managed app from a mode file (ROADMAP 10.4): shown and kept,
+ *  picked in the mode editor (10.9), not here. */
+export type Kind = 'unit' | 'container' | 'project' | 'app' | 'stack';
 export type Do = 'start' | 'stop';
 
 export const KINDS: Kind[] = ['unit', 'container', 'project', 'app'];
@@ -91,6 +93,9 @@ export function candidates(kind: Kind, units: readonly Unit[], docker: Snapshot 
       break;
     case 'app':
       out = apps.map((a) => ({ value: a.id, label: a.name }));
+      break;
+    case 'stack':
+      out = []; // picked in the mode editor
       break;
   }
   return out.filter((c) => !auto || unattended({ kind, target: c.value })).sort((a, b) => a.value.localeCompare(b.value));

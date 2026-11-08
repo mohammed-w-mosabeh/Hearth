@@ -191,18 +191,21 @@ func (ps *ProfileStore) Profile(ctx context.Context, id int64) (store.Profile, e
 	return e.p, err
 }
 
-// apply sets a profile's name, items, apps and game trigger on m, keeping
-// the rest of the mode.
+// apply sets a profile's name, items, stacks, apps and game trigger on m,
+// keeping the rest of the mode.
 func apply(m Mode, p store.Profile) (Mode, error) {
 	var items []Item
 	if err := json.Unmarshal([]byte(p.Items), &items); err != nil {
 		return m, fmt.Errorf("modes: items: %w", err)
 	}
-	m.Name, m.Items, m.Session.Open = p.Name, []Item{}, nil
+	m.Name, m.Items, m.Stacks, m.Session.Open = p.Name, []Item{}, []StackAction{}, nil
 	for _, it := range items {
-		if it.Kind == KindApp {
+		switch it.Kind {
+		case KindApp:
 			m.Session.Open = append(m.Session.Open, it.Target)
-		} else {
+		case KindStack:
+			m.Stacks = append(m.Stacks, StackAction{Name: it.Target, Do: it.Do})
+		default:
 			m.Items = append(m.Items, it)
 		}
 	}

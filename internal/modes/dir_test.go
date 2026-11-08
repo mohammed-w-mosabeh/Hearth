@@ -171,7 +171,7 @@ func TestLoadCheck(t *testing.T) {
 	}})
 	s.Load(context.Background())
 	// quiet.toml asks nothing of the profile actions, so it is not checked.
-	if calls != 1 || games != 1 || len(got) != 2 || len(s.Modes()) != 1 || !strings.Contains(errorFor(s.Errors(), "work.toml"), "cannot stop") {
+	if calls != 1 || games != 1 || len(got) != 4 || len(s.Modes()) != 1 || !strings.Contains(errorFor(s.Errors(), "work.toml"), "cannot stop") {
 		t.Fatalf("%d %+v %+v", calls, got, s.Errors())
 	}
 }

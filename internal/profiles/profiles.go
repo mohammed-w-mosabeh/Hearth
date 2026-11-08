@@ -32,6 +32,9 @@ const (
 	KindContainer = "container"
 	KindProject   = "project"
 	KindApp       = "app"
+	// KindStack is a managed app (a mode's [[stack]], ROADMAP 10.4): its
+	// steps run together in one stack.batch, with one polkit check.
+	KindStack = "stack"
 )
 
 // What to do to an item.
@@ -97,8 +100,14 @@ type Config struct {
 	Playing func() ([]string, error)
 	// Notify tells the user what was done without being asked.
 	Notify func(ctx context.Context, summary, body string)
-	Log    *slog.Logger
-	Clock  func() time.Time
+	// Batch, if set, runs every stack step of an activation or restore in
+	// one call (stack.batch): one polkit check for all of them, which may
+	// show a dialog only when interactive is true. It returns, per item, ""
+	// when done or the reason it failed. Without it, stack steps run one by
+	// one through their actions.
+	Batch func(ctx context.Context, items []Item, interactive bool) []string
+	Log   *slog.Logger
+	Clock func() time.Time
 }
 
 // Manager applies and restores profiles.
@@ -167,7 +176,7 @@ func (m *Manager) validate(name string, items []Item, auto bool) error {
 	seen := map[Item]bool{}
 	for _, it := range items {
 		switch it.Kind {
-		case KindUnit, KindContainer, KindProject:
+		case KindUnit, KindContainer, KindProject, KindStack:
 			if it.Do != DoStart && it.Do != DoStop {
 				return errors.New("an item either starts or stops")
 			}
@@ -176,7 +185,7 @@ func (m *Manager) validate(name string, items []Item, auto bool) error {
 				return fmt.Errorf("%s: apps are not closed by a profile: that could lose unsaved work", it.Target)
 			}
 		default:
-			return errors.New("an item is a unit, container, project or app")
+			return errors.New("an item is a unit, container, project, stack or app")
 		}
 		key := Item{Kind: it.Kind, Target: it.Target}
 		if seen[key] {
@@ -282,14 +291,29 @@ func (m *Manager) prepare(ctx context.Context, items []Item, auto bool) ([]step,
 }
 
 // execute runs steps, each audited. done lists what happened, left what
-// failed. A client going away does not stop it half way.
-func (m *Manager) execute(ctx context.Context, profile string, steps []step) (res actions.Result, done, left []Item, err error) {
+// failed. A client going away does not stop it half way. Stack steps run
+// together through Batch when the first of them is reached; interactive
+// says whether its polkit check may show a dialog.
+func (m *Manager) execute(ctx context.Context, profile string, steps []step, interactive bool) (res actions.Result, done, left []Item, err error) {
 	res.Failed = []actions.Blocked{}
 	ctx = context.WithoutCancel(ctx)
-	for _, s := range steps {
-		sctx, cancel := context.WithTimeout(ctx, stepTimeout)
-		r, runErr := s.a.Run(sctx, s.r, s.plan)
-		cancel()
+	var batched map[int]string // step index to its batch reason
+	for i, s := range steps {
+		var r actions.Result
+		var runErr error
+		if s.item.Kind == KindStack && m.cfg.Batch != nil {
+			if batched == nil {
+				batched = m.runBatch(ctx, steps, interactive)
+			}
+			r = actions.Result{Done: 1, Failed: []actions.Blocked{}}
+			if reason := batched[i]; reason != "" {
+				r = actions.Result{Failed: []actions.Blocked{{Item: toItem(s.item), Reason: reason}}}
+			}
+		} else {
+			sctx, cancel := context.WithTimeout(ctx, stepTimeout)
+			r, runErr = s.a.Run(sctx, s.r, s.plan)
+			cancel()
+		}
 		outcome := "ok"
 		switch {
 		case runErr != nil:
@@ -313,6 +337,29 @@ func (m *Manager) execute(ctx context.Context, profile string, steps []step) (re
 		}
 	}
 	return res, done, left, err
+}
+
+// runBatch runs every stack step in one Batch call, in order, and maps each
+// step's index to "" (done) or the reason it failed.
+func (m *Manager) runBatch(ctx context.Context, steps []step, interactive bool) map[int]string {
+	var idx []int
+	var items []Item
+	for i, s := range steps {
+		if s.item.Kind == KindStack {
+			idx, items = append(idx, i), append(items, s.item)
+		}
+	}
+	bctx, cancel := context.WithTimeout(ctx, time.Duration(len(items))*stepTimeout)
+	reasons := m.cfg.Batch(bctx, items, interactive)
+	cancel()
+	out := make(map[int]string, len(idx))
+	for j, i := range idx {
+		out[i] = ReasonError
+		if j < len(reasons) {
+			out[i] = reasons[j]
+		}
+	}
+	return out
 }
 
 func encodeItems(items []Item) (string, error) {
@@ -358,7 +405,7 @@ func (m *Manager) applyActivate(ctx context.Context, pr prepared, by string) (ac
 	} else if !p.ActivatedAt.IsZero() {
 		return actions.Result{}, actions.Errorf(http.StatusConflict, "this profile is already active")
 	}
-	res, done, left, err := m.execute(ctx, pr.name, pr.steps)
+	res, done, left, err := m.execute(ctx, pr.name, pr.steps, by == ByUser)
 	if len(done) == 0 && len(left) > 0 {
 		return res, err // nothing changed: not active
 	}
@@ -389,10 +436,11 @@ func (m *Manager) planDeactivate(ctx context.Context, p store.Profile) (prepared
 }
 
 // applyDeactivate restores. What failed stays to be tried again by hand.
-func (m *Manager) applyDeactivate(ctx context.Context, pr prepared) (actions.Result, error) {
+// interactive is false when nobody asked for it (the game ended).
+func (m *Manager) applyDeactivate(ctx context.Context, pr prepared, interactive bool) (actions.Result, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	res, _, left, err := m.execute(ctx, pr.name, pr.steps)
+	res, _, left, err := m.execute(ctx, pr.name, pr.steps, interactive)
 	ctx = context.WithoutCancel(ctx)
 	if len(left) == 0 {
 		if serr := m.cfg.Store.ClearProfileActive(ctx, pr.id); serr != nil {
@@ -483,7 +531,7 @@ func (m *Manager) Register(reg *actions.Registry) {
 			if !ok {
 				return actions.Result{}, errors.New("profiles: no plan")
 			}
-			return m.applyDeactivate(ctx, pr)
+			return m.applyDeactivate(ctx, pr, true)
 		}})
 }
 
@@ -564,7 +612,7 @@ func (m *Manager) autoDeactivate(ctx context.Context, p store.Profile) {
 	pr, _, err := m.planDeactivate(ctx, p)
 	if err == nil {
 		var res actions.Result
-		res, err = m.applyDeactivate(ctx, pr)
+		res, err = m.applyDeactivate(ctx, pr, false)
 		switch {
 		case err != nil:
 		case len(res.Failed) > 0:

@@ -251,10 +251,11 @@ func newStacks(c StackConfig) *stacks {
 }
 
 // StackLifeMethods are stack.status, stack.deploy, stack.update,
-// stack.control, stack.remove, stack.secrets.set and stack.secrets.reveal.
+// stack.control, stack.batch, stack.remove, stack.secrets.set and
+// stack.secrets.reveal.
 func StackLifeMethods(c StackConfig) []Method {
 	s := newStacks(c)
-	return append(append(append(s.secretMethods(), s.importMethod(), s.scheduleMethod()), s.backupMethods()...), []Method{
+	return append(append(append(s.secretMethods(), s.importMethod(), s.scheduleMethod(), s.batchMethod()), s.backupMethods()...), []Method{
 		{Name: "stack.status", Handle: s.status},
 		{Name: "stack.deploy", Privileged: true, Action: ActionStackDeploy, Timeout: StackTimeout,
 			Check: func(ctx context.Context, p json.RawMessage) error {

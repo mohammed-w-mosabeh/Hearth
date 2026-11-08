@@ -41,12 +41,22 @@ const pkAllowUserInteraction = uint32(1)
 // with its start time, so a reused pid does not match); without a start
 // time it refuses.
 func (p Polkit) Check(ctx context.Context, c Caller, action string) (bool, error) {
-	return p.CheckDetails(ctx, c, action, nil)
+	return p.check(ctx, c, action, nil, true)
 }
 
 // CheckDetails implements DetailedAuthority: polkit shows details in its
 // dialog, and since the broker runs as root it honours polkit.message.
 func (p Polkit) CheckDetails(ctx context.Context, c Caller, action string, details map[string]string) (bool, error) {
+	return p.check(ctx, c, action, details, true)
+}
+
+// CheckQuiet implements QuietAuthority: no user interaction is allowed, so
+// polkit answers without a dialog and a challenge is a refusal.
+func (p Polkit) CheckQuiet(ctx context.Context, c Caller, action string) (bool, error) {
+	return p.check(ctx, c, action, nil, false)
+}
+
+func (p Polkit) check(ctx context.Context, c Caller, action string, details map[string]string, interactive bool) (bool, error) {
 	if details == nil {
 		details = map[string]string{}
 	}
@@ -64,9 +74,12 @@ func (p Polkit) CheckDetails(ctx context.Context, c Caller, action string, detai
 		"uid":        dbus.MakeVariant(int32(c.UID)), // #nosec G115 -- uids fit in int32
 	}}
 	var res authResult
-	err = conn.CallInteractive(ctx, "org.freedesktop.PolicyKit1", "/org/freedesktop/PolicyKit1/Authority",
-		"org.freedesktop.PolicyKit1.Authority.CheckAuthorization", []any{&res},
-		subj, action, details, pkAllowUserInteraction, "")
+	const dest, path, method = "org.freedesktop.PolicyKit1", "/org/freedesktop/PolicyKit1/Authority", "org.freedesktop.PolicyKit1.Authority.CheckAuthorization"
+	if interactive {
+		err = conn.CallInteractive(ctx, dest, path, method, []any{&res}, subj, action, details, pkAllowUserInteraction, "")
+	} else {
+		err = conn.Call(ctx, dest, path, method, []any{&res}, subj, action, details, uint32(0), "")
+	}
 	if err != nil {
 		return false, err
 	}

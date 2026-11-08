@@ -805,8 +805,36 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 				log.Debug("profiles: notification", "err", err)
 			}
 		},
+		// A mode's stacks run in one stack.batch: one polkit check, which
+		// may prompt only on a switch the user asked for (ROADMAP 10.4).
+		Batch: func(ctx context.Context, items []profiles.Item, interactive bool) []string {
+			batch := make([]broker.StackBatchItem, len(items))
+			for i, it := range items {
+				batch[i] = broker.StackBatchItem{Name: it.Target, Verb: it.Do}
+			}
+			reasons := make([]string, len(items))
+			results, err := stacks.Batch(ctx, brokerClient, batch, interactive)
+			for i := range reasons {
+				switch {
+				case errors.Is(err, stacks.ErrUnauthorized):
+					reasons[i] = stacks.ReasonUnauthorized
+				case err != nil:
+					reasons[i] = stacks.ReasonError
+				case !results[i].OK:
+					reasons[i] = stacks.ReasonError
+				}
+			}
+			if err != nil {
+				log.Warn("modes: stack batch", "err", err)
+			}
+			return reasons
+		},
 		Active: func(ctx context.Context, it profiles.Item) (bool, error) {
 			switch it.Kind {
+			case profiles.KindStack:
+				// partial counts as running for a stop, not for a start.
+				state, err := stacks.State(ctx, brokerClient, it.Target)
+				return state == "running" || (it.Do == profiles.DoStop && state == "partial"), err
 			case profiles.KindContainer:
 				return docker.Running(ctx, brokerClient, it.Target)
 			case profiles.KindProject:

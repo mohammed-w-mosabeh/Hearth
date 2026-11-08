@@ -67,7 +67,8 @@ func TestParseValid(t *testing.T) {
 		t.Fatalf("%+v", m)
 	}
 	items := m.ActionItems()
-	if len(items) != 2 || items[0].Kind != "unit" || items[1].Kind != "app" || items[1].Target != "org.gnome.TextEditor" || items[1].Do != "start" {
+	if len(items) != 4 || items[0].Kind != "unit" || items[1] != (Item{"stack", "notes", "start"}) || items[2] != (Item{"stack", "photos", "stop"}) ||
+		items[3].Kind != "app" || items[3].Target != "org.gnome.TextEditor" || items[3].Do != "start" {
 		t.Fatalf("%+v", items)
 	}
 	// The smallest mode: one session setting, no lists.
