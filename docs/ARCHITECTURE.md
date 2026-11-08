@@ -23,7 +23,7 @@ Browser (PWA) ──127.0.0.1 + session token──┐
 
 - **hearthd**: `/usr/bin/hearthd`, unit `/usr/lib/systemd/user/hearthd.service`. Never root (refuses to start if `euid == 0`).
 - **hearth-broker**: `/usr/bin/hearth-broker`, `hearth-broker.socket` at `/run/hearth/broker.sock` mode `0660`, group `hearth`. Speaks a small JSON-RPC over the Unix socket. Checks the caller with `SO_PEERCRED` (uid must be in group `hearth`). Every method is in a static allowlist; destructive methods call polkit `CheckAuthorization` for the caller before acting. No "exec arbitrary command" method exists; the one interactive method, `docker.containers.exec`, runs a fixed `/bin/sh` under SECURITY S12a. Methods are calls (one answer), streams (items until the end) or sessions (items both ways, e.g. terminal input and resize).
-- **Stacks (v1.5)**: state in `/var/lib/hearth/stacks/<name>/` (spec, canonical compose JSON, `secrets.env`), written only by the broker. Work happens in oneshot units, so the broker gains no capability and no view of home: `hearth-stack@.service` (Compose), `hearth-pathcheck.service` (bind checks), `hearth-backup@.service` and `hearth-restore@.service`. Import reads the project in `hearthd`, as the user; the broker treats what it sends as untrusted (SECURITY S12b).
+- **Stacks (v1.5)**: state in `/var/lib/hearth/stacks/<name>/` (spec, canonical compose JSON, `secrets.env`), written only by the broker. Work happens in oneshot units, so the broker gains no capability and no view of home: `hearth-stack@.service` (Compose), `hearth-pathcheck@.service` (bind checks, one instance per connection to the root-only `hearth-pathcheck.socket`), `hearth-backup@.service` and `hearth-restore@.service`. Import reads the project in `hearthd`, as the user; the broker treats what it sends as untrusted (SECURITY S12b).
 
 ## Directory layout
 
@@ -56,9 +56,12 @@ hearth/
     reports/      # html/md renderers
     broker/       # client (hearthd side) + server (broker side) + allowlist
     stacks/       # v1.5: Apps, import dry-run; spec validation shared with the broker
+      spec/       # the stack spec: strict JSON decoding and the S12b rules, no I/O (imported by the broker)
     modes/        # v1.6: mode files, triggers, snapshots, approvals (extends profiles/)
     dbusx/        # small helpers over godbus
     safeexec/     # the ONLY place allowed to call os/exec; validates args
+    secret/       # S19: which env names and values are masked, for hearthd and the broker
+    imageref/     # Docker image reference grammar, for the broker and the stack spec
   web/
     index.html
     src/

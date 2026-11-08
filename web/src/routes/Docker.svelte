@@ -8,7 +8,6 @@
   import StatusMark from '../components/StatusMark.svelte';
   import { addDockerStats, containerStatus, rowNav, sparks } from '../lib/rows';
   import EmptyState from '../components/EmptyState.svelte';
-  import ComposeProjects from '../components/ComposeProjects.svelte';
   import DockerObjects from '../components/DockerObjects.svelte';
   import DockerCleanup from '../components/DockerCleanup.svelte';
   import ImagesTable from '../components/ImagesTable.svelte';
@@ -76,11 +75,11 @@
     }
   }
 
-  type Section = 'containers' | 'compose' | 'images' | 'networks' | 'volumes' | 'cleanup';
-  let section = $state<Section>(router.id === 'stacks' ? 'compose' : 'containers');
+  // Compose projects moved to the Apps page (ROADMAP 9.9).
+  type Section = 'containers' | 'images' | 'networks' | 'volumes' | 'cleanup';
+  let section = $state<Section>('containers');
   const sections: { id: Section; label: MessageKey }[] = [
     { id: 'containers', label: 'docker.section.containers' },
-    { id: 'compose', label: 'docker.section.compose' },
     { id: 'images', label: 'docker.section.images' },
     { id: 'networks', label: 'docker.section.networks' },
     { id: 'volumes', label: 'docker.section.volumes' },
@@ -89,7 +88,6 @@
 
   function sectionCount(id: Section, s: Snapshot): number {
     if (id === 'images') return s.images.length;
-    if (id === 'compose') return s.projects.length;
     if (id === 'networks') return s.networks.length;
     if (id === 'volumes') return s.volumes.length;
     return containers.length;
@@ -294,6 +292,7 @@
   <header>
     <h1>{t('docker.title')}</h1>
     <p>{snap ? t('docker.version', { version: snap.version ?? '?', n: containers.length }) : t('docker.intro')}</p>
+    <p class="moved"><a href="#/stacks">{t('docker.composeMoved')}</a></p>
   </header>
 
   <div class="sections" role="tablist" aria-label={t('docker.sections')}>
@@ -306,17 +305,15 @@
 
   {#if section === 'cleanup'}
     <DockerCleanup />
-  {:else if section === 'images' || section === 'compose' || section === 'networks' || section === 'volumes'}
+  {:else if section === 'images' || section === 'networks' || section === 'volumes'}
     {#if snap === null}
       <Skeleton label={t('docker.loading')} />
     {:else if section === 'images'}
       <ImagesTable images={snap.images} {containers} />
     {:else if section === 'networks'}
       <DockerObjects kind="network" networks={snap.networks} volumes={snap.volumes} {containers} />
-    {:else if section === 'volumes'}
-      <DockerObjects kind="volume" networks={snap.networks} volumes={snap.volumes} {containers} />
     {:else}
-      <ComposeProjects projects={snap.projects} {containers} onopen={(c) => openDetail(c)} />
+      <DockerObjects kind="volume" networks={snap.networks} volumes={snap.volumes} {containers} />
     {/if}
   {:else}
   {#if problems > 0}

@@ -2,7 +2,11 @@ package broker
 
 import (
 	"regexp"
+	"slices"
 	"strings"
+
+	"github.com/mohammed-w-mosabeh/hearth/internal/imageref"
+	"github.com/mohammed-w-mosabeh/hearth/internal/secret"
 )
 
 // Validators for the names and references Docker methods take (SECURITY
@@ -16,18 +20,6 @@ var (
 	objName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$`)
 	// Volume names: the same alphabet, up to 255.
 	volName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,254}$`)
-
-	// Image references, from github.com/distribution/reference.
-	refDomainComp = `(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])`
-	refDomain     = refDomainComp + `(?:\.` + refDomainComp + `)*(?::[0-9]{1,5})?`
-	refPathComp   = `[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*`
-	refName       = `(?:` + refDomain + `/)?` + refPathComp + `(?:/` + refPathComp + `)*`
-	refTag        = `[\w][\w.-]{0,127}`
-	refDigest     = `sha256:[a-f0-9]{64}`
-	imageName     = regexp.MustCompile(`^` + refName + `$`)
-	imageTag      = regexp.MustCompile(`^` + refTag + `$`)
-	imageRef      = regexp.MustCompile(`^(` + refName + `)(?::(` + refTag + `))?(?:@(` + refDigest + `))?$`)
-	imageDigestID = regexp.MustCompile(`^` + refDigest + `$`)
 )
 
 // ValidContainer reports whether s is a container ID (or its prefix of
@@ -43,7 +35,7 @@ func ValidVolume(s string) bool { return volName.MatchString(s) }
 // ValidImage reports whether s is an image ID (hex or sha256:hex) or a
 // reference (name[:tag][@digest]).
 func ValidImage(s string) bool {
-	if hexID.MatchString(s) || imageDigestID.MatchString(s) {
+	if hexID.MatchString(s) || imageref.IsDigest(s) {
 		return true
 	}
 	_, _, _, ok := ParseImageRef(s)
@@ -51,38 +43,30 @@ func ValidImage(s string) bool {
 }
 
 // ValidImageName reports whether s is a repository name without tag.
-func ValidImageName(s string) bool { return len(s) <= 255 && imageName.MatchString(s) }
+func ValidImageName(s string) bool { return imageref.ValidName(s) }
 
 // ValidImageTag reports whether s is a tag.
-func ValidImageTag(s string) bool { return imageTag.MatchString(s) }
+func ValidImageTag(s string) bool { return imageref.ValidTag(s) }
 
 // ParseImageRef splits name[:tag][@digest]. The name is at most 255
 // characters, as in the reference grammar.
-func ParseImageRef(s string) (name, tag, digest string, ok bool) {
-	m := imageRef.FindStringSubmatch(s)
-	if m == nil || len(m[1]) > 255 {
-		return "", "", "", false
-	}
-	return m[1], m[2], m[3], true
-}
-
-// secretEnvKey matches environment variable names whose values are
-// masked (CLAUDE.md invariant 7).
-var secretEnvKey = regexp.MustCompile(`(?i)PASSWORD|PASSWD|TOKEN|KEY|SECRET`)
+func ParseImageRef(s string) (name, tag, digest string, ok bool) { return imageref.Parse(s) }
 
 // EnvMask replaces a masked value.
-const EnvMask = "********"
+const EnvMask = secret.Mask
 
-// MaskEnv returns env ("KEY=value" entries) with the values of secret-
-// looking keys replaced by EnvMask.
-func MaskEnv(env []string) []string {
-	out := make([]string, len(env))
-	for i, e := range env {
-		k, _, found := strings.Cut(e, "=")
-		if found && secretEnvKey.MatchString(k) {
-			e = k + "=" + EnvMask
+// MaskEnv returns env ("KEY=value" entries) with the values SECURITY S19
+// masks replaced by EnvMask: secret-looking names, names ending _URL, _URI
+// or _DSN, and values holding a URL with user info.
+func MaskEnv(env []string) []string { return secret.Env(env) }
+
+// MaskEnvKeys is MaskEnv that also masks the values of keys.
+func MaskEnvKeys(env, keys []string) []string {
+	out := secret.Env(env)
+	for i, e := range out {
+		if k, _, ok := strings.Cut(e, "="); ok && k != "" && slices.Contains(keys, k) {
+			out[i] = k + "=" + secret.Mask
 		}
-		out[i] = e
 	}
 	return out
 }

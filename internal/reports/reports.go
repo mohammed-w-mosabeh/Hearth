@@ -73,6 +73,9 @@ type Config struct {
 	Markers func(ctx context.Context, from, to time.Time) ([]int64, error)
 	// Posture, if set, checks the security posture now (it has no history).
 	Posture func(ctx context.Context) posture.Report
+	// Apps, if set, lists the apps Hearth manages now; a failure leaves
+	// the section out.
+	Apps func(ctx context.Context) ([]App, error)
 	// Clock is replaced in tests.
 	Clock func() time.Time
 }
@@ -152,6 +155,20 @@ type Machine struct {
 	Covered float64 `json:"covered"`
 	// Posture is the security posture when the report was made.
 	Posture *posture.Report `json:"posture,omitempty"`
+	// Apps are the managed apps when the report was made (nil: unknown).
+	Apps []App `json:"apps,omitempty"`
+}
+
+// App is one app Hearth manages, as the machine report shows it now.
+type App struct {
+	Name      string   `json:"name"`
+	State     string   `json:"state"`
+	Unhealthy []string `json:"unhealthy"`
+	// Backup is the last backup's time and result ("" before a first).
+	Backup    string `json:"backup,omitempty"`
+	BackupOK  bool   `json:"backup_ok"`
+	Scheduled bool   `json:"scheduled"`
+	Updates   int    `json:"updates"` // services the last update preview found newer
 }
 
 // Item is the report on one app, service or container.
@@ -287,6 +304,11 @@ func (b *Builder) Machine(ctx context.Context, period string) (Machine, error) {
 	if b.cfg.Posture != nil {
 		p := b.cfg.Posture(ctx)
 		m.Posture = &p
+	}
+	if b.cfg.Apps != nil {
+		if apps, err := b.cfg.Apps(ctx); err == nil {
+			m.Apps = apps
+		}
 	}
 	b.mark(ctx, m.Trends, from, to)
 	return m, nil

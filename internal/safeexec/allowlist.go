@@ -11,6 +11,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/mohammed-w-mosabeh/hearth/internal/stacks/backup"
 )
 
 // desktopEnv is what a browser needs from the user's session.
@@ -80,11 +82,15 @@ var allowlist = map[string]Spec{
 	// docker compose config, rendering one project as the user: it reads the
 	// project's files and needs no daemon. Run by hearthd; what it prints goes
 	// to the broker as untrusted input (SECURITY S16h). The output is bounded
-	// by the rendering's own limit there.
+	// by the rendering's own limit there. Remote include and extends
+	// (git and OCI) are switched off: with them on, rendering fetches from
+	// the network. The process environment wins over the project's .env,
+	// so the project cannot switch them back on (checked on Compose v5.6).
 	"docker-compose-config": {
 		Paths:    []string{"/usr/bin/docker"},
 		Validate: composeConfigArgs,
 		Env:      []string{"HOME"},
+		SetEnv:   []string{"COMPOSE_EXPERIMENTAL_GIT_REMOTE=0", "COMPOSE_EXPERIMENTAL_OCI_REMOTE=0"},
 		Timeout:  20 * time.Second,
 	},
 	"trivy-version": {
@@ -246,6 +252,19 @@ var allowlist = map[string]Spec{
 		Validate: exactly(Literal("set-default"), PWNodeID),
 		Env:      []string{"XDG_RUNTIME_DIR"},
 		Timeout:  5 * time.Second,
+	},
+	// tar in hearth-backup@ and hearth-restore@ only (SECURITY S12d): the
+	// argv package backup builds from the broker's checked plan, compared
+	// whole. --zstd runs Debian's zstd; the units have no network.
+	"tar-create": {
+		Paths:    []string{"/usr/bin/tar", "/bin/tar"},
+		Validate: backup.CheckTarCreate,
+		Timeout:  backup.UnitTimeout,
+	},
+	"tar-extract": {
+		Paths:    []string{"/usr/bin/tar", "/bin/tar"},
+		Validate: backup.CheckTarExtract,
+		Timeout:  backup.UnitTimeout,
 	},
 }
 

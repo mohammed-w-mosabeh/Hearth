@@ -56,6 +56,8 @@ var Metrics = []Metric{
 	{ID: "integrity.changed", Label: "Sensitive file changed", Instance: "item", Max: 1},
 	{ID: "net.internet_down", Label: "Internet down", Max: 1, NotifyEnd: true},
 	{ID: "net.data_cap", Label: "Monthly data cap reached", Instance: "interface", Max: 1},
+	{ID: "app.unhealthy", Label: "App unhealthy", Instance: "app", Max: 1},
+	{ID: "backup.failed", Label: "App backup failed", Instance: "app", Max: 1},
 }
 
 func metric(id string) (Metric, bool) {
@@ -199,6 +201,12 @@ func Describe(e store.AlertEvent) (summary, body string) {
 	}
 	if e.Metric == "net.data_cap" {
 		return e.RuleName, e.Instance + " has used its monthly data cap."
+	}
+	if e.Metric == "app.unhealthy" {
+		return e.RuleName, "The app " + e.Instance + " has a container that is unhealthy, restarting or stopped."
+	}
+	if e.Metric == "backup.failed" {
+		return e.RuleName, "The last backup of the app " + e.Instance + " failed. Its Backups section says why."
 	}
 	if e.Metric == "disk.forecast_full" {
 		return e.RuleName, e.Instance + " is forecast to run out of space within 7 days."

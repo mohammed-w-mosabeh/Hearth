@@ -29,6 +29,12 @@ var answers = map[string]struct {
 	"GET /v1.44/containers/web/json": {200, `{"Id":"` + id + `","Name":"/web",
 		"Config":{"Tty":false,"Env":["PATH=/bin","DB_PASSWORD=hunter2"]},
 		"HostConfig":{"Privileged":true,"Binds":["/etc:/host-etc"]}}`},
+	// A managed app's container (9.5): its secret's name is one S19 would
+	// not mask, so only the org.hearth.secrets label can hide its value.
+	"GET /v1.44/containers/app/json": {200, `{"Id":"` + id + `","Name":"/app",
+		"Config":{"Tty":false,"Env":["PATH=/bin","ADMIN_CODE=ITEST-APPSECRET-93b1","GREETING=hello"],
+		"Labels":{"org.hearth.stack":"probe","org.hearth.secrets":"ADMIN_CODE"}},
+		"HostConfig":{}}`},
 	// Running and privileged with / mounted: a shell here is host root
 	// (SECURITY S12a), so exec must be refused before any exec request.
 	"GET /v1.44/containers/risky/json": {200, `{"Id":"` + id + `","Name":"/risky",

@@ -57,11 +57,24 @@ type Method struct {
 	// when the caller closes the connection). Lines are bounded by
 	// MaxLine and are not audited; the method must validate each.
 	Session func(ctx context.Context, c Caller, params json.RawMessage, in <-chan json.RawMessage, send func(any) error) error
+	// Redact, if set, returns what the audit hashes instead of the params,
+	// for a method whose params hold secrets (SECURITY S12c): no hash of a
+	// secret value is ever stored.
+	Redact func(params json.RawMessage) json.RawMessage
+	// Authorize, if set, picks the polkit action for these params in place
+	// of Action, and details for the dialog to show (polkit.message among
+	// them). It runs after Check; an empty action means Action.
+	Authorize func(params json.RawMessage) (action string, details map[string]string)
 }
 
 // Authority decides privileged calls (polkit in production).
 type Authority interface {
 	Check(ctx context.Context, c Caller, action string) (bool, error)
+}
+
+// DetailedAuthority also shows details in the dialog.
+type DetailedAuthority interface {
+	CheckDetails(ctx context.Context, c Caller, action string, details map[string]string) (bool, error)
 }
 
 // Auditor records every call.
@@ -295,7 +308,8 @@ func (s *Server) call(ctx context.Context, c Caller, line []byte, conn net.Conn,
 	dec := json.NewDecoder(bytes.NewReader(line))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil || dec.More() {
-		s.audit(c, "(malformed)", line, "refused: not a request")
+		// Not hashed: the line could hold anything, secrets included.
+		s.audit(c, "(malformed)", nil, "refused: not a request")
 		return send(Response{Error: Errorf(CodeParse, "not a JSON request")}) == nil
 	}
 	m, ok := s.methods[req.Method]
@@ -303,12 +317,17 @@ func (s *Server) call(ctx context.Context, c Caller, line []byte, conn net.Conn,
 		s.audit(c, req.Method, req.Params, "refused: unknown method")
 		return send(Response{ID: req.ID, Error: Errorf(CodeNoMethod, "unknown method %q", req.Method)}) == nil
 	}
+	// What the audit hashes: the params, or what Redact keeps of them.
+	audited := req.Params
+	if m.Redact != nil {
+		audited = m.Redact(req.Params)
+	}
 	fail := func(err error) bool {
 		var be *Error
 		if !errors.As(err, &be) {
 			be = Errorf(CodeFailed, "%v", err)
 		}
-		s.audit(c, req.Method, req.Params, "error: "+be.Message)
+		s.audit(c, req.Method, audited, "error: "+be.Message)
 		return send(Response{ID: req.ID, Error: be}) == nil
 	}
 	timeout := s.cfg.CallTimeout
@@ -325,8 +344,20 @@ func (s *Server) call(ctx context.Context, c Caller, line []byte, conn net.Conn,
 		}
 	}
 	if m.Privileged {
+		action, details := m.Action, map[string]string(nil)
+		if m.Authorize != nil {
+			if a, d := m.Authorize(req.Params); a != "" {
+				action, details = a, d
+			}
+		}
 		actx, cancel := context.WithTimeout(ctx, timeout)
-		ok, err := s.cfg.Authority.Check(actx, c, m.Action)
+		var ok bool
+		var err error
+		if da, isDA := s.cfg.Authority.(DetailedAuthority); isDA && len(details) > 0 {
+			ok, err = da.CheckDetails(actx, c, action, details)
+		} else {
+			ok, err = s.cfg.Authority.Check(actx, c, action)
+		}
 		cancel()
 		if err != nil || !ok {
 			// Fail closed: a polkit error is a refusal.
@@ -334,7 +365,7 @@ func (s *Server) call(ctx context.Context, c Caller, line []byte, conn net.Conn,
 			if err != nil {
 				why = "refused: authorization failed: " + err.Error()
 			}
-			s.audit(c, req.Method, req.Params, why)
+			s.audit(c, req.Method, audited, why)
 			return send(Response{ID: req.ID, Error: Errorf(CodeUnauthorized, "not authorized")}) == nil
 		}
 	}
@@ -350,10 +381,10 @@ func (s *Server) call(ctx context.Context, c Caller, line []byte, conn net.Conn,
 	}
 	raw, err := json.Marshal(res)
 	if err != nil {
-		s.audit(c, req.Method, req.Params, "error: result")
+		s.audit(c, req.Method, audited, "error: result")
 		return send(Response{ID: req.ID, Error: Errorf(CodeInternal, "result could not be encoded")}) == nil
 	}
-	s.audit(c, req.Method, req.Params, "ok")
+	s.audit(c, req.Method, audited, "ok")
 	return send(Response{ID: req.ID, Result: raw}) == nil
 }
 

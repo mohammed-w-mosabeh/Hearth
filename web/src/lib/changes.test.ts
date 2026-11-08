@@ -14,6 +14,7 @@ describe('changes', () => {
       ['units', ['added', 'deleted', 'changed']],
       ['containers', ['added', 'deleted', 'changed', 'restarted']],
       ['listeners', ['added', 'deleted', 'changed']],
+      ['apps', ['added', 'deleted', 'changed']],
       ['system', ['boot']],
     ] as const) {
       for (const kind of kinds) keys.push(eventKey(ev({ source, kind })) ?? '');

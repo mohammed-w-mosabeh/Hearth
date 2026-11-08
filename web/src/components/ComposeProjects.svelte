@@ -10,7 +10,12 @@
   // Compose projects (ROADMAP 2.7): containers grouped by their project
   // label, with start / stop / restart of the whole project through
   // hearth-broker (dependencies first on start, last on stop).
-  let { projects, containers, onopen }: { projects: Project[]; containers: Container[]; onopen: (c: Container) => void } = $props();
+  let {
+    projects,
+    containers,
+    onopen,
+    onimport,
+  }: { projects: Project[]; containers: Container[]; onopen: (c: Container) => void; onimport?: (p: Project) => void } = $props();
 
   let search = $state('');
   let open = $state.raw<ReadonlySet<string>>(new Set());
@@ -121,6 +126,7 @@
             <button type="button" class="plain" disabled={busy.has(p.name)} onclick={() => act(op, p)}>{t(opLabels[op])}</button>
           {/each}
           <button type="button" class="plain" disabled={busy.has(p.name)} onclick={() => askUpdate(p)}>{t('compose.update')}</button>
+          {#if onimport}<button type="button" class="plain" onclick={() => onimport(p)}>{t('stacks.checkImport')}</button>{/if}
         </div>
         <div class="meta">
           {#if p.working_dir}<span class="mono" title={t('compose.dir')}>{p.working_dir}</span>{/if}

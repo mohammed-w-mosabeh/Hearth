@@ -8,7 +8,10 @@
   // lines are what programs logged: plain text, escaped by Svelte.
   const LIVE_MS = 5000;
 
-  let sources = $state<string[]>([]);
+  // initial preselects sources, as the Apps page does with an app's containers.
+  let { initial = [] }: { initial?: string[] } = $props();
+  // svelte-ignore state_referenced_locally (a starting choice; the viewer changes it)
+  let sources = $state<string[]>([...initial]);
   let containers = $state.raw<string[]>([]);
   let pick = $state('');
   let unit = $state('');

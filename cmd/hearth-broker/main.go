@@ -20,8 +20,11 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/broker"
 	"github.com/mohammed-w-mosabeh/hearth/internal/dbusx"
 	"github.com/mohammed-w-mosabeh/hearth/internal/dropin"
+	"github.com/mohammed-w-mosabeh/hearth/internal/pathcheck"
 	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
 	"github.com/mohammed-w-mosabeh/hearth/internal/scheduler"
+	"github.com/mohammed-w-mosabeh/hearth/internal/stacks/backup"
+	"github.com/mohammed-w-mosabeh/hearth/internal/stacks/spec"
 )
 
 // stateDir is the unit's StateDirectory= (created by systemd, mode 0700).
@@ -29,10 +32,89 @@ const stateDir = "/var/lib/hearth"
 
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	// hearth-pathcheck@.service runs the same binary for one bind check
+	// on its socket (SECURITY S12b), with only CAP_DAC_READ_SEARCH.
+	if len(os.Args) == 2 && os.Args[1] == "pathcheck" {
+		if err := pathcheck.Serve(pathcheck.System, os.Stdin, os.Stdout); err != nil {
+			log.Error(err.Error())
+			os.Exit(1)
+		}
+		return
+	}
+	// hearth-backup@<stack> and hearth-restore@<stack> run it on the plan
+	// the broker wrote (SECURITY S12d), each in its own sandbox.
+	if len(os.Args) == 3 && (os.Args[1] == "backup" || os.Args[1] == "restore") {
+		step := "restore"
+		if os.Args[1] == "backup" {
+			step = "backup"
+		}
+		if err := unitStep(step, os.Args[2]); err != nil {
+			log.Error(step+" failed", "error", err.Error()) // JSON: each value escaped
+			os.Exit(1)
+		}
+		return
+	}
+	// hearth-backup-scheduled@<stack>, started by the stack's timer: one
+	// backup with the settings the owner saved (SECURITY S12d).
+	if len(os.Args) == 3 && os.Args[1] == "scheduled-backup" {
+		if err := scheduledBackup(os.Args[2]); err != nil {
+			log.Error("scheduled backup failed", "error", err.Error())
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(log); err != nil {
 		log.Error(err.Error())
 		os.Exit(1)
 	}
+}
+
+// stackConfig is the stacks' configuration, the broker's and a scheduled
+// backup's alike.
+func stackConfig(dockerAPI *broker.Docker, audit broker.Auditor) broker.StackConfig {
+	return broker.StackConfig{Paths: broker.PathChecker{}, Engine: dockerAPI, Volumes: dockerAPI, Audit: audit,
+		Bus: func(ctx context.Context) (broker.SystemBus, error) {
+			c, err := dbusx.SystemBus(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return c, nil
+		}}
+}
+
+func scheduledBackup(stack string) error {
+	if os.Geteuid() != 0 {
+		return errors.New("runs as root, started by its timer")
+	}
+	if !spec.ValidName(stack) {
+		return errors.New("not a stack name")
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	defer stop()
+	audit := &broker.FileAudit{Path: filepath.Join(stateDir, "audit.jsonl"), MaxBytes: 8 << 20}
+	return broker.ScheduledBackup(ctx, stackConfig(broker.NewDocker(broker.DockerSocket), audit), stack)
+}
+
+// unitStep runs one backup or restore of stack with tar through safeexec.
+func unitStep(step, stack string) error {
+	if !spec.ValidName(stack) {
+		return errors.New("not a stack name")
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	defer stop()
+	tar := func(name string) backup.Tar {
+		return func(ctx context.Context, args []string) (int, error) {
+			res, err := safeexec.Run(ctx, name, args...)
+			if len(res.Stderr) > 0 {
+				_, _ = os.Stderr.Write(res.Stderr) // tar's own lines, to the journal
+			}
+			return res.ExitCode, err
+		}
+	}
+	if step == "backup" {
+		return backup.RunBackup(ctx, backup.Roots{}, stack, tar("tar-create"))
+	}
+	return backup.RunRestore(ctx, backup.Roots{}, stack, tar("tar-extract"))
 }
 
 func run(log *slog.Logger) error {
@@ -44,6 +126,7 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	var srv *broker.Server
+	audit := &broker.FileAudit{Path: filepath.Join(stateDir, "audit.jsonl"), MaxBytes: 8 << 20}
 	methods := broker.BaseMethods(version(), func() []string { return srv.Names() })
 	dockerAPI := broker.NewDocker(broker.DockerSocket)
 	methods = append(methods, broker.DockerMethods(dockerAPI)...)
@@ -55,6 +138,8 @@ func run(log *slog.Logger) error {
 			}
 			return c, nil
 		}})...)
+	methods = append(methods, broker.StackMethods()...)
+	methods = append(methods, broker.StackLifeMethods(stackConfig(dockerAPI, audit))...)
 	methods = append(methods, broker.PackageMethods(safeexec.Run)...)
 	methods = append(methods, broker.SpaceMethods(safeexec.Run, broker.AptArchives)...)
 	methods = append(methods, broker.SmartMethods(safeexec.Run, broker.SysRoot)...)
@@ -101,7 +186,7 @@ func run(log *slog.Logger) error {
 		Methods:   methods,
 		InGroup:   broker.GroupMember(broker.Group),
 		Authority: broker.Polkit{Dial: dbusx.SystemBus},
-		Audit:     &broker.FileAudit{Path: filepath.Join(stateDir, "audit.jsonl"), MaxBytes: 8 << 20},
+		Audit:     audit,
 		Log:       log,
 	})
 	if err != nil {

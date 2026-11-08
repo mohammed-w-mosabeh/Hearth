@@ -7,10 +7,11 @@ import type { AlertEvent } from './alerts';
 import type { Forecasts } from './disks';
 import type { LynisView } from './lynis';
 import type { Report } from './security';
+import type { AppHealth } from './stacks';
 import type { Unit } from './services';
 import type { Health } from './smart';
 
-export type Source = 'unit' | 'alert.critical' | 'alert.warning' | 'alert.info' | 'updates' | 'listener' | 'forecast' | 'restart' | 'smart' | 'lynis';
+export type Source = 'unit' | 'alert.critical' | 'alert.warning' | 'alert.info' | 'updates' | 'listener' | 'forecast' | 'restart' | 'smart' | 'lynis' | 'app' | 'backup' | 'appUpdate';
 
 /** Points per item and the most one source can take. */
 export const RULES: Record<Source, { each: number; cap: number }> = {
@@ -24,13 +25,16 @@ export const RULES: Record<Source, { each: number; cap: number }> = {
   restart: { each: 5, cap: 5 },
   smart: { each: 25, cap: 50 },
   lynis: { each: 10, cap: 10 },
+  app: { each: 10, cap: 30 },
+  backup: { each: 15, cap: 30 },
+  appUpdate: { each: 5, cap: 10 },
 };
 
-/** Sources of Phases 9 and 10: listed, inactive, deducting nothing. */
-export const RESERVED = ['apps', 'backups', 'stacks', 'approvals'] as const;
+/** Sources of Phase 10: listed, inactive, deducting nothing. */
+export const RESERVED = ['approvals'] as const;
 
 /** Which endpoint feeds which sources: one that failed is "not checked". */
-export type Feed = 'units' | 'alerts' | 'security' | 'forecasts' | 'smart' | 'lynis';
+export type Feed = 'units' | 'alerts' | 'security' | 'forecasts' | 'smart' | 'lynis' | 'apps';
 
 export const FEED_SOURCES: Record<Feed, Source[]> = {
   units: ['unit'],
@@ -39,6 +43,7 @@ export const FEED_SOURCES: Record<Feed, Source[]> = {
   forecasts: ['forecast'],
   smart: ['smart'],
   lynis: ['lynis'],
+  apps: ['app', 'backup', 'appUpdate'],
 };
 
 export type Action = { kind: 'unit'; unit: Unit } | { kind: 'open'; route: string; q?: string };
@@ -62,6 +67,7 @@ export interface FeedData {
   forecasts: Forecasts;
   smart: Health;
   lynis: LynisView;
+  apps: AppHealth[];
 }
 
 /** A disk forecast counts when the disk fills within this many days. */
@@ -149,6 +155,13 @@ export function collect(inp: Inputs): Item[] {
       action: { kind: 'open', route: 'security' },
     });
   }
+  for (const a of inp.apps ?? []) {
+    const open: Action = { kind: 'open', route: 'stacks' };
+    if (a.unhealthy.length > 0) out.push({ id: `app:${a.name}`, source: 'app', subject: `${a.name} (${a.unhealthy.join(', ')})`, action: open });
+    // Keyed by the backup's time: a new failure is a new row, unsnoozed.
+    if (a.backup && !a.backup.ok) out.push({ id: `backup:${a.name}:${a.backup.at}`, source: 'backup', subject: a.name, action: open });
+    if (a.updates.length > 0) out.push({ id: `update:${a.name}`, source: 'appUpdate', subject: `${a.name} (${a.updates.join(', ')})`, action: open });
+  }
   return out;
 }
 
@@ -183,8 +196,8 @@ export function unchecked(inp: Inputs): Feed[] {
 
 /** critical first, then warning, then the rest; stable otherwise. */
 export function severity(s: Source): 'failed' | 'warning' | 'degraded' {
-  if (s === 'unit' || s === 'alert.critical' || s === 'smart' || s === 'updates' || s === 'forecast') return 'failed';
-  if (s === 'alert.info' || s === 'restart') return 'degraded';
+  if (s === 'unit' || s === 'alert.critical' || s === 'smart' || s === 'updates' || s === 'forecast' || s === 'backup') return 'failed';
+  if (s === 'alert.info' || s === 'restart' || s === 'appUpdate') return 'degraded';
   return 'warning';
 }
 

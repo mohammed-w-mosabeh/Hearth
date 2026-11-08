@@ -216,7 +216,7 @@ func (t *Tracker) Timeline(ctx context.Context, from, to time.Time, sources []st
 			out = append(out, evs[j])
 		}
 	}
-	if all || want[SourceUnits] || want[SourceContainers] || want[SourceListeners] || want[SourceSystem] {
+	if all || want[SourceUnits] || want[SourceContainers] || want[SourceListeners] || want[SourceApps] || want[SourceSystem] {
 		cs, err := t.cfg.Store.ChangesBetween(ctx, from, to, sources, limit+1)
 		if err != nil {
 			return nil, nil, err

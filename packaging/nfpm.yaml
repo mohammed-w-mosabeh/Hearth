@@ -19,6 +19,8 @@ depends:
   - xdg-utils
   - polkitd
   - passwd
+  # App backups (SECURITY S12d): tar --zstd runs zstd.
+  - zstd
 
 # Disk health on the Disks page; without it the page says what to install.
 recommends:
@@ -72,6 +74,30 @@ contents:
       mode: 0644
   - src: packaging/systemd/hearth-compose.service
     dst: /usr/lib/systemd/system/hearth-compose.service
+    file_info:
+      mode: 0644
+  - src: packaging/systemd/hearth-stack@.service
+    dst: /usr/lib/systemd/system/hearth-stack@.service
+    file_info:
+      mode: 0644
+  - src: packaging/systemd/hearth-backup@.service
+    dst: /usr/lib/systemd/system/hearth-backup@.service
+    file_info:
+      mode: 0644
+  - src: packaging/systemd/hearth-backup-scheduled@.service
+    dst: /usr/lib/systemd/system/hearth-backup-scheduled@.service
+    file_info:
+      mode: 0644
+  - src: packaging/systemd/hearth-restore@.service
+    dst: /usr/lib/systemd/system/hearth-restore@.service
+    file_info:
+      mode: 0644
+  - src: packaging/systemd/hearth-pathcheck.socket
+    dst: /usr/lib/systemd/system/hearth-pathcheck.socket
+    file_info:
+      mode: 0644
+  - src: packaging/systemd/hearth-pathcheck@.service
+    dst: /usr/lib/systemd/system/hearth-pathcheck@.service
     file_info:
       mode: 0644
   - src: packaging/systemd/hearth-ufw.service

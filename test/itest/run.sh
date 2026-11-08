@@ -16,13 +16,16 @@ name=hearth-itest-$$
 docker build --quiet --tag "$image" --file "$here/Dockerfile" "$here/.." >/dev/null
 
 # systemd needs its own cgroup namespace, tmpfs /run, and to mount
-# namespaces for the unit sandbox. No host paths are mounted.
+# namespaces for the unit sandbox. No host paths are mounted. DAC_READ_SEARCH
+# is not in Docker's default set, and hearth-pathcheck@ needs it to resolve a
+# bind under a 0700 home, as on a real host.
 docker run --detach --rm --name "$name" \
 	--cgroupns=private \
 	--tmpfs /run --tmpfs /run/lock \
 	--cap-add SYS_ADMIN \
 	--cap-add SYS_PTRACE \
 	--cap-add NET_ADMIN \
+	--cap-add DAC_READ_SEARCH \
 	--security-opt seccomp=unconfined \
 	--security-opt apparmor=unconfined \
 	"$image" >/dev/null

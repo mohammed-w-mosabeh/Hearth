@@ -79,6 +79,13 @@ type Risky struct {
 	Risks   []string `json:"risks"`
 }
 
+// App is an app Hearth manages and the danger flags its owner opted in to
+// (SECURITY S12b): each shows here as exposure.
+type App struct {
+	Name  string   `json:"name"`
+	Flags []string `json:"flags"`
+}
+
 // ErrNoDocker is returned by Config.Containers when Docker is not there.
 var ErrNoDocker = errors.New("posture: Docker is not available")
 
@@ -101,6 +108,8 @@ type Config struct {
 	// count of all pending updates.
 	Updates    func(ctx context.Context) (security []string, total int, err error)
 	Containers func(ctx context.Context) ([]Risky, error)
+	// Apps lists the managed apps with danger flags (nil: none known).
+	Apps func(ctx context.Context) ([]App, error)
 	// Release is the running kernel's; Needrestart is the optional scan
 	// through the broker.
 	Release     func() string
@@ -379,7 +388,49 @@ func (s *Scanner) containers(ctx context.Context) Check {
 		}
 		c.Findings = append(c.Findings, Finding{Code: code, Severity: sev, Subject: k.Name, Details: k.Risks})
 	}
+	c.Findings = append(c.Findings, s.apps(ctx)...)
 	return finish(c)
+}
+
+// criticalFlags hand the host to whoever controls the app's container.
+func criticalFlag(f string) bool {
+	return f == "docker-socket" || f == "pid:host" || f == "userns:host" || strings.HasPrefix(f, "bind:")
+}
+
+// apps turns the managed apps' danger flags into findings: exposure on the
+// network apart from the rest, so a LAN port reads as what it is.
+func (s *Scanner) apps(ctx context.Context) []Finding {
+	if s.cfg.Apps == nil {
+		return nil
+	}
+	list, err := s.cfg.Apps(ctx)
+	if err != nil {
+		return nil // the containers above still show what runs
+	}
+	var out []Finding
+	for _, a := range list {
+		var ports, other []string
+		for _, f := range a.Flags {
+			if strings.HasPrefix(f, "port:") {
+				ports = append(ports, strings.TrimPrefix(f, "port:"))
+			} else {
+				other = append(other, f)
+			}
+		}
+		if len(other) > 0 {
+			sev := SevWarn
+			for _, f := range other {
+				if criticalFlag(f) {
+					sev = SevCrit
+				}
+			}
+			out = append(out, Finding{Code: "app.danger", Severity: sev, Subject: a.Name, Details: other})
+		}
+		if len(ports) > 0 {
+			out = append(out, Finding{Code: "app.exposed", Severity: SevWarn, Subject: a.Name, Details: ports})
+		}
+	}
+	return out
 }
 
 func (s *Scanner) path() Check {

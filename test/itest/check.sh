@@ -187,6 +187,12 @@ check "docker.containers.list" call_says '"/web"' docker.containers.list '{"all"
 inspect=$(asuser /usr/bin/hearthd broker-call docker.containers.inspect '{"id":"web"}' 2>&1 || true)
 check "inspect masks secret env" grep -q 'DB_PASSWORD=\*\*\*\*\*\*\*\*' <<<"$inspect"
 check "inspect never shows the secret" not grep -q hunter2 <<<"$inspect"
+app_inspect=$(asuser /usr/bin/hearthd broker-call docker.containers.inspect '{"id":"app"}' 2>&1 || true)
+check "inspect masks an app's secret by its label, whatever its name" grep -q 'ADMIN_CODE=\*\*\*\*\*\*\*\*' <<<"$app_inspect"
+check "inspect keeps the app's plain values" grep -q 'GREETING=hello' <<<"$app_inspect"
+check "inspect never shows the app's secret" not grep -q ITEST-APPSECRET <<<"$app_inspect"
+check "nor does hearthd's container page" not grep -q ITEST-APPSECRET <<<"$(curl -s -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/docker/containers/app")"
+check "hearthd's container page masks it" grep -q 'ADMIN_CODE=\*\*\*\*\*\*\*\*' <<<"$(curl -s -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/docker/containers/app")"
 check "inspect reports S12 risks" grep -q '"risks":\["privileged","host-mount:/etc"\]' <<<"$inspect"
 check "authorized start reaches the engine" call_says '"ok":true' docker.containers.start '{"id":"web"}'
 check "engine got the start" engine_got '^POST /v1.44/containers/web/start$'
@@ -194,7 +200,7 @@ check "remove refused without polkit authorization" call_says "not authorized" d
 check "engine never got the remove" not engine_got '^DELETE'
 check "no create method" call_says "unknown method" docker.containers.create '{"Image":"alpine","HostConfig":{"Privileged":true}}'
 check "path injection refused" call_says "id must be" docker.containers.inspect '{"id":"../../version"}'
-check "engine only got allowlisted requests" not grep -vE '^(GET /v1.44/(version|containers/json\?all=true&size=false|containers/web/json)|POST /v1.44/containers/web/start)$' /run/fakedocker.log
+check "engine only got allowlisted requests" not grep -vE '^(GET /v1.44/(version|containers/json\?all=true&size=false|containers/(web|app)/json)|POST /v1.44/containers/web/start)$' /run/fakedocker.log
 check "audit records the docker refusal" grep -q 'docker.containers.remove.*refused: not authorized' /var/lib/hearth/audit.jsonl
 echo "  engine log: $(tr '\n' ';' </run/fakedocker.log)"
 
@@ -206,7 +212,13 @@ echo "  $(grep -c '^PASS' <<<"$probe_out") probes refused as expected"
 check "no broker probe got through" test "$probe_ok" = 1
 # Probes name only hearth-pentest-nx; anything else reaching the engine
 # is an injection that got past validation.
-check "audit holds params hashes, never raw params" not grep -Eq 'hearth-pentest-nx|\.\./|detachKeys|LD_PRELOAD' /var/lib/hearth/audit.jsonl
+# Stack refusals give their reason, which quotes the refused name or path
+# (clipped; never a value): shown here, kept out of the raw-params check.
+check "audit holds params hashes, never raw params" not grep -Eq 'hearth-pentest-nx|\.\./|detachKeys|LD_PRELOAD' <<<"$(grep -v '"method":"stack\.' /var/lib/hearth/audit.jsonl)"
+stack_audit=$(grep '"method":"stack\.' /var/lib/hearth/audit.jsonl || true)
+check "stack audit lines carry a params hash, not the params" not grep -q '"spec"\|"secrets":{\|"version":1' <<<"$stack_audit"
+echo "  stack refusals in the audit: $(grep -c '"method":"stack\.' /var/lib/hearth/audit.jsonl); quoting a probe path or name: $(grep '"method":"stack\.' /var/lib/hearth/audit.jsonl | grep -cE 'hearth-pentest|\.\./')"
+grep '"method":"stack\.' /var/lib/hearth/audit.jsonl | grep -E 'hearth-pentest|\.\./' | head -n 3 | sed 's/^/    e.g. /'
 check "audit recorded the privileged refusals" grep -q 'docker.containers.exec.*error: bad params' /var/lib/hearth/audit.jsonl
 check "the test user cannot read the audit log" not asuser cat /var/lib/hearth/audit.jsonl
 check "engine got nothing but lookups of the probe name" not grep -vE '^GET /v1.44/(containers|images|volumes|networks)/hearth-pentest-nx(/json|/logs\?[a-z=&0-9-]*)?$' /run/fakedocker.log
@@ -562,6 +574,173 @@ check "its unit denies every address" test "$(systemctl show -p IPAddressDeny --
 check "it holds no capability" test -z "$(systemctl show -p CapabilityBoundingSet --value hearth-compose.service | sed 's/^0*$//')"
 check "polkit asks every time" grep -A8 'org.hearth.docker.compose"' /usr/share/polkit-1/actions/org.hearth.policy
 
+echo "== stacks (9.2)"
+check "stack unit installed" test -f /usr/lib/systemd/system/hearth-stack@.service
+check "it denies every address" test "$(systemctl show -p IPAddressDeny --value hearth-stack@probe.service)" != ""
+check "it holds no capability" test -z "$(systemctl show -p CapabilityBoundingSet --value hearth-stack@probe.service | sed 's/^0*$//')"
+check "it runs Compose on the stack's files only" grep -q -- '--file /var/lib/hearth/stacks/%i/compose.json --env-file /var/lib/hearth/stacks/%i/secrets.env $STACK_ARGS$' /usr/lib/systemd/system/hearth-stack@.service
+systemctl start hearth-stack@probe.service || true
+check "it does not run without a stack" test "$(systemctl show -p ConditionResult --value hearth-stack@probe.service)" = "no"
+usermod -aG hearth "$user" # a member: the calls below reach the broker's checks
+spec_ok='{"spec":{"version":1,"name":"probe","services":{"web":{"image":"nginx:1.27","ports":[{"host":8080,"container":80}]}}}}'
+spec_lan='{"spec":{"version":1,"name":"probe","services":{"web":{"image":"nginx:1.27","ports":[{"host_ip":"0.0.0.0","host":8080,"container":80}]}}}}'
+check "stack.validate accepts a plain spec" call_says '"refused": *\[\]' stack.validate "$spec_ok"
+check "stack.validate names a flag" call_says '"port:0.0.0.0:8080/tcp"' stack.validate "$spec_lan"
+check "stack.validate refuses privileged" call_says 'unknown key' stack.validate '{"spec":{"version":1,"name":"p","services":{"w":{"image":"nginx","privileged":true}}}}'
+check "stack.validate refuses a bind of /etc" call_says 'never allowed' stack.validate '{"spec":{"version":1,"name":"p","services":{"w":{"image":"nginx","volumes":[{"type":"bind","source":"/etc","target":"/x"}]}}}}'
+check "stack.validate writes nothing" not test -e /var/lib/hearth/stacks
+gpasswd -d "$user" hearth >/dev/null
+
+echo "== path checks (9.3)"
+pathcheck() { # pathcheck SPEC: one request on hearth-pathcheck.socket, as root
+	node -e 'const c=require("net").createConnection(process.argv[1]);let o="";c.on("data",d=>o+=d);c.on("end",()=>process.stdout.write(o));c.on("error",e=>{process.stdout.write("error "+e.code);});c.write(JSON.stringify({spec:JSON.parse(process.argv[2])})+"\n")' /run/hearth/pathcheck.sock "$1"
+}
+pc_says() { grep -q -- "$1" <<<"$(pathcheck "$2" 2>&1)"; }
+pc_spec() { # pc_spec ROOT SOURCE
+	printf '{"version":1,"name":"probe","bind_roots":["%s"],"services":{"web":{"image":"nginx:1.27","volumes":[{"type":"bind","source":"%s","target":"/data"}]}}}' "$1" "$2"
+}
+check "pathcheck socket listening" systemctl is-active hearth-pathcheck.socket
+check "its socket is root's alone" test "$(stat -c '%U %G %a' /run/hearth/pathcheck.sock)" = "root root 600"
+check "its unit holds only CAP_DAC_READ_SEARCH" test "$(systemctl show -p CapabilityBoundingSet --value hearth-pathcheck@x.service)" = "cap_dac_read_search"
+check "its unit has no network" test "$(systemctl show -p PrivateNetwork --value hearth-pathcheck@x.service)" = yes
+check "its unit sees home read-only" test "$(systemctl show -p ProtectHome --value hearth-pathcheck@x.service)" = read-only
+mkdir -p /srv/itest-app/data "/home/$user/itest-media/films"
+ln -sfn /etc /srv/itest-app/esc
+ln -sfn /srv/itest-app/esc /srv/itest-app/chain
+ln -sfn /proc/self/root/etc /srv/itest-app/magic
+ln -sfn data /srv/itest-app/inside
+check "a plain bind resolves" pc_says '"ok":true' "$(pc_spec /srv/itest-app /srv/itest-app/data)"
+check "a link inside its root resolves" pc_says '"real":"/srv/itest-app/data"' "$(pc_spec /srv/itest-app /srv/itest-app/inside)"
+check "a bind under home resolves" pc_says '"ok":true' "$(pc_spec "/home/$user/itest-media" "/home/$user/itest-media/films")"
+check "a link to /etc is refused" pc_says 'never allowed' "$(pc_spec /srv/itest-app /srv/itest-app/esc)"
+check "a chain to /etc is refused" pc_says 'never allowed' "$(pc_spec /srv/itest-app /srv/itest-app/chain)"
+check "a /proc magic link is refused" pc_says '/proc link' "$(pc_spec /srv/itest-app /srv/itest-app/magic)"
+check "a missing source is refused" pc_says 'does not exist' "$(pc_spec /srv/itest-app /srv/itest-app/nope)"
+check "a root linked to /etc is refused" pc_says 'cannot be a root' "$(pc_spec /srv/itest-app/esc /srv/itest-app/esc/x)"
+check "a non-JSON request is refused" grep -q 'not a path check request' <<<"$(node -e 'const c=require("net").createConnection("/run/hearth/pathcheck.sock");let o="";c.on("data",d=>o+=d);c.on("end",()=>process.stdout.write(o));c.write("services: {}\n")')"
+check "a user cannot ask it" grep -q 'error EACCES' <<<"$(asuser node -e 'const c=require("net").createConnection("/run/hearth/pathcheck.sock");c.on("error",e=>process.stdout.write("error "+e.code));c.on("connect",()=>process.stdout.write("connected"))' 2>&1)"
+check "it created nothing" test ! -e /srv/itest-app/nope
+check "it wrote no stack" not test -e /var/lib/hearth/stacks
+echo "== stack lifecycle (9.4)"
+for a in deploy control remove danger; do
+	check "polkit has org.hearth.stack.$a" grep -q "action id=\"org.hearth.stack.$a\"" /usr/share/polkit-1/actions/org.hearth.policy
+done
+usermod -aG hearth "$user" # a member without a polkit agent
+stack_ok='{"version":1,"name":"probe","services":{"web":{"image":"nginx:1.27"}}}'
+deploy() { printf '{"spec":%s,"ack_flags":%s}' "$1" "${2:-[]}"; }
+check "stack.status lists no stack" call_says '\[\]' stack.status
+check "deploy: privileged refused before polkit" call_says 'unknown key' stack.deploy "$(deploy '{"version":1,"name":"probe","services":{"web":{"image":"nginx","privileged":true}}}')"
+check "deploy: an unacknowledged flag is refused" call_says 'not the spec' stack.deploy "$(deploy '{"version":1,"name":"probe","opt_in":["cap:NET_ADMIN"],"services":{"web":{"image":"nginx","cap_add":["NET_ADMIN"]}}}')"
+polkit_logged() { grep -q -- "$1" <<<"$(journalctl -t hearth-itest --no-pager 2>/dev/null)"; }
+# A rule that records what polkit was asked, then refuses: the danger
+# action, with the flags in its details for the dialog. polkitd runs at
+# --log-level=notice, which hides polkit.log, so it spawns logger.
+cat >/etc/polkit-1/rules.d/53-hearth-itest-danger.rules <<'RULES'
+polkit.addRule(function(action, subject) {
+	if (action.id == "org.hearth.stack.danger" || action.id == "org.hearth.stack.deploy") {
+		polkit.spawn(["/usr/bin/logger", "-t", "hearth-itest", action.id + " app=" + action.lookup("app") + " flags=" + action.lookup("flags")]);
+		return polkit.Result.NO;
+	}
+});
+RULES
+sleep 1 # polkitd reloads rules on change
+check "deploy: an acknowledged flag reaches polkit" call_says 'not authorized' stack.deploy "$(deploy '{"version":1,"name":"probe","opt_in":["cap:NET_ADMIN"],"services":{"web":{"image":"nginx","cap_add":["NET_ADMIN"]}}}' '["cap:NET_ADMIN"]')"
+check "it asks org.hearth.stack.danger, naming the flags" wait_until 5 polkit_logged 'org.hearth.stack.danger app=probe flags=cap:NET_ADMIN'
+check "deploy: a bind of /etc is refused" call_says 'never allowed' stack.deploy "$(deploy '{"version":1,"name":"probe","services":{"web":{"image":"nginx","volumes":[{"type":"bind","source":"/etc","target":"/x"}]}}}')"
+check "deploy: a link to /etc is refused by the path check" call_says 'resolves to /etc' stack.deploy "$(deploy "$(pc_spec /srv/itest-app /srv/itest-app/esc)")"
+check "deploy: a missing bind is refused" call_says 'does not exist' stack.deploy "$(deploy "$(pc_spec /srv/itest-app /srv/itest-app/nope)")"
+check "deploy: YAML is refused" call_says 'not an object' stack.deploy '{"spec":"services: {}","ack_flags":[]}'
+check "deploy: a clean spec reaches polkit" call_says 'not authorized' stack.deploy "$(deploy "$stack_ok")"
+check "a plain deploy asks org.hearth.stack.deploy" wait_until 5 polkit_logged 'org.hearth.stack.deploy app=undefined'
+check "deploy: a bind that resolves reaches polkit" call_says 'not authorized' stack.deploy "$(deploy "$(pc_spec /srv/itest-app /srv/itest-app/inside)")"
+check "audit records the refusal" grep -q '"method":"stack.deploy".*refused: not authorized' /var/lib/hearth/audit.jsonl
+check "control of a missing stack is refused" call_says 'no such stack' stack.control '{"name":"probe","verb":"start"}'
+check "control verbs are closed" call_says 'verb must be' stack.control '{"name":"probe","verb":"down-volumes"}'
+check "remove of a missing stack is refused" call_says 'no such stack' stack.remove '{"name":"probe"}'
+check "update of a missing stack is refused" call_says 'no such stack' stack.update "{\"name\":\"probe\",\"spec_sha256\":\"$(printf '0%.0s' {1..64})\",\"pins\":{\"web\":\"sha256:$(printf 'a%.0s' {1..64})\"}}"
+check "nothing was written" not test -e /var/lib/hearth/stacks
+check "a read-only token cannot ask for it" test "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${ro_key:-none}" "http://127.0.0.1:$port/api/v1/stacks/import/nosuch")" != 200
+rm -f /etc/polkit-1/rules.d/53-hearth-itest-danger.rules
+echo "== app names (9.13)"
+key=$(api_key)
+proxy_act() {
+	curl -s -X POST -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$port" -H 'Content-Type: application/json' \
+		-d "$2" "http://127.0.0.1:$port/api/v1/actions/proxy/$1"
+}
+proxy_get() { curl -s -o /dev/null -w '%{http_code}' -H "Host: $1" "http://127.0.0.1:8470/"; }
+st=$(curl -s -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/proxy")
+check "app names are off by default" grep -q '"enabled":false' <<<"$st"
+check "and nothing listens for them" not port_open 8470
+check "Hearth's own port is refused" grep -q "Hearth's own" <<<"$(proxy_act listen "{\"target\":\"proxy\",\"params\":{\"enabled\":\"true\",\"port\":\"$port\"}}")"
+check "a privileged port is refused" grep -q '1024' <<<"$(proxy_act listen '{"target":"proxy","params":{"enabled":"true","port":"80"}}')"
+check "no address can be chosen" grep -q 'unknown param' <<<"$(proxy_act listen '{"target":"proxy","params":{"enabled":"true","address":"0.0.0.0"}}')"
+check "turning names on" grep -q '"done":1' <<<"$(proxy_act listen '{"target":"proxy","params":{"enabled":"true","port":"8470"}}')"
+check "they listen" wait_until 5 port_open 8470
+check "on 127.0.0.1 only" loopback_only "$(ss -tlnH 'sport = :8470' | awk '{print $4}')"
+check "nothing on 0.0.0.0 / [::] for names" not wildcard_listener 8470
+check "Hearth is not proxied by its host" test "$(proxy_get "localhost:8470")" = 404
+check "nor by 127.0.0.1" test "$(proxy_get "127.0.0.1:8470")" = 404
+check "an app with no name is not proxied" test "$(proxy_get "nope.localhost:8470")" = 502
+check "a route to a port no app publishes is refused" not grep -q '"done":1' <<<"$(proxy_act route "{\"target\":\"probe\",\"params\":{\"port\":\"$port\"}}")"
+check "Hearth refuses a name's Host" test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: probe.localhost:'"$port" "http://127.0.0.1:$port/api/v1/health")" = 403
+check "turning names off" grep -q '"done":1' <<<"$(proxy_act listen '{"target":"proxy","params":{"enabled":"false"}}')"
+check "the port closes" wait_until 5 not port_open 8470
+
+echo "== stack backups (9.10)"
+check "polkit has org.hearth.stack.backup" grep -q 'action id="org.hearth.stack.backup"' "$policy"
+check "restore asks every time (auth_admin, no keep)" grep -Pzq '(?s)org\.hearth\.stack\.restore">.*?<allow_active>auth_admin</allow_active>' "$policy"
+for u in backup restore; do
+	check "$u unit installed" test -f "/usr/lib/systemd/system/hearth-$u@.service"
+	check "$u unit has no network" test "$(systemctl show -p PrivateNetwork --value "hearth-$u@probe.service")" = yes
+	systemctl start "hearth-$u@probe.service" 2>/dev/null || true
+	check "$u unit does not run without the broker's plan" test "$(systemctl show -p ConditionResult --value "hearth-$u@probe.service")" = "no"
+done
+check "backup unit holds only CAP_DAC_READ_SEARCH" test "$(systemctl show -p CapabilityBoundingSet --value hearth-backup@probe.service)" = "cap_dac_read_search"
+check "backup unit sees home read-only" test "$(systemctl show -p ProtectHome --value hearth-backup@probe.service)" = read-only
+check "restore unit cannot see home" test "$(systemctl show -p ProtectHome --value hearth-restore@probe.service)" = yes
+check "restore unit cannot mount or load modules" not grep -Eq 'cap_sys_admin|cap_sys_module' <<<"$(systemctl show -p CapabilityBoundingSet --value hearth-restore@probe.service)"
+check "backup of a missing stack is refused" call_says 'no such stack' stack.backup '{"name":"probe"}'
+check "backup keeps 1 to 30" call_says 'keep is 1 to 30' stack.backup '{"name":"probe","keep":31}'
+check "a restore without the typed name is refused" call_says 'type the app' stack.restore '{"name":"probe","archive":"20261106T000000Z.tar.zst","token":"x","typed_name":"","ack_flags":[]}'
+check "a restore without a preview is refused" call_says 'preview it again' stack.restore '{"name":"probe","archive":"20261106T000000Z.tar.zst","token":"x","typed_name":"probe","ack_flags":[]}'
+check "a path as an archive name is refused" call_says 'not an archive name' stack.restore.preview '{"name":"probe","archive":"../x/20261106T000000Z.tar.zst"}'
+check "a listing of no backups is empty" call_says '"archives":\[\]' stack.backup.list '{"name":"probe"}'
+check "no backup folder was made" not test -e /var/lib/hearth/backups
+echo "== scheduled backups (9.11)"
+check "scheduled unit installed" test -f /usr/lib/systemd/system/hearth-backup-scheduled@.service
+check "it holds no capability" test -z "$(systemctl show -p CapabilityBoundingSet --value hearth-backup-scheduled@probe.service | sed 's/^0*$//')"
+check "it cannot see home" test "$(systemctl show -p ProtectHome --value hearth-backup-scheduled@probe.service)" = yes
+systemctl start hearth-backup-scheduled@probe.service 2>/dev/null || true
+check "it does not run without a saved schedule" test "$(systemctl show -p ConditionResult --value hearth-backup-scheduled@probe.service)" = "no"
+check "a schedule for a missing stack is refused" call_says 'no such stack' stack.backup.schedule '{"name":"probe","on_calendar":"daily"}'
+check "a calendar holding a unit line is refused" call_says 'not a calendar expression' stack.backup.schedule '{"name":"probe","on_calendar":"daily\nExecStart=/bin/sh"}'
+check "no timer was written" not test -e /etc/systemd/system/hearth-backup-probe.timer
+echo "== stack import (9.8)"
+imark=ITEST-IMPORT-4d2a
+ispec='{"version":1,"name":"probe","services":{"web":{"image":"nginx:1.27","secrets":["PW","DB_PASSWORD=WEB_DB_PASSWORD"]}}}'
+import_params() { printf '{"spec":%s,"ack_flags":[],"secrets":%s}' "$ispec" "$1"; }
+check "import: a secret without its value is refused" call_says 'WEB_DB_PASSWORD has no value' stack.import "$(import_params "{\"PW\":\"$imark\"}")"
+check "import: a secret no service names is refused" call_says 'names the secret OTHER' stack.import "$(import_params "{\"PW\":\"$imark\",\"WEB_DB_PASSWORD\":\"$imark\",\"OTHER\":\"$imark\"}")"
+check "import: a value of two lines is refused" call_says 'one line' stack.import "$(import_params "{\"PW\":\"$imark\\nX=1\",\"WEB_DB_PASSWORD\":\"$imark\"}")"
+check "import: a complete one reaches polkit" call_says 'not authorized' stack.import "$(import_params "{\"PW\":\"$imark\",\"WEB_DB_PASSWORD\":\"$imark\"}")"
+check "import: the broker audit holds no value" not grep -q "$imark" /var/lib/hearth/audit.jsonl
+check "import: the journal holds no value" not grep -q "$imark" <<<"$(journalctl --no-pager 2>/dev/null)"
+check "import: nothing was written" not test -e /var/lib/hearth/stacks
+echo "== stack secrets (9.5)"
+check "polkit has org.hearth.stack.secrets" grep -q 'action id="org.hearth.stack.secrets"' /usr/share/polkit-1/actions/org.hearth.policy
+mark=ITEST-SECRET-7c1e
+check "a secret for a missing stack is refused" call_says 'no such stack' stack.secrets.set "{\"name\":\"probe\",\"set\":{\"PW\":\"$mark\"}}"
+check "a reveal for a missing stack is refused" call_says 'no such stack' stack.secrets.reveal '{"name":"probe","key":"PW"}'
+call_says x stack.secrets.set "{\"name\":\"probe\",\"set\":{\"PW\":\"$mark\"}} junk" || true
+check "the broker audit holds no secret" not grep -q "$mark" /var/lib/hearth/audit.jsonl
+check "the journal holds no secret" not grep -q "$mark" <<<"$(journalctl --no-pager 2>/dev/null)"
+check "nor the app container's secret read through inspect" not grep -q ITEST-APPSECRET <<<"$(journalctl --no-pager 2>/dev/null)"
+check "nor the broker audit" not grep -q ITEST-APPSECRET /var/lib/hearth/audit.jsonl
+check "nor hearthd's database" not grep -rqa ITEST-APPSECRET "/home/$user/.local/share/hearth"
+check "nothing was written" not test -e /var/lib/hearth/stacks
+gpasswd -d "$user" hearth >/dev/null
+rm -rf /srv/itest-app "/home/$user/itest-media"
+
 echo "== terminal"
 # A shell through hearthd: it must run as the user, in the folder asked,
 # outside hearthd's sandbox (home writable), on a terminal of its own.
@@ -586,6 +765,11 @@ usermod -aG hearth "$user"
 touch /run/fakedocker.hostile
 systemd-run --quiet --unit=fakedocker /root/fakedocker
 wait_until 10 test -S /run/docker.sock || fail "fake docker started again"
+# 9.7: Docker is back and the user is a member here. The socket file may
+# be the stopped fake's, so retry until the new one answers.
+dry_code() { curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/stacks/import/nosuch"; }
+dry_is_404() { test "$(dry_code)" = 404; }
+check "the import dry-run of a project without containers is 404" wait_until 10 dry_is_404
 xss='<img src=x onerror="window.__xss=1">'
 mkdir -p /tmp/xssdeb/DEBIAN
 printf 'Package: hearth-xss-probe\nVersion: 1.0\nArchitecture: all\nMaintainer: itest <itest@example.invalid>\nDescription: %s\n %s\n' "$xss" "$xss" >/tmp/xssdeb/DEBIAN/control
@@ -748,6 +932,15 @@ printf '"AppState"\n{\n\t"appid"\t"9"\n\t"name"\t"%s"\n\t"StateFlags"\t"4"\n}\n'
 game_listed() { grep -q '"id":"steam.9"' <<<"$(pkgs_api games)"; }
 wait_until 90 game_listed || true
 check "hostile game listed" game_listed
+# A managed app (Gate 9), written as the broker would, with the payload in
+# every free-text place a spec allows: a bind folder, a plain value, a label,
+# a command and a healthcheck. The fake Engine cannot deploy, so the app's
+# row and drawer would otherwise never render on the real hearthd.
+xq=${xss//\"/\\\"}
+install -d -m 700 /var/lib/hearth/stacks /var/lib/hearth/stacks/xssapp
+printf '{"version":1,"name":"xssapp","bind_roots":["/srv"],"services":{"web":{"image":"nginx:1.27","environment":{"NOTE":"%s"},"labels":{"note":"%s"},"command":["echo","%s"],"healthcheck":{"test":["CMD-SHELL","%s"]},"volumes":[{"type":"bind","source":"/srv/%s","target":"/data"}]}}}' "$xq" "$xq" "$xq" "$xq" "$xq" >/var/lib/hearth/stacks/xssapp/spec.json
+chmod 600 /var/lib/hearth/stacks/xssapp/spec.json
+check "hostile managed app listed" grep -q '"name":"xssapp"' <<<"$(curl -s -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/stacks")"
 e2e=$(cd /opt/e2e && HEARTH_VERSION="$HEARTH_VERSION" HEARTH_URL="http://127.0.0.1:$port/auth?t=$(cat /home/$user/.config/hearth/token)" timeout 900 npx playwright test 2>&1) || true
 if grep -qE '[0-9]+ passed' <<<"$e2e" && ! grep -qE '[0-9]+ (failed|flaky)' <<<"$e2e"; then
 	echo "$e2e" | grep -E '✓|passed' | head -40 | sed 's/^/  | /'
@@ -758,6 +951,9 @@ check "e2e XSS: every page shows the strings as text, nothing ran" grep -qE '^ *
 check "e2e XSS: no test failed" not grep -qE '[0-9]+ failed' <<<"$e2e"
 check "e2e a11y: axe finds nothing serious on any page, both themes, LTR and RTL" grep -qE '✓.*a11y\.spec\.ts.*axe: every page, light, right to left' <<<"$e2e"
 check "e2e a11y: focus rings, palette, shortcuts and a confirmation work by keyboard" grep -qE '✓.*a11y\.spec\.ts.*a confirmation is keyboard operable' <<<"$e2e"
+check "e2e: a managed app's drawer shows its spec as text" grep -qE "✓.*xss\.spec\.ts.*a managed app's drawer" <<<"$e2e"
+check "e2e a11y: axe finds nothing serious in an app's drawer" grep -qE "✓.*a11y\.spec\.ts.*axe: an app's drawer, light, right to left" <<<"$e2e"
+rm -rf /var/lib/hearth/stacks
 pkill -f '/tmp/<svg onload>' || true
 dpkg -r hearth-xss-probe >/dev/null
 rm -r "/home/$user/.local/share/Steam"
@@ -1016,7 +1212,20 @@ check "still one hearthd" test "$(hearthds)" = 1
 pkill -f hearth-stub-browser || true
 
 echo "== purge"
-apt-get purge -y -qq hearth >/dev/null
+# A schedule's timer (9.11), as the broker would leave it: purge removes it.
+printf '[Timer]\nOnCalendar=daily\nUnit=hearth-backup-scheduled@probe.service\n' >/etc/systemd/system/hearth-backup-probe.timer
+# An app backup (9.10): purge keeps it, and only it.
+mkdir -p -m 0700 /var/lib/hearth/backups/probe
+echo archive >/var/lib/hearth/backups/probe/20261106T000000Z.tar.zst
+touch /var/lib/hearth/backups/probe/.plan.json
+# apt may hand the scripts' messages to stdout (a pty), so read both.
+purge_out=$(apt-get purge -y -qq hearth 2>&1 || true)
+check "purge removes backup timers" not test -e /etc/systemd/system/hearth-backup-probe.timer
+check "purge keeps app backups" test -f /var/lib/hearth/backups/probe/20261106T000000Z.tar.zst
+check "and says so" grep -q 'app backups kept in /var/lib/hearth/backups' <<<"$purge_out"
+check "and keeps nothing else" test "$(ls -A /var/lib/hearth)" = backups
+check "and drops the units' plans" not test -e /var/lib/hearth/backups/probe/.plan.json
+rm -rf /var/lib/hearth
 check "purge removes the Lynis schedule" not test -e /etc/systemd/system/hearth-lynis.timer
 check "and its enable link" not test -L /etc/systemd/system/timers.target.wants/hearth-lynis.timer
 check "package gone" not dpkg -s hearth
@@ -1031,7 +1240,11 @@ check "system drop-ins removed" test ! -e /etc/systemd/system/itest-limits.servi
 for f in /usr/bin/hearth-broker /usr/lib/systemd/system/hearth-broker.socket \
 	/usr/lib/systemd/system/hearth-broker.service /usr/lib/systemd/system/hearth-needrestart.service \
 	/usr/share/polkit-1/actions/org.hearth.policy \
-	/etc/systemd/system/sockets.target.wants/hearth-broker.socket /run/hearth; do
+	/usr/lib/systemd/system/hearth-pathcheck.socket /usr/lib/systemd/system/hearth-pathcheck@.service \
+	/usr/lib/systemd/system/hearth-backup@.service /usr/lib/systemd/system/hearth-restore@.service \
+	/usr/lib/systemd/system/hearth-backup-scheduled@.service \
+	/etc/systemd/system/sockets.target.wants/hearth-broker.socket \
+	/etc/systemd/system/sockets.target.wants/hearth-pathcheck.socket /run/hearth; do
 	check "removed $f" test ! -e "$f"
 done
 check "broker stopped" not pgrep -x hearth-broker

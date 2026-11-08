@@ -57,9 +57,9 @@ func validateHomeLayout(v json.RawMessage) error {
 }
 
 // snoozeIDRe matches a Needs attention item ID (web/src/lib/health.ts):
-// a source word, then optionally ":" and a printable subject such as a
-// unit, a mount point or a listener.
-var snoozeIDRe = regexp.MustCompile(`^[a-z][a-z.]{0,31}(:[^\x00-\x1f\x7f]{1,290})?$`)
+// a source word, then optionally ":" and a subject with no control
+// character (C0, DEL or C1), such as a unit, a mount point or a listener.
+var snoozeIDRe = regexp.MustCompile(`^[a-z][a-z.]{0,31}(:[^\p{Cc}]{1,290})?$`)
 
 // maxSnoozed bounds the snoozed items (MAX_SNOOZED in health.ts).
 const maxSnoozed = 200
@@ -94,8 +94,8 @@ func atEnd(dec *json.Decoder) bool {
 }
 
 // appIDRe matches desktop file IDs ("org.gnome.TextEditor", "Among Us",
-// "appimage.obsidian-1.5.3"): printable, no path separators.
-var appIDRe = regexp.MustCompile(`^[^/\x00-\x1f\x7f]{1,255}$`)
+// "appimage.obsidian-1.5.3"): no control character, no path separator.
+var appIDRe = regexp.MustCompile(`^[^/\p{Cc}]{1,255}$`)
 
 // validateFavorites accepts {"ids": [app ids]}.
 func validateFavorites(v json.RawMessage) error {

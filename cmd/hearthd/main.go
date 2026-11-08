@@ -63,6 +63,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/power"
 	"github.com/mohammed-w-mosabeh/hearth/internal/procctl"
 	"github.com/mohammed-w-mosabeh/hearth/internal/profiles"
+	"github.com/mohammed-w-mosabeh/hearth/internal/proxy"
 	"github.com/mohammed-w-mosabeh/hearth/internal/reports"
 	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
 	"github.com/mohammed-w-mosabeh/hearth/internal/scheduler"
@@ -71,6 +72,8 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/settings"
 	"github.com/mohammed-w-mosabeh/hearth/internal/smart"
 	"github.com/mohammed-w-mosabeh/hearth/internal/space"
+	"github.com/mohammed-w-mosabeh/hearth/internal/stacks"
+	"github.com/mohammed-w-mosabeh/hearth/internal/stacks/importer"
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
 	"github.com/mohammed-w-mosabeh/hearth/internal/terminal"
 	"github.com/mohammed-w-mosabeh/hearth/internal/unitctl"
@@ -526,6 +529,35 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	srv.API.HandleFunc("GET /api/v1/docker/volumes/sizes", docker.HandleVolumeSizes(brokerClient))
 	images := &docker.Images{B: brokerClient, Registry: docker.NewRegistry(), Run: safeexec.Run, CacheDir: filepath.Join(paths.DataDir, "trivy")}
 	docker.RegisterUpdate(reg, brokerClient, images.Registry, safeexec.Run)
+	appUpdates := &stacks.UpdateNotes{Settings: db}
+	stacks.Register(reg, brokerClient, images.Registry, appUpdates)
+	srv.API.HandleFunc("GET /api/v1/app-health", stacks.HandleHealth(brokerClient, appUpdates))
+	// App names at http://<app>.localhost:<port>/ (9.13): off until the
+	// owner turns it on, 127.0.0.1 only, never Hearth.
+	appProxy := &proxy.Proxy{Settings: db, HearthPort: srv.Port, Log: log,
+		Targets: func(ctx context.Context) (map[string][]int, error) { return stacks.ProxyTargets(ctx, brokerClient) }}
+	appProxy.Register(reg)
+	srv.API.HandleFunc("GET /api/v1/proxy", appProxy.HandleStatus)
+	appProxy.Start(ctx)
+	defer appProxy.Stop()
+	// Managed apps' alerts (9.12): an unhealthy app, a failed backup.
+	appsWatchCtx, stopAppsWatch := context.WithCancel(ctx)
+	appsWatchDone := make(chan struct{})
+	go func() {
+		stacks.Watch(appsWatchCtx, brokerClient, appUpdates, engine.Observe, 2*time.Minute)
+		close(appsWatchDone)
+	}()
+	defer func() { stopAppsWatch(); <-appsWatchDone }()
+	srv.API.HandleFunc("GET /api/v1/stacks", stacks.HandleList(brokerClient))
+	srv.API.HandleFunc("GET /api/v1/stacks/{name}", stacks.HandleOne(brokerClient))
+	srv.API.HandleFunc("GET /api/v1/app-backups/{name}", stacks.HandleBackups(brokerClient, safeexec.Run))
+	stacks.RegisterSchedule(reg, brokerClient, safeexec.Run)
+	srv.API.HandleFunc("GET /api/v1/app-backups/{name}/preview", stacks.HandleBackupPreview(brokerClient))
+	importDeps := importer.Deps{Broker: brokerClient, Run: safeexec.Run}
+	srv.API.HandleFunc("GET /api/v1/stacks/import/{project}", importer.Handle(importDeps))
+	importer.RegisterAction(reg, importDeps)
+	srv.API.HandleFunc("POST /api/v1/stacks/{name}/secrets", stacks.HandleSecretsSet(brokerClient, db))
+	srv.API.HandleFunc("POST /api/v1/stacks/{name}/secrets/{key}/reveal", stacks.HandleReveal(brokerClient, db))
 	srv.API.HandleFunc("GET /api/v1/docker/images/{id}", images.HandleDetail)
 	srv.API.HandleFunc("GET /api/v1/docker/images/{id}/updates", images.HandleUpdates)
 	srv.API.HandleFunc("POST /api/v1/docker/images/{id}/scan", images.HandleScan)
@@ -659,6 +691,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 			return sec, len(list), err
 		},
 		Containers: func(ctx context.Context) ([]posture.Risky, error) { return docker.Risks(ctx, brokerClient) },
+		Apps:       func(ctx context.Context) ([]posture.App, error) { return stacks.DangerApps(ctx, brokerClient) },
 		Release: func() string {
 			b, _ := os.ReadFile("/proc/sys/kernel/osrelease")
 			return strings.TrimSpace(string(b))
@@ -719,6 +752,9 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		},
 		changes.SourceContainers: func(ctx context.Context) (map[string]string, error) {
 			return docker.ContainerImages(ctx, brokerClient)
+		},
+		changes.SourceApps: func(ctx context.Context) (map[string]string, error) {
+			return stacks.Snapshot(ctx, brokerClient)
 		},
 		changes.SourceListeners: func(context.Context) (map[string]string, error) {
 			socks, err := netAPI.Resolver.Read(netinfo.Dump, collect.Users())
@@ -798,7 +834,9 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	insight.New(insight.Config{Store: db, Samples: sampler.Ring().Snapshot, Probe: probe.Collect, Busy: usage.Now}).Register(srv.API)
 	reportBuilder := reports.New(reports.Config{Store: db, Now: func(context.Context) reports.Now {
 		return reportNow(sampler, pw)
-	}, Posture: security.Scan, Timeline: func(ctx context.Context, from, to time.Time, limit int) ([]changes.Event, error) {
+	}, Posture: security.Scan, Apps: func(ctx context.Context) ([]reports.App, error) {
+		return stacks.ReportApps(ctx, brokerClient, appUpdates)
+	}, Timeline: func(ctx context.Context, from, to time.Time, limit int) ([]changes.Event, error) {
 		events, _, err := tracker.Timeline(ctx, from, to, nil, limit)
 		return events, err
 	}, Markers: func(ctx context.Context, from, to time.Time) ([]int64, error) {

@@ -1,0 +1,55 @@
+[Unit]
+Description=Hearth: back up the app %i
+Documentation=https://github.com/mohammed-w-mosabeh/hearth
+# Started only by hearth-broker's stack.backup (SECURITY S12d), after
+# polkit, on a plan the broker wrote from the stored spec and the path
+# check. %i is a stack name: a-z, 0-9, - and _ only.
+ConditionPathExists=/var/lib/hearth/backups/%i/.plan.json
+
+[Service]
+Type=oneshot
+# The broker's binary reads the plan, checks it, and runs one fixed tar
+# --zstd argv through safeexec: no shell, no script body.
+ExecStart=/usr/bin/hearth-broker backup %i
+StandardOutput=journal
+StandardError=journal
+Environment=LC_ALL=C
+UMask=0077
+TimeoutStartSec=6h
+Nice=10
+IOSchedulingClass=idle
+
+# --- Hardening (SECURITY.md "systemd hardening") ---
+# Reading every file of a volume or a bind, whoever owns it, needs
+# CAP_DAC_READ_SEARCH and nothing more; writing is only to the stack's own
+# backup folder, root's.
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+AmbientCapabilities=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/hearth/backups/%i
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+KeyringMode=private
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources @chown
+SystemCallErrorNumber=EPERM
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+MemoryMax=512M
+CPUQuota=100%
+TasksMax=16

@@ -76,9 +76,12 @@ The ring is 100 minus the points below, never under 0. Each item takes fixed poi
 | Disk full within 7 days | `GET /forecasts` | 15 | 30 | Space advisor |
 | Disk reporting failure (SMART) | `GET /disks/health` | 25 | 50 | Disk health |
 | Hardening index lower than the run before | `GET /security/lynis` | 10 | 10 | Security page |
-| Unhealthy app, failed backup, stack needing an update, pending mode approval | Phases 9 and 10 | 0 | 0 | reserved, inactive |
+| Unhealthy app: a container unhealthy, restarting or dead, or exited while the app should run (9.12) | `GET /app-health` | 10 | 30 | Apps page |
+| App whose last backup failed (9.12) | same | 15 | 30 | Apps page |
+| App the owner's last update preview found a new digest for (9.12) | same | 5 | 10 | Apps page |
+| Pending mode approval | Phase 10 | 0 | 0 | reserved, inactive |
 
-A listener behind an active firewall is info on the Security page and is not counted here. A source that cannot be read deducts nothing and is named as not checked. Everything is read when Home opens and every 5 minutes after; alerts also arrive as they fire. A row snoozes for 24 hours, per viewer, in the `home.snoozed` setting (at most 200 items, each `{"until": {"<item id>": <unix ms>}}`); a snoozed item still counts in the ring. On Ember, Home's restart banner gives way to the restart row.
+The update row never asks a registry itself (SECURITY S21a): it repeats what the owner's last update preview of the app found, kept in the `stacks.updates` setting, and lapses once the app's spec or a running image changes. A failed backup's row is keyed by the backup's time, so a snooze covers that failure only. A listener behind an active firewall is info on the Security page and is not counted here. A source that cannot be read deducts nothing and is named as not checked. Everything is read when Home opens and every 5 minutes after; alerts also arrive as they fire. A row snoozes for 24 hours, per viewer, in the `home.snoozed` setting (at most 200 items, each `{"until": {"<item id>": <unix ms>}}`); a snoozed item still counts in the ring. On Ember, Home's restart banner gives way to the restart row.
 
 ## Inspector drawer (task 8.7)
 Selecting an item in a list opens it in a drawer on the inline-end side instead of leaving the page. The hash carries it, `#/<page>?inspect=<kind>:<id>`, so a drawer can be linked, survives a reload, and Back returns to the previous item. Code: `web/src/components/Inspector.svelte`, `web/src/components/inspect/`, ids in `web/src/lib/inspect.ts`.

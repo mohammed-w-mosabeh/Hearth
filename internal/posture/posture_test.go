@@ -580,3 +580,41 @@ func TestUnattended(t *testing.T) {
 		})
 	}
 }
+
+func TestAppFlags(t *testing.T) {
+	s := New(Config{
+		Containers: func(context.Context) ([]Risky, error) { return nil, nil },
+		Apps: func(context.Context) ([]App, error) {
+			return []App{
+				{Name: "vpn", Flags: []string{"cap:NET_ADMIN", "port:0.0.0.0:51820/udp"}},
+				{Name: "portainer", Flags: []string{"docker-socket"}},
+				{Name: "plain"},
+			}, nil
+		},
+	})
+	c := s.containers(context.Background())
+	got := map[string]Finding{}
+	for _, f := range c.Findings {
+		got[f.Code+" "+f.Subject] = f
+	}
+	if f := got["app.danger vpn"]; f.Severity != SevWarn || strings.Join(f.Details, ",") != "cap:NET_ADMIN" {
+		t.Errorf("vpn danger %+v", f)
+	}
+	if f := got["app.exposed vpn"]; f.Severity != SevWarn || strings.Join(f.Details, ",") != "0.0.0.0:51820/udp" {
+		t.Errorf("vpn exposed %+v", f)
+	}
+	if f := got["app.danger portainer"]; f.Severity != SevCrit {
+		t.Errorf("portainer %+v", f)
+	}
+	if len(c.Findings) != 3 || c.Status != SevCrit {
+		t.Fatalf("%+v", c)
+	}
+	if Text(Finding{Code: "app.exposed", Subject: "vpn"}) == "app.exposed" {
+		t.Fatal("no English text")
+	}
+	// An error leaves the containers check as it was.
+	s.cfg.Apps = func(context.Context) ([]App, error) { return nil, errors.New("broker down") }
+	if c := s.containers(context.Background()); len(c.Findings) != 0 {
+		t.Fatalf("%+v", c)
+	}
+}

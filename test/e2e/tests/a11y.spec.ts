@@ -12,7 +12,7 @@ const axeSource = readFileSync(createRequire(import.meta.url).resolve('axe-core/
 const base = process.env.HEARTH_URL ?? '';
 const origin = new URL(base).origin;
 
-const routes = ['', 'resources', 'disks', 'apps', 'games', 'services', 'docker', 'packages', 'tools', 'space', 'hardware', 'network', 'terminal', 'scheduler', 'insight', 'journal', 'alerts', 'security', 'tokens', 'profiles', 'changes', 'reports', 'settings'];
+const routes = ['', 'resources', 'disks', 'apps', 'games', 'services', 'docker', 'stacks', 'packages', 'tools', 'space', 'hardware', 'network', 'terminal', 'scheduler', 'insight', 'journal', 'alerts', 'security', 'tokens', 'profiles', 'changes', 'reports', 'settings'];
 
 // Not serial: one page failing must not hide what the other tests find.
 
@@ -91,6 +91,18 @@ for (const theme of ['dark', 'light'])
         for (const v of await violations(page)) found.push(`#/${r}: ${v}`);
       }
       expect(found).toEqual([]);
+    });
+
+for (const theme of ['dark', 'light'])
+  for (const lang of ['en', 'ar'])
+    test(`axe: an app's drawer, ${theme}, ${lang === 'ar' ? 'right to left' : 'left to right'}`, async ({ page }) => {
+      await start(page, theme, lang);
+      await page.goto(`${origin}/#/stacks`);
+      await page.reload();
+      await page.getByRole('button', { name: 'xssapp', exact: true }).click();
+      await expect(page.locator('dialog[open]')).toBeVisible({ timeout: 15_000 });
+      await page.waitForTimeout(800);
+      expect(await violations(page)).toEqual([]);
     });
 
 for (const theme of ['dark', 'light'])

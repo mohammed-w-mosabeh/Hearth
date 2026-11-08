@@ -28,7 +28,7 @@ DEB      = dist/hearth_$(VERSION)_amd64.deb
 
 # Reproducible, static builds (SECURITY S25).
 export CGO_ENABLED := 0
-GO_BUILD_FLAGS = -trimpath -buildvcs=true -ldflags '-X main.buildVersion=$(VERSION)'
+GO_BUILD_FLAGS = -trimpath -buildvcs=true -ldflags '-s -w -X main.buildVersion=$(VERSION)'
 
 GO_PKGS = $(shell $(GO) list ./... 2>/dev/null)
 
@@ -82,13 +82,16 @@ test: web ## go test + vitest
 	cd web && npm run -s test
 
 FUZZTIME ?= 60s
+# Minimizing a new input does not count as fuzzing and reads as "0/sec";
+# Go allows it 60 s per input by default, which ate most of a 60 s run.
+FUZZMINIMIZE ?= 5s
 
 .PHONY: fuzz
 fuzz: web ## Run every Fuzz* target for FUZZTIME each (default 60s)
 	@for pkg in $(GO_PKGS); do \
 		for f in $$($(GO) test -list '^Fuzz' $$pkg | grep '^Fuzz'); do \
 			echo "== $$pkg $$f"; \
-			$(GO) test -run '^$$' -fuzz "^$$f$$" -fuzztime $(FUZZTIME) $$pkg || exit 1; \
+			$(GO) test -run '^$$' -fuzz "^$$f$$" -fuzztime $(FUZZTIME) -fuzzminimizetime $(FUZZMINIMIZE) $$pkg || exit 1; \
 		done; \
 	done
 

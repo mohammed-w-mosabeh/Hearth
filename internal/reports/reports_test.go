@@ -448,3 +448,56 @@ func TestMarkLines(t *testing.T) {
 		t.Fatal("one point has no width")
 	}
 }
+
+func TestMachineApps(t *testing.T) {
+	db := open(t)
+	seed(t, db)
+	b := builder(db)
+	m, _ := b.Machine(context.Background(), "week")
+	if m.Apps != nil {
+		t.Fatalf("apps without a source: %+v", m.Apps)
+	}
+	// Every heading and status has its English words (they were keys).
+	if out := string(MachineMarkdown(m)); !strings.Contains(out, "## Security posture") || strings.Contains(out, "status.") {
+		t.Errorf("posture labels missing:\n%s", out)
+	}
+	hostile := "<img src=x onerror=alert(1)>"
+	for _, tc := range []struct {
+		apps     []App
+		html, md []string
+		notHTML  string
+	}{
+		{apps: nil, notHTML: "<h2>Apps</h2>"},
+		{apps: []App{}, html: []string{"<h2>Apps</h2>", "Hearth manages no app."}, md: []string{"## Apps", "_Hearth manages no app._"}},
+		{apps: []App{
+			{Name: "cloud", State: "running", Unhealthy: []string{hostile}, Backup: "2026-11-06T03:00:00Z", Scheduled: true, Updates: 2},
+			{Name: "wiki", State: "stopped", Unhealthy: []string{}},
+		}, html: []string{"&lt;img src=x onerror=alert(1)&gt;", "2026-11-06T03:00:00Z · failed", "never", "<td class=\"n\">2</td>"},
+			md: []string{"| cloud | running | \\<img src=x onerror=alert(1)\\> | 2026-11-06T03\\:00\\:00Z · failed | yes | 2 |", "| wiki | stopped |  | never | no |  |"}},
+	} {
+		m.Apps = tc.apps
+		page, err := MachineHTML(m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := string(page)
+		for _, want := range tc.html {
+			if !strings.Contains(s, want) {
+				t.Errorf("html for %v: no %q", tc.apps, want)
+			}
+		}
+		if tc.notHTML != "" && strings.Contains(s, tc.notHTML) {
+			t.Errorf("html for nil apps has %q", tc.notHTML)
+		}
+		out := string(MachineMarkdown(m))
+		for _, want := range tc.md {
+			if !strings.Contains(out, want) {
+				t.Errorf("markdown for %v: no %q in\n%s", tc.apps, want, out)
+			}
+		}
+	}
+	b2 := New(Config{Store: db, Apps: func(context.Context) ([]App, error) { return []App{{Name: "x"}}, nil }})
+	if m2, _ := b2.Machine(context.Background(), "week"); len(m2.Apps) != 1 {
+		t.Errorf("apps source not read: %+v", m2.Apps)
+	}
+}

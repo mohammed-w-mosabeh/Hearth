@@ -382,6 +382,35 @@
         </div>
       {/if}
 
+      {#if m.apps}
+        <h2>{t('reports.apps')}</h2>
+        {#if m.apps.length === 0}
+          <p class="note">{t('reports.apps.none')}</p>
+        {:else}
+          <div class="table">
+            <table>
+              <thead>
+                <tr>
+                  <th>{t('reports.col.name')}</th><th>{t('reports.col.state')}</th><th>{t('reports.col.unhealthy')}</th>
+                  <th>{t('reports.col.backup')}</th><th>{t('reports.col.scheduled')}</th><th class="n">{t('reports.col.updates')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each m.apps as a (a.name)}
+                  <tr>
+                    <td>{a.name}</td><td>{a.state}</td><td>{a.unhealthy.join(', ')}</td>
+                    <td>
+                      {a.backup ? (a.backup_ok ? when(a.backup) : t('reports.backupFailed', { when: when(a.backup) })) : t('reports.backupNever')}
+                    </td>
+                    <td>{a.scheduled ? t('reports.yes') : t('reports.no')}</td><td class="n">{a.updates || ''}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {/if}
+      {/if}
+
       <h2>{t('reports.alerts')}</h2>
       {#if m.alerts.length === 0}
         <p class="note">{t('reports.alerts.none')}</p>

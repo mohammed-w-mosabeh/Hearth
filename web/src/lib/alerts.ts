@@ -69,6 +69,8 @@ const metricKeys: Record<string, MessageKey> = {
   'container.unhealthy': 'metric.container.unhealthy',
   'container.oom': 'metric.container.oom',
   'log.match': 'metric.log.match',
+  'app.unhealthy': 'metric.app.unhealthy',
+  'backup.failed': 'metric.backup.failed',
 };
 const instanceKeys: Record<string, MessageKey> = {
   mount: 'instance.mount',
@@ -82,6 +84,7 @@ const instanceKeys: Record<string, MessageKey> = {
   interface: 'instance.interface',
   device: 'instance.device',
   pattern: 'instance.pattern',
+  app: 'instance.app',
 };
 
 /** The metric's name in the UI language (the server's English label otherwise). */
@@ -189,6 +192,8 @@ export function conditionText(r: Pick<Rule, 'metric' | 'target' | 'op' | 'thresh
   if (r.metric === 'job.failed') return r.target ? t('alerts.cond.job', { name: r.target }) : t('alerts.cond.anyJob');
   if (r.metric === 'container.unhealthy') return r.target ? t('alerts.cond.unhealthy', { name: r.target }) : t('alerts.cond.anyUnhealthy');
   if (r.metric === 'container.oom') return r.target ? t('alerts.cond.oom', { name: r.target }) : t('alerts.cond.anyOom');
+  if (r.metric === 'app.unhealthy') return r.target ? t('alerts.cond.app', { name: r.target }) : t('alerts.cond.anyApp');
+  if (r.metric === 'backup.failed') return r.target ? t('alerts.cond.backup', { name: r.target }) : t('alerts.cond.anyBackup');
   if (r.metric === 'log.match') return t('alerts.cond.log', { pattern: r.target });
   if (r.metric === 'disk.smart_failing') return r.target ? t('alerts.cond.smart', { name: r.target }) : t('alerts.cond.anySmart');
   if (r.metric === 'usb.new_device') return t('alerts.cond.usb');

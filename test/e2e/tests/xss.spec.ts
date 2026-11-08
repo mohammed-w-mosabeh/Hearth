@@ -75,6 +75,7 @@ test.beforeEach(async ({ page }) => {
 const pages: { name: string; hash: string; text: string }[] = [
   { name: 'Home tile', hash: '#/', text: PAYLOAD },
   { name: 'Docker container name, image, status and project', hash: '#/docker', text: PAYLOAD },
+  { name: 'Apps detected Compose project', hash: '#/stacks', text: PAYLOAD },
   { name: 'Scheduler job name', hash: '#/scheduler', text: PAYLOAD },
   { name: 'Hardware device name', hash: '#/hardware', text: PAYLOAD },
   { name: 'Alerts rule name', hash: '#/alerts', text: PAYLOAD.slice(0, 80) },
@@ -95,6 +96,25 @@ for (const p of pages) {
     await noScriptRan(page);
   });
 }
+
+test('an import dry-run of a hostile project shows its name as text', async ({ page }) => {
+  await page.goto(`${origin}/#/stacks`);
+  await page.reload();
+  const card = page.locator('li.card').filter({ hasText: PAYLOAD }).first();
+  await card.getByRole('button', { name: 'Check import' }).click();
+  await expect(page.locator('.importing').getByText('Refused')).toBeVisible({ timeout: 15_000 });
+  await page.waitForTimeout(500);
+  await noScriptRan(page);
+});
+
+test("a managed app's drawer shows its spec as text", async ({ page }) => {
+  await page.goto(`${origin}/#/stacks`);
+  await page.reload();
+  await page.getByRole('button', { name: 'xssapp', exact: true }).click();
+  await expect(page.getByText(PAYLOAD, { exact: false }).first()).toBeVisible({ timeout: 15_000 });
+  await page.waitForTimeout(500);
+  await noScriptRan(page);
+});
 
 test('the job history shows script output as text', async ({ page }) => {
   await page.goto(`${origin}/#/scheduler`);
@@ -333,14 +353,16 @@ test('the drawer is a link, closes on Esc and gives focus back', async ({ page }
 
   await page.keyboard.press('Escape');
   await expect(drawer).toHaveCount(0);
-  expect(page.url()).not.toContain('inspect=');
+  // The dialog closes at once; its close event, which clears the link and
+  // gives focus back, runs a task later.
+  await expect(page).not.toHaveURL(/inspect=/);
 
   await what.focus();
   await page.keyboard.press('Enter');
   await expect(drawer).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(drawer).toHaveCount(0);
-  expect(await page.evaluate(() => document.activeElement?.classList.contains('what'))).toBe(true);
+  await expect.poll(() => page.evaluate(() => document.activeElement?.classList.contains('what'))).toBe(true);
 
   // A lineage link opens that item in the drawer; Back returns.
   await what.click();
@@ -363,8 +385,12 @@ test('list rows move with the keyboard and keep their header', async ({ page }) 
   expect(await page.locator('tbody tr[tabindex="0"]').count()).toBe(1);
   await rows.first().focus();
   await page.keyboard.press('ArrowDown');
-  const name = await page.evaluate(() => document.activeElement?.getAttribute('aria-label'));
-  expect(name).toBe(await rows.nth(1).getAttribute('aria-label'));
+  // One evaluation: the list refreshes live and may reorder between two reads.
+  const [name, index] = await page.evaluate(() => {
+    const a = document.activeElement;
+    return [a?.getAttribute('aria-label'), a?.parentElement ? [...a.parentElement.children].indexOf(a) : -1];
+  });
+  expect(index).toBe(1);
   await page.keyboard.press('Enter');
   await expect(page.locator('dialog.drawer[open] #inspect-title')).toHaveText(name ?? '');
   await page.keyboard.press('Escape');

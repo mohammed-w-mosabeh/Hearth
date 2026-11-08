@@ -13,7 +13,20 @@ fi
 if [ "$1" = "purge" ]; then
 	rm -f /etc/systemd/user/default.target.wants/hearthd.service
 	rm -f /etc/systemd/system/sockets.target.wants/hearth-broker.socket
-	rm -rf /var/lib/hearth /run/hearth
+	rm -f /etc/systemd/system/sockets.target.wants/hearth-pathcheck.socket
+	# App backups (SECURITY S12d) are the owner's data: purge keeps
+	# /var/lib/hearth/backups when it holds an archive, and says so.
+	kept=""
+	if [ -d /var/lib/hearth/backups ] && find /var/lib/hearth/backups -name '*.tar.zst' -type f | grep -q .; then
+		kept=1
+		find /var/lib/hearth -mindepth 1 -maxdepth 1 ! -name backups -exec rm -rf {} +
+		find /var/lib/hearth/backups -name '.*' -type f -delete
+	else
+		rm -rf /var/lib/hearth
+	fi
+	rm -rf /run/hearth
+	# App backup schedules set through Hearth (SECURITY S12d).
+	rm -f /etc/systemd/system/hearth-backup-*.timer /etc/systemd/system/timers.target.wants/hearth-backup-*.timer
 	# A Lynis schedule set through Hearth (SECURITY S16h).
 	rm -f /etc/systemd/system/hearth-lynis.timer /etc/systemd/system/timers.target.wants/hearth-lynis.timer
 	# Limits set through Hearth (SECURITY S16d). Other drop-ins stay.
@@ -24,6 +37,9 @@ if [ "$1" = "purge" ]; then
 	done
 	if [ -d /run/systemd/system ]; then
 		systemctl daemon-reload >/dev/null 2>&1 || true
+	fi
+	if [ -n "$kept" ]; then
+		echo "hearth: app backups kept in /var/lib/hearth/backups; remove the folder to delete them" >&2
 	fi
 	members=$(getent group hearth | cut -d: -f4)
 	if getent group hearth >/dev/null && [ -z "$members" ]; then

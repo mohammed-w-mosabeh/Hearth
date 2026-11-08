@@ -28,7 +28,7 @@ type API struct {
 }
 
 // itemRe matches the process group IDs that usage is recorded for.
-var itemRe = regexp.MustCompile(`^(app|unit|user-unit|container):[^\x00-\x1f\x7f]{1,255}$`)
+var itemRe = regexp.MustCompile(`^(app|unit|user-unit|container):[^\p{Cc}]{1,255}$`)
 
 // Mux is the subset of api.Mux the reports routes need.
 type Mux interface {

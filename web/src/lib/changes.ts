@@ -2,7 +2,7 @@
 
 import { ltr, type MessageKey } from './i18n';
 
-export const SOURCES = ['packages', 'units', 'containers', 'listeners', 'hearth', 'system'] as const;
+export const SOURCES = ['packages', 'units', 'containers', 'listeners', 'apps', 'hearth', 'system'] as const;
 export const KINDS = ['installed', 'upgraded', 'removed', 'purged', 'added', 'deleted', 'changed', 'boot', 'restarted'] as const;
 
 export interface TimelineEvent {
