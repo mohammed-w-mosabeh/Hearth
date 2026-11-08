@@ -366,7 +366,7 @@ func TestPublicKeyLineStaysVisible(t *testing.T) {
 	if got := maskLine("export API_KEY=" + blob); got != Hidden {
 		t.Fatalf("got %q", got)
 	}
-	for _, s := range []string{"password=x", "Passwd: y", "my_secret z", "GH_TOKEN=1", "auth 1", "credentials"} {
+	for _, s := range []string{"password=x", "Passwd: y", "my_secret z", "GH_TOKEN=1", "auth 1", "credentials", "tok\x12en=abc", "GH_TO\u0085KEN=1"} {
 		if maskLine(s) != Hidden {
 			t.Fatalf("%q was shown", s)
 		}
@@ -453,11 +453,7 @@ func FuzzMaskAndDiff(f *testing.F) {
 				t.Fatalf("line too long: %d", len(l.Text))
 			}
 			if secret.Line(l.Text) && l.Text != Hidden && !strings.Contains(l.Text, "�") {
-				// Cutting a line to length or dropping a control character
-				// can only remove text, except by joining what it split.
-				if !strings.ContainsAny(a+b, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x0b\x0c\r\x0e\x0f\x7f") {
-					t.Fatalf("a secret word was shown: %q", l.Text)
-				}
+				t.Fatalf("a secret word was shown: %q", l.Text)
 			}
 		}
 	})

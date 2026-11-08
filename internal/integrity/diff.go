@@ -18,9 +18,10 @@ const (
 )
 
 // maskLine hides a line that names a secret or holds a URL with user info
-// (SECURITY S19).
+// (SECURITY S19). It also reads the line as cleanLine will show it, since
+// dropping a control character can join a word: "tok\x12en=abc".
 func maskLine(s string) string {
-	if secret.Line(s) {
+	if secret.Line(s) || secret.Line(cleanLine(s)) {
 		return Hidden
 	}
 	return s
