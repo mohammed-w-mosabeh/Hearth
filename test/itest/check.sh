@@ -932,6 +932,15 @@ printf '"AppState"\n{\n\t"appid"\t"9"\n\t"name"\t"%s"\n\t"StateFlags"\t"4"\n}\n'
 game_listed() { grep -q '"id":"steam.9"' <<<"$(pkgs_api games)"; }
 wait_until 90 game_listed || true
 check "hostile game listed" game_listed
+# A managed app (Gate 9), written as the broker would, with the payload in
+# every free-text place a spec allows: a bind folder, a plain value, a label,
+# a command and a healthcheck. The fake Engine cannot deploy, so the app's
+# row and drawer would otherwise never render on the real hearthd.
+xq=${xss//\"/\\\"}
+install -d -m 700 /var/lib/hearth/stacks /var/lib/hearth/stacks/xssapp
+printf '{"version":1,"name":"xssapp","bind_roots":["/srv"],"services":{"web":{"image":"nginx:1.27","environment":{"NOTE":"%s"},"labels":{"note":"%s"},"command":["echo","%s"],"healthcheck":{"test":["CMD-SHELL","%s"]},"volumes":[{"type":"bind","source":"/srv/%s","target":"/data"}]}}}' "$xq" "$xq" "$xq" "$xq" "$xq" >/var/lib/hearth/stacks/xssapp/spec.json
+chmod 600 /var/lib/hearth/stacks/xssapp/spec.json
+check "hostile managed app listed" grep -q '"name":"xssapp"' <<<"$(curl -s -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/stacks")"
 e2e=$(cd /opt/e2e && HEARTH_VERSION="$HEARTH_VERSION" HEARTH_URL="http://127.0.0.1:$port/auth?t=$(cat /home/$user/.config/hearth/token)" timeout 900 npx playwright test 2>&1) || true
 if grep -qE '[0-9]+ passed' <<<"$e2e" && ! grep -qE '[0-9]+ (failed|flaky)' <<<"$e2e"; then
 	echo "$e2e" | grep -E '✓|passed' | head -40 | sed 's/^/  | /'
@@ -942,6 +951,9 @@ check "e2e XSS: every page shows the strings as text, nothing ran" grep -qE '^ *
 check "e2e XSS: no test failed" not grep -qE '[0-9]+ failed' <<<"$e2e"
 check "e2e a11y: axe finds nothing serious on any page, both themes, LTR and RTL" grep -qE '✓.*a11y\.spec\.ts.*axe: every page, light, right to left' <<<"$e2e"
 check "e2e a11y: focus rings, palette, shortcuts and a confirmation work by keyboard" grep -qE '✓.*a11y\.spec\.ts.*a confirmation is keyboard operable' <<<"$e2e"
+check "e2e: a managed app's drawer shows its spec as text" grep -qE "✓.*xss\.spec\.ts.*a managed app's drawer" <<<"$e2e"
+check "e2e a11y: axe finds nothing serious in an app's drawer" grep -qE "✓.*a11y\.spec\.ts.*axe: an app's drawer, light, right to left" <<<"$e2e"
+rm -rf /var/lib/hearth/stacks
 pkill -f '/tmp/<svg onload>' || true
 dpkg -r hearth-xss-probe >/dev/null
 rm -r "/home/$user/.local/share/Steam"

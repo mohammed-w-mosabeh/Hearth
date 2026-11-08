@@ -107,6 +107,15 @@ test('an import dry-run of a hostile project shows its name as text', async ({ p
   await noScriptRan(page);
 });
 
+test("a managed app's drawer shows its spec as text", async ({ page }) => {
+  await page.goto(`${origin}/#/stacks`);
+  await page.reload();
+  await page.getByRole('button', { name: 'xssapp', exact: true }).click();
+  await expect(page.getByText(PAYLOAD, { exact: false }).first()).toBeVisible({ timeout: 15_000 });
+  await page.waitForTimeout(500);
+  await noScriptRan(page);
+});
+
 test('the job history shows script output as text', async ({ page }) => {
   await page.goto(`${origin}/#/scheduler`);
   await page.reload();

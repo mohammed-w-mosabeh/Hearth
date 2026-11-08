@@ -94,6 +94,18 @@ for (const theme of ['dark', 'light'])
     });
 
 for (const theme of ['dark', 'light'])
+  for (const lang of ['en', 'ar'])
+    test(`axe: an app's drawer, ${theme}, ${lang === 'ar' ? 'right to left' : 'left to right'}`, async ({ page }) => {
+      await start(page, theme, lang);
+      await page.goto(`${origin}/#/stacks`);
+      await page.reload();
+      await page.getByRole('button', { name: 'xssapp', exact: true }).click();
+      await expect(page.locator('dialog[open]')).toBeVisible({ timeout: 15_000 });
+      await page.waitForTimeout(800);
+      expect(await violations(page)).toEqual([]);
+    });
+
+for (const theme of ['dark', 'light'])
   test(`the focus ring shows in ${theme}`, async ({ page }) => {
     await start(page, theme, 'en');
     await page.reload();
