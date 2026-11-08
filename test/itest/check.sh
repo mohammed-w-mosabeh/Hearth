@@ -187,6 +187,12 @@ check "docker.containers.list" call_says '"/web"' docker.containers.list '{"all"
 inspect=$(asuser /usr/bin/hearthd broker-call docker.containers.inspect '{"id":"web"}' 2>&1 || true)
 check "inspect masks secret env" grep -q 'DB_PASSWORD=\*\*\*\*\*\*\*\*' <<<"$inspect"
 check "inspect never shows the secret" not grep -q hunter2 <<<"$inspect"
+app_inspect=$(asuser /usr/bin/hearthd broker-call docker.containers.inspect '{"id":"app"}' 2>&1 || true)
+check "inspect masks an app's secret by its label, whatever its name" grep -q 'ADMIN_CODE=\*\*\*\*\*\*\*\*' <<<"$app_inspect"
+check "inspect keeps the app's plain values" grep -q 'GREETING=hello' <<<"$app_inspect"
+check "inspect never shows the app's secret" not grep -q ITEST-APPSECRET <<<"$app_inspect"
+check "nor does hearthd's container page" not grep -q ITEST-APPSECRET <<<"$(curl -s -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/docker/containers/app")"
+check "hearthd's container page masks it" grep -q 'ADMIN_CODE=\*\*\*\*\*\*\*\*' <<<"$(curl -s -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/docker/containers/app")"
 check "inspect reports S12 risks" grep -q '"risks":\["privileged","host-mount:/etc"\]' <<<"$inspect"
 check "authorized start reaches the engine" call_says '"ok":true' docker.containers.start '{"id":"web"}'
 check "engine got the start" engine_got '^POST /v1.44/containers/web/start$'
@@ -194,7 +200,7 @@ check "remove refused without polkit authorization" call_says "not authorized" d
 check "engine never got the remove" not engine_got '^DELETE'
 check "no create method" call_says "unknown method" docker.containers.create '{"Image":"alpine","HostConfig":{"Privileged":true}}'
 check "path injection refused" call_says "id must be" docker.containers.inspect '{"id":"../../version"}'
-check "engine only got allowlisted requests" not grep -vE '^(GET /v1.44/(version|containers/json\?all=true&size=false|containers/web/json)|POST /v1.44/containers/web/start)$' /run/fakedocker.log
+check "engine only got allowlisted requests" not grep -vE '^(GET /v1.44/(version|containers/json\?all=true&size=false|containers/(web|app)/json)|POST /v1.44/containers/web/start)$' /run/fakedocker.log
 check "audit records the docker refusal" grep -q 'docker.containers.remove.*refused: not authorized' /var/lib/hearth/audit.jsonl
 echo "  engine log: $(tr '\n' ';' </run/fakedocker.log)"
 
@@ -206,7 +212,13 @@ echo "  $(grep -c '^PASS' <<<"$probe_out") probes refused as expected"
 check "no broker probe got through" test "$probe_ok" = 1
 # Probes name only hearth-pentest-nx; anything else reaching the engine
 # is an injection that got past validation.
-check "audit holds params hashes, never raw params" not grep -Eq 'hearth-pentest-nx|\.\./|detachKeys|LD_PRELOAD' /var/lib/hearth/audit.jsonl
+# Stack refusals give their reason, which quotes the refused name or path
+# (clipped; never a value): shown here, kept out of the raw-params check.
+check "audit holds params hashes, never raw params" not grep -Eq 'hearth-pentest-nx|\.\./|detachKeys|LD_PRELOAD' <<<"$(grep -v '"method":"stack\.' /var/lib/hearth/audit.jsonl)"
+stack_audit=$(grep '"method":"stack\.' /var/lib/hearth/audit.jsonl || true)
+check "stack audit lines carry a params hash, not the params" not grep -q '"spec"\|"secrets":{\|"version":1' <<<"$stack_audit"
+echo "  stack refusals in the audit: $(grep -c '"method":"stack\.' /var/lib/hearth/audit.jsonl); quoting a probe path or name: $(grep '"method":"stack\.' /var/lib/hearth/audit.jsonl | grep -cE 'hearth-pentest|\.\./')"
+grep '"method":"stack\.' /var/lib/hearth/audit.jsonl | grep -E 'hearth-pentest|\.\./' | head -n 3 | sed 's/^/    e.g. /'
 check "audit recorded the privileged refusals" grep -q 'docker.containers.exec.*error: bad params' /var/lib/hearth/audit.jsonl
 check "the test user cannot read the audit log" not asuser cat /var/lib/hearth/audit.jsonl
 check "engine got nothing but lookups of the probe name" not grep -vE '^GET /v1.44/(containers|images|volumes|networks)/hearth-pentest-nx(/json|/logs\?[a-z=&0-9-]*)?$' /run/fakedocker.log
@@ -722,6 +734,9 @@ check "a reveal for a missing stack is refused" call_says 'no such stack' stack.
 call_says x stack.secrets.set "{\"name\":\"probe\",\"set\":{\"PW\":\"$mark\"}} junk" || true
 check "the broker audit holds no secret" not grep -q "$mark" /var/lib/hearth/audit.jsonl
 check "the journal holds no secret" not grep -q "$mark" <<<"$(journalctl --no-pager 2>/dev/null)"
+check "nor the app container's secret read through inspect" not grep -q ITEST-APPSECRET <<<"$(journalctl --no-pager 2>/dev/null)"
+check "nor the broker audit" not grep -q ITEST-APPSECRET /var/lib/hearth/audit.jsonl
+check "nor hearthd's database" not grep -rqa ITEST-APPSECRET "/home/$user/.local/share/hearth"
 check "nothing was written" not test -e /var/lib/hearth/stacks
 gpasswd -d "$user" hearth >/dev/null
 rm -rf /srv/itest-app "/home/$user/itest-media"
