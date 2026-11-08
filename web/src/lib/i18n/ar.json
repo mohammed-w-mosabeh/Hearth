@@ -1319,6 +1319,7 @@
   "games.on": "لُعبت في {date}",
   "games.playtime": "وقت اللعب {time}",
   "games.trackedNote": "وقت قاسه Hearth أثناء عمل اللعبة.",
+  "reason.desktop": "غير مدعوم على {detail} بعد؛ يعمل على GNOME",
   "reason.unavailable": "غير متاح على هذا الحاسوب",
   "reason.enterprise": "يحتاج إلى تسجيل دخول مؤسسي؛ اضبطه في إعدادات الشبكة لسطح المكتب",
   "set.title": "الإعدادات",

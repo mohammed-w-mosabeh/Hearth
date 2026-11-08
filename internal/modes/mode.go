@@ -15,7 +15,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"path"
 	"regexp"
 	"strings"
 	"unicode"
@@ -24,20 +23,20 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
+	"github.com/mohammed-w-mosabeh/hearth/internal/session"
 	"github.com/mohammed-w-mosabeh/hearth/internal/stacks/spec"
 )
 
 // Limits of a mode file.
 const (
-	MaxFileSize  = 64 << 10
-	maxName      = 40
-	maxOpen      = 16
-	maxConnect   = 8
-	maxStacks    = 32 // one stack.batch call
-	maxItems     = 64
-	maxTriggers  = 8
-	maxTarget    = 255
-	maxWallpaper = 1024
+	MaxFileSize = 64 << 10
+	maxName     = 40
+	maxOpen     = 16
+	maxConnect  = 8
+	maxStacks   = 32 // one stack.batch call
+	maxItems    = 64
+	maxTriggers = 8
+	maxTarget   = 255
 )
 
 // Kinds of action item, as the profile actions name them.
@@ -71,13 +70,6 @@ const (
 
 // Power profiles of power-profiles-daemon.
 var powerProfiles = map[string]bool{"power-saver": true, "balanced": true, "performance": true}
-
-// Wallpaper files a mode may name, by extension.
-var wallpaperExt = map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".webp": true, ".svg": true, ".jxl": true}
-
-// Places a wallpaper may come from: the user's home or the system's
-// backgrounds. A path is checked again when it is applied.
-var wallpaperRoots = []string{"~/", "/usr/share/backgrounds/", "/usr/share/wallpapers/"}
 
 var (
 	idPattern   = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,39}$`)
@@ -316,7 +308,7 @@ func checkTarget(s string) error {
 
 func (s Session) check() error {
 	if s.Wallpaper != "" {
-		if err := checkWallpaper(s.Wallpaper); err != nil {
+		if err := session.CheckWallpaper(s.Wallpaper); err != nil {
 			return err
 		}
 	}
@@ -359,35 +351,6 @@ func (s Session) check() error {
 			}
 			conns[u] = l.key
 		}
-	}
-	return nil
-}
-
-func checkWallpaper(p string) error {
-	if len(p) > maxWallpaper {
-		return errors.New("wallpaper: the path is too long")
-	}
-	for _, r := range p {
-		if !unicode.IsGraphic(r) {
-			return errors.New("wallpaper: the path has a control character")
-		}
-	}
-	root := ""
-	for _, r := range wallpaperRoots {
-		if strings.HasPrefix(p, r) {
-			root = r
-			break
-		}
-	}
-	if root == "" {
-		return errors.New("wallpaper: a path in your home (~/) or in /usr/share/backgrounds")
-	}
-	rest := strings.TrimPrefix(p, root)
-	if rest == "" || path.Clean(rest) != rest || strings.HasPrefix(rest, "../") || rest == ".." || strings.HasPrefix(rest, "/") {
-		return errors.New("wallpaper: the path is not clean")
-	}
-	if !wallpaperExt[strings.ToLower(path.Ext(rest))] {
-		return errors.New("wallpaper: a JPEG, PNG, WebP, SVG or JPEG XL file")
 	}
 	return nil
 }

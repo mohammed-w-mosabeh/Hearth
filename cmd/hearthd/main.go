@@ -70,6 +70,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/scheduler"
 	"github.com/mohammed-w-mosabeh/hearth/internal/scheduler/schedapi"
 	"github.com/mohammed-w-mosabeh/hearth/internal/services"
+	"github.com/mohammed-w-mosabeh/hearth/internal/session"
 	"github.com/mohammed-w-mosabeh/hearth/internal/settings"
 	"github.com/mohammed-w-mosabeh/hearth/internal/smart"
 	"github.com/mohammed-w-mosabeh/hearth/internal/space"
@@ -131,6 +132,9 @@ func refuseRoot(euid int) error {
 
 // serverHook, set only by tests, sees the fully wired server.
 var serverHook func(*api.Server)
+
+// registryHook, set only by tests, sees every registered action.
+var registryHook func(*actions.Registry)
 
 // run starts the daemon and blocks until ctx is cancelled.
 func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.Context, string) error) error {
@@ -334,6 +338,12 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		Autostart: autostart,
 	})
 	sysSettings.Register(reg)
+	// Session settings a mode changes (ROADMAP 10.3): wallpaper and Do Not
+	// Disturb on GNOME, other desktops detected and refused by name; and the
+	// power profile as an action.
+	sess := session.New(session.Config{Desktop: session.DetectDesktop(os.Getenv("XDG_CURRENT_DESKTOP")), Home: appsCfg.Home})
+	sess.Register(reg)
+	pw.Register(reg)
 	srv.API.HandleFunc("GET /api/v1/system/info", sysSettings.HandleInfo)
 	srv.API.HandleFunc("GET /api/v1/system/timezones", sysSettings.HandleTimezones)
 	srv.API.HandleFunc("GET /api/v1/system/network", sysSettings.HandleNetwork)
@@ -901,6 +911,9 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 
 	if serverHook != nil {
 		serverHook(srv) // every route is registered by now
+	}
+	if registryHook != nil {
+		registryHook(reg)
 	}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve() }()

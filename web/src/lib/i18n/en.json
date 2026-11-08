@@ -1319,6 +1319,7 @@
   "games.on": "Played {date}",
   "games.playtime": "{time} played",
   "games.trackedNote": "Time measured by Hearth while the game ran.",
+  "reason.desktop": "not supported on {detail} yet; it works on GNOME",
   "reason.unavailable": "not available on this computer",
   "reason.enterprise": "it needs an enterprise login; set it up in your desktop's network settings",
   "set.title": "Settings",

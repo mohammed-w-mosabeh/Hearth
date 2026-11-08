@@ -58,6 +58,7 @@ hearth/
     stacks/       # v1.5: Apps, import dry-run; spec validation shared with the broker
       spec/       # the stack spec: strict JSON decoding and the S12b rules, no I/O (imported by the broker)
     modes/        # v1.6: mode files, triggers, snapshots, approvals (extends profiles/)
+    session/      # v1.6: session settings a mode sets: GNOME wallpaper and Do Not Disturb (gsettings), desktop detection, backlight choice
     dbusx/        # small helpers over godbus
     safeexec/     # the ONLY place allowed to call os/exec; validates args
     secret/       # S19: which env names and values are masked, for hearthd and the broker

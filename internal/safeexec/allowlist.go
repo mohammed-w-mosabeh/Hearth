@@ -73,6 +73,22 @@ var allowlist = map[string]Spec{
 	// apt-config reading the two automatic-update settings (Security page,
 	// SECURITY S21e). `shell` returns only these keys; `dump` would also
 	// hand over any proxy credentials.
+	// gsettings reading or writing one GNOME session setting a mode changes
+	// (ROADMAP 10.3): the wallpaper and Do Not Disturb. Only the keys of
+	// GSettingsKeys, each value of its own shape. Writes go to dconf's
+	// service over the session bus, outside hearthd's sandbox.
+	"gsettings-get": {
+		Paths:    []string{"/usr/bin/gsettings"},
+		Validate: gsettingsArgs(false),
+		Env:      gsettingsEnv,
+		Timeout:  5 * time.Second,
+	},
+	"gsettings-set": {
+		Paths:    []string{"/usr/bin/gsettings"},
+		Validate: gsettingsArgs(true),
+		Env:      gsettingsEnv,
+		Timeout:  5 * time.Second,
+	},
 	"apt-config-periodic": {
 		Paths: []string{"/usr/bin/apt-config"},
 		Validate: exactly(Literal("shell"), Literal("U"), Literal("APT::Periodic::Unattended-Upgrade"),
@@ -569,6 +585,53 @@ func journalArgs(args []string) error {
 		}
 	}
 	return nil
+}
+
+// gsettingsEnv is what gsettings needs to find the schemas and the session
+// bus.
+var gsettingsEnv = []string{"HOME", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", "XDG_CONFIG_HOME", "XDG_DATA_DIRS"}
+
+// GSettingsKeys are the settings Hearth may read or write, "schema key", with
+// the shape of their values as gsettings prints and parses them.
+var GSettingsKeys = map[string]Validator{
+	"org.gnome.desktop.background picture-uri":      GSettingsFileURI,
+	"org.gnome.desktop.background picture-uri-dark": GSettingsFileURI,
+	"org.gnome.desktop.notifications show-banners":  OneOf("true", "false"),
+}
+
+// gsettingsFileURIRe is a quoted file URI with no quote, backslash, space or
+// control character inside, so it is one GVariant string and nothing else.
+var gsettingsFileURIRe = regexp.MustCompile(`^'file:///[A-Za-z0-9%/._~!$&()*+,;=:@-]+'$`)
+
+// GSettingsFileURI checks a wallpaper value: a quoted, percent-encoded
+// file:// URI.
+func GSettingsFileURI(s string) error {
+	if len(s) > 4096 || !gsettingsFileURIRe.MatchString(s) {
+		return invalid("not a quoted file URI")
+	}
+	return nil
+}
+
+// gsettingsArgs accepts get <schema> <key>, or set <schema> <key> <value>
+// with the value of that key's shape.
+func gsettingsArgs(set bool) func([]string) error {
+	return func(args []string) error {
+		want, verb := 3, "get"
+		if set {
+			want, verb = 4, "set"
+		}
+		if len(args) != want || args[0] != verb {
+			return invalid("want %s <schema> <key>%s", verb, map[bool]string{true: " <value>"}[set])
+		}
+		v, ok := GSettingsKeys[args[1]+" "+args[2]]
+		if !ok {
+			return invalid("setting %s %s is not allowed", args[1], args[2])
+		}
+		if set {
+			return v(args[3])
+		}
+		return nil
+	}
 }
 
 // exactly returns a Spec.Validate that requires one argument per validator,
