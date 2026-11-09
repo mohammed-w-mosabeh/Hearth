@@ -43,6 +43,16 @@ func (f *fakeStore) DisarmModeStale(_ context.Context, id, hash string) (int64, 
 	return n, nil
 }
 
+func (f *fakeStore) ModeNumbers(_ context.Context, ids []string) (map[string]int64, error) {
+	out := map[string]int64{}
+	for i, id := range ids {
+		if _, ok := out[id]; !ok {
+			out[id] = int64(i + 1)
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeStore) ModeArmings(context.Context) ([]store.ModeArming, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -281,7 +291,7 @@ func TestHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(out.Modes) != 1 || len(out.Modes[0].Armed) != 1 || out.Modes[0].Armed[0] != 1 || len(out.Errors) != 1 ||
-		len(out.Active) != 1 || !out.Active[0].Changed || out.Active[0].ID != "work" {
+		len(out.Active) != 1 || !out.Active[0].Changed || out.Active[0].ID != "work" || out.Modes[0].Number != 1 || out.Active[0].Number != 1 {
 		t.Fatalf("%s", rec.Body.String())
 	}
 }

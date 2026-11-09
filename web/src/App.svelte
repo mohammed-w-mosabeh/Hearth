@@ -11,7 +11,7 @@
   import Applications from './routes/Applications.svelte';
   import Games from './routes/Games.svelte';
   import Changes from './routes/Changes.svelte';
-  import Profiles from './routes/Profiles.svelte';
+  import Modes from './routes/Modes.svelte';
   import Insight from './routes/Insight.svelte';
   import Journal from './routes/Journal.svelte';
   import Reports from './routes/Reports.svelte';
@@ -129,7 +129,7 @@
       {:else if route?.id === 'reports'}
         <Reports />
       {:else if route?.id === 'modes'}
-        {#if live}<Profiles {live} />{/if}
+        {#if live}<Modes {live} />{/if}
       {:else if route?.id === 'hardware'}
         <Hardware />
       {:else if route?.id === 'space'}
