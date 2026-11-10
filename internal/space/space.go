@@ -638,3 +638,28 @@ func (a *Advisor) Register(reg *actions.Registry) {
 type Mux interface {
 	HandleFunc(pattern string, h func(http.ResponseWriter, *http.Request))
 }
+
+// KeptKernel reports whether the package name is a kernel package that is
+// never removed: the running kernel's, one of the two newest, or a kernel
+// package this rule cannot place (meta packages such as linux-image-amd64
+// included). Only what the advisor would offer as an old kernel may go
+// (SECURITY S16c, S16k). Without the running release, every kernel
+// package is kept.
+func KeptKernel(pkgs []discovery.Package, running, name string) bool {
+	kernel := false
+	for _, k := range kinds {
+		if strings.HasPrefix(name, k) {
+			kernel = true
+			break
+		}
+	}
+	if !kernel {
+		return false
+	}
+	for _, k := range oldKernels(pkgs, running) {
+		if n, _, _ := strings.Cut(k.Package, ":"); n == name {
+			return false
+		}
+	}
+	return true
+}

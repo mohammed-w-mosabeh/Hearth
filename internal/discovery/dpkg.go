@@ -44,6 +44,7 @@ type Package struct {
 	Maintainer   string `json:"maintainer,omitempty"`
 	Summary      string `json:"summary,omitempty"`
 	Depends      string `json:"depends,omitempty"`
+	Provides     string `json:"provides,omitempty"`
 }
 
 // ID is "name:arch", as dpkg and apt name a package.
@@ -125,6 +126,8 @@ func ParseStatus(r io.Reader) ([]Package, error) {
 			p.Maintainer = clip(v)
 		case "Description":
 			p.Summary = clip(v)
+		case "Provides":
+			p.Provides = clip(v)
 		case "Depends", "Pre-Depends":
 			if p.Depends != "" {
 				p.Depends += ", "

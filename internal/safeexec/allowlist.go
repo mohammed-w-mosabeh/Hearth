@@ -121,6 +121,17 @@ var allowlist = map[string]Spec{
 		Validate: exactly(OneOf("hold", "unhold"), DebPackageArch),
 		Timeout:  30 * time.Second,
 	},
+	// apt-get simulating autoremove, alone or with the packages to remove,
+	// as the user (Uninstall completely, SECURITY S16k): -s changes
+	// nothing and needs no root, Debug::NoLocking takes no lock. The C
+	// locale keeps the "Remv" lines parseable. Names are validated and
+	// can never start with "-".
+	"apt-get-simulate": {
+		Paths:    []string{"/usr/bin/apt-get"},
+		Validate: AptSimulateArgs,
+		SetEnv:   []string{"LANG=C", "LC_ALL=C", "LANGUAGE=C"},
+		Timeout:  2 * time.Minute,
+	},
 	// smartctl reading one whole disk's report as JSON, or starting one of
 	// its self-tests, run by hearth-broker as root (SECURITY S16f). -n
 	// standby: a read never spins up a sleeping disk.
@@ -648,4 +659,38 @@ func exactly(vs ...Validator) func([]string) error {
 		}
 		return nil
 	}
+}
+
+// aptSimulatePrefix is the fixed start of every apt-get-simulate argv.
+var aptSimulatePrefix = []string{"-s", "-q", "-o", "Debug::NoLocking=true", "autoremove"}
+
+// MaxAptSimulate bounds the packages one simulation names.
+const MaxAptSimulate = 64
+
+// AptSimulateArgs accepts AptSimulate's argv: the fixed prefix, then up to
+// MaxAptSimulate distinct package names.
+func AptSimulateArgs(args []string) error {
+	if len(args) < len(aptSimulatePrefix) || !slices.Equal(args[:len(aptSimulatePrefix)], aptSimulatePrefix) {
+		return invalid("apt-get must be called as apt-get %s", strings.Join(aptSimulatePrefix, " "))
+	}
+	names := args[len(aptSimulatePrefix):]
+	if len(names) > MaxAptSimulate {
+		return invalid("at most %d packages", MaxAptSimulate)
+	}
+	seen := map[string]bool{}
+	for _, n := range names {
+		if err := DebPackageArch(n); err != nil {
+			return err
+		}
+		if seen[n] {
+			return invalid("%s is named twice", n)
+		}
+		seen[n] = true
+	}
+	return nil
+}
+
+// AptSimulate is the argv for simulating autoremove with names removed.
+func AptSimulate(names ...string) []string {
+	return append(slices.Clone(aptSimulatePrefix), names...)
 }
