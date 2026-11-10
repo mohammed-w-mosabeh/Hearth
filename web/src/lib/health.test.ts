@@ -253,4 +253,10 @@ describe('health strings and mode approvals', () => {
     expect(score(items).score).toBe(100);
     expect(unchecked({ modes: null })).toEqual(['modes']);
   });
+  it('lists an automation approval apart, opening the Automations page', () => {
+    const items = collect({ automations: [{ id: 3, automation_id: 9, name: 'Heat' }] });
+    expect(items.map((i) => [i.id, i.source, i.subject])).toEqual([['auto-approval:3', 'autoApproval', 'Heat']]);
+    expect(items[0]?.action).toEqual({ kind: 'open', route: 'automations' });
+    expect(score(items).score).toBe(100);
+  });
 });

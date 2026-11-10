@@ -11,7 +11,7 @@ import type { AppHealth } from './stacks';
 import type { Unit } from './services';
 import type { Health } from './smart';
 
-export type Source = 'unit' | 'alert.critical' | 'alert.warning' | 'alert.info' | 'updates' | 'listener' | 'forecast' | 'restart' | 'smart' | 'lynis' | 'app' | 'backup' | 'appUpdate' | 'approval';
+export type Source = 'unit' | 'alert.critical' | 'alert.warning' | 'alert.info' | 'updates' | 'listener' | 'forecast' | 'restart' | 'smart' | 'lynis' | 'app' | 'backup' | 'appUpdate' | 'approval' | 'autoApproval';
 
 /** Points per item and the most one source can take. */
 export const RULES: Record<Source, { each: number; cap: number }> = {
@@ -29,7 +29,16 @@ export const RULES: Record<Source, { each: number; cap: number }> = {
   backup: { each: 15, cap: 30 },
   appUpdate: { each: 5, cap: 10 },
   approval: { each: 0, cap: 0 },
+  autoApproval: { each: 0, cap: 0 },
 };
+
+/** Steps an automation left for the user (ROADMAP 12.9), from GET
+ *  /automations/approvals (its automations list; modes come from /modes). */
+export interface AutoApproval {
+  id: number;
+  automation_id: number;
+  name: string;
+}
 
 /** A stack step an automatic mode switch left for the user (ROADMAP 10.7),
  *  from GET /modes. */
@@ -41,7 +50,7 @@ export interface PendingApproval {
 }
 
 /** Which endpoint feeds which sources: one that failed is "not checked". */
-export type Feed = 'units' | 'alerts' | 'security' | 'forecasts' | 'smart' | 'lynis' | 'apps' | 'modes';
+export type Feed = 'units' | 'alerts' | 'security' | 'forecasts' | 'smart' | 'lynis' | 'apps' | 'modes' | 'automations';
 
 export const FEED_SOURCES: Record<Feed, Source[]> = {
   units: ['unit'],
@@ -52,6 +61,7 @@ export const FEED_SOURCES: Record<Feed, Source[]> = {
   lynis: ['lynis'],
   apps: ['app', 'backup', 'appUpdate'],
   modes: ['approval'],
+  automations: ['autoApproval'],
 };
 
 export type Action = { kind: 'unit'; unit: Unit } | { kind: 'open'; route: string; q?: string };
@@ -77,6 +87,7 @@ export interface FeedData {
   lynis: LynisView;
   apps: AppHealth[];
   modes: PendingApproval[];
+  automations: AutoApproval[];
 }
 
 /** A disk forecast counts when the disk fills within this many days. */
@@ -173,6 +184,9 @@ export function collect(inp: Inputs): Item[] {
   }
   for (const ap of inp.modes ?? []) {
     out.push({ id: `approval:${ap.id}`, source: 'approval', subject: ap.name || ap.mode, action: { kind: 'open', route: 'modes' } });
+  }
+  for (const ap of inp.automations ?? []) {
+    out.push({ id: `auto-approval:${ap.id}`, source: 'autoApproval', subject: ap.name, action: { kind: 'open', route: 'automations' } });
   }
   return out;
 }
