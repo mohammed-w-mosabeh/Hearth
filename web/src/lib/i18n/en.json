@@ -2770,5 +2770,6 @@
   "auto.trig.metric.above": "{metric}{target} above {n}",
   "auto.trig.metric.below": "{metric}{target} below {n}",
   "auto.trig.metric.aboveFor": "{metric}{target} above {n} for {s} s",
-  "auto.trig.metric.belowFor": "{metric}{target} below {n} for {s} s"
+  "auto.trig.metric.belowFor": "{metric}{target} below {n} for {s} s",
+  "auto.anyScope": "Any scope"
 }

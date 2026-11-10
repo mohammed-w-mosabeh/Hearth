@@ -106,6 +106,18 @@ for (const p of pages) {
   });
 }
 
+test("an automation's notification text and step label show as text in the editor", async ({ page }) => {
+  await page.goto(`${origin}/#/automations`);
+  await page.reload();
+  const row = page.locator('tbody tr').filter({ hasText: PAYLOAD }).first();
+  await row.getByRole('button', { name: 'Edit' }).click();
+  const editor = page.getByRole('dialog');
+  await expect(editor.locator('textarea')).toHaveValue(PAYLOAD, { timeout: 15_000 });
+  await expect(editor.getByLabel('Label (optional)')).toHaveValue(PAYLOAD);
+  await page.waitForTimeout(500);
+  await noScriptRan(page);
+});
+
 test('an import dry-run of a hostile project shows its name as text', async ({ page }) => {
   await page.goto(`${origin}/#/stacks`);
   await page.reload();

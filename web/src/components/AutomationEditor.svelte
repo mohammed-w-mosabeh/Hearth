@@ -339,6 +339,7 @@
           <select bind:value={st.target}>
             <option value="" disabled>{t('auto.pick')}</option>
             {#each candidates(kind, src, false) as c (c.value)}<option value={c.value}>{c.value}</option>{/each}
+            {#if st.target && !candidates(kind, src, false).some((c) => c.value === st.target)}<option value={st.target}>{st.target}</option>{/if}
           </select>
         </label>
         <label>
@@ -444,13 +445,16 @@
             {:else if tr.kind === 'unit_failed'}
               <label>
                 {t('auto.f.scope')}
-                <select bind:value={tr.scope}><option value="user">{t('auto.scope.user')}</option><option value="system">{t('auto.scope.system')}</option></select>
+                <select value={tr.scope ?? ''} onchange={(e) => (tr.scope = e.currentTarget.value || undefined)}>
+                  <option value="">{t('auto.anyScope')}</option><option value="user">{t('auto.scope.user')}</option><option value="system">{t('auto.scope.system')}</option>
+                </select>
               </label>
               <label>
                 {t('auto.f.unit')}
                 <select value={tr.target ?? ''} onchange={(e) => (tr.target = e.currentTarget.value || undefined)}>
                   <option value="">{t('auto.any')}</option>
-                  {#each units.filter((u) => u.scope === tr.scope) as u (u.name)}<option value={u.name}>{u.name}</option>{/each}
+                  {#each units.filter((u) => !tr.scope || u.scope === tr.scope) as u (u.scope + u.name)}<option value={u.name}>{u.name}</option>{/each}
+                  {#if tr.target && !units.some((u) => u.name === tr.target)}<option value={tr.target}>{tr.target}</option>{/if}
                 </select>
               </label>
             {:else if tr.kind === 'image_update'}
@@ -474,6 +478,7 @@
                 <select bind:value={tr.uuid}>
                   <option value="" disabled>{t('auto.pick')}</option>
                   {#each connectionsOf(tr.kind) as c (c.uuid)}<option value={c.uuid}>{c.name}</option>{/each}
+                  {#if tr.uuid && !connections.some((c) => c.uuid === tr.uuid)}<option value={tr.uuid}>{tr.uuid}</option>{/if}
                 </select>
               </label>
               <label>
@@ -566,8 +571,10 @@
                       <option value="" disabled>{t('auto.pick')}</option>
                       {#if c.kind === 'wifi'}
                         {#each connectionsOf('wifi') as x (x.uuid)}<option value={x.uuid}>{x.name}</option>{/each}
+                        {#if c.uuid && !connections.some((x) => x.uuid === c.uuid)}<option value={c.uuid}>{c.uuid}</option>{/if}
                       {:else}
                         {#each modes as m (m.id)}<option value={m.id}>{m.name}</option>{/each}
+                        {#if c.mode && !modes.some((m) => m.id === c.mode)}<option value={c.mode}>{c.mode}</option>{/if}
                       {/if}
                     </select>
                     <select aria-label={t('auto.f.is')} value={c.is ? 'yes' : 'no'} onchange={(e) => (c.is = e.currentTarget.value === 'yes' ? true : undefined)}>
@@ -583,6 +590,7 @@
                     <select aria-label={t('auto.f.container')} bind:value={c.target}>
                       <option value="" disabled>{t('auto.pick')}</option>
                       {#each candidates('container', src, false) as x (x.value)}<option value={x.value}>{x.value}</option>{/each}
+                      {#if c.target && !candidates('container', src, false).some((x) => x.value === c.target)}<option value={c.target}>{c.target}</option>{/if}
                     </select>
                     <select aria-label={t('auto.f.state')} bind:value={c.state}>{#each ['running', 'stopped', 'healthy', 'unhealthy'] as s (s)}<option value={s}>{t(`auto.state.${s as 'running'}`)}</option>{/each}</select>
                   {:else if c.kind === 'unit'}
@@ -597,6 +605,7 @@
                     >
                       <option value="" disabled>{t('auto.pick')}</option>
                       {#each candidates('unit', src, false) as x (x.value)}<option value={x.value}>{x.value}</option>{/each}
+                      {#if c.scope && c.target && !candidates('unit', src, false).some((x) => x.value === `${c.scope}/${c.target}`)}<option value={`${c.scope}/${c.target}`}>{`${c.scope}/${c.target}`}</option>{/if}
                     </select>
                     <select aria-label={t('auto.f.state')} bind:value={c.state}>{#each ['active', 'inactive', 'failed'] as s (s)}<option value={s}>{t(`auto.state.${s as 'active'}`)}</option>{/each}</select>
                   {:else}

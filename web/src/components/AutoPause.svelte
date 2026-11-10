@@ -12,14 +12,20 @@
   let known = $state(false);
   let busy = $state(false);
 
+  // The global limit can pause everything by itself: read it again often.
+  const REFRESH = 15_000;
   $effect(() => {
-    api<{ paused: boolean }>('/automations/pause').then(
-      (r) => {
-        paused = r.paused;
-        known = true;
-      },
-      () => {},
-    );
+    const read = () =>
+      api<{ paused: boolean }>('/automations/pause').then(
+        (r) => {
+          if (!busy) paused = r.paused;
+          known = true;
+        },
+        () => {},
+      );
+    void read();
+    const timer = setInterval(() => void read(), REFRESH);
+    return () => clearInterval(timer);
   });
 
   async function set(on: boolean): Promise<void> {
