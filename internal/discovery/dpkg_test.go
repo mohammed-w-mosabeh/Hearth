@@ -205,3 +205,16 @@ Status: install ok installed`))
 		t.Fatalf("%v %+v", err, got)
 	}
 }
+
+// apt writes an "all" package into extended_states under the native
+// architecture: it is still found as automatically installed.
+func TestAutoForArchAll(t *testing.T) {
+	dir := t.TempDir()
+	status, ext := filepath.Join(dir, "status"), filepath.Join(dir, "extended_states")
+	_ = os.WriteFile(status, []byte("Package: libdata\nStatus: install ok installed\nArchitecture: all\nVersion: 1\n\nPackage: manual\nStatus: install ok installed\nArchitecture: all\nVersion: 1\n"), 0o600)
+	_ = os.WriteFile(ext, []byte("Package: libdata\nArchitecture: "+nativeArch()+"\nAuto-Installed: 1\n"), 0o600)
+	pkgs, err := NewDpkg(DpkgConfig{Status: status, ExtendedState: ext}).Packages()
+	if err != nil || len(pkgs) != 2 || !pkgs[0].Auto || pkgs[1].Auto {
+		t.Fatalf("%v %+v", err, pkgs)
+	}
+}

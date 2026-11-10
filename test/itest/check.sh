@@ -218,7 +218,8 @@ check "audit holds params hashes, never raw params" not grep -Eq 'hearth-pentest
 stack_audit=$(grep '"method":"stack\.' /var/lib/hearth/audit.jsonl || true)
 check "stack audit lines carry a params hash, not the params" not grep -q '"spec"\|"secrets":{\|"version":1' <<<"$stack_audit"
 echo "  stack refusals in the audit: $(grep -c '"method":"stack\.' /var/lib/hearth/audit.jsonl); quoting a probe path or name: $(grep '"method":"stack\.' /var/lib/hearth/audit.jsonl | grep -cE 'hearth-pentest|\.\./')"
-grep '"method":"stack\.' /var/lib/hearth/audit.jsonl | grep -E 'hearth-pentest|\.\./' | head -n 3 | sed 's/^/    e.g. /'
+# head closes the pipe early: under pipefail that SIGPIPE must not end the run.
+grep '"method":"stack\.' /var/lib/hearth/audit.jsonl | grep -E 'hearth-pentest|\.\./' | head -n 3 | sed 's/^/    e.g. /' || true
 check "audit recorded the privileged refusals" grep -q 'docker.containers.exec.*error: bad params' /var/lib/hearth/audit.jsonl
 check "the test user cannot read the audit log" not asuser cat /var/lib/hearth/audit.jsonl
 check "engine got nothing but lookups of the probe name" not grep -vE '^GET /v1.44/(containers|images|volumes|networks)/hearth-pentest-nx(/json|/logs\?[a-z=&0-9-]*)?$' /run/fakedocker.log
@@ -331,10 +332,10 @@ echo "  remove hearth: $(preview_remove hearth)"
 check "removing Hearth itself is blocked" grep -q '"reason":"self"' <<<"$(preview_remove hearth)"
 check "removing bash (Essential) is blocked" grep -q '"reason":"essential"' <<<"$(preview_remove bash)"
 check "no token for a blocked removal" not grep -q '"token"' <<<"$(preview_remove bash)"
-# No PackageKit in the container: an unprotected package cannot be
-# previewed, and says why instead of failing open.
-echo "  remove curl without PackageKit: $(preview_remove curl)"
-check "without PackageKit a removal is refused" grep -q 'PackageKit' <<<"$(preview_remove curl)"
+# PackageKit is in the container (for 11.10): an unprotected package is
+# previewed through its simulation, with a token.
+echo "  remove curl: $(preview_remove curl | head -c 300)"
+check "with PackageKit an unprotected removal is previewed" grep -q '"token"' <<<"$(preview_remove curl)"
 check "extra managers listed inside the sandbox" grep -q '"manager":"pip","available"' <<<"$(pkgs_api pkgs/pip)"
 check "unknown manager refused" test "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/pkgs/apt-get")" = 404
 check "removing a flatpak that is not installed is refused" grep -q 'not installed' <<<"$(curl -s -X POST -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$port" \
@@ -344,8 +345,8 @@ detail=$(pkgs_api "pkgs/apt/bash:$(dpkg --print-architecture)")
 check "package detail lists bash's files" grep -q '"/usr/bin/bash"\|"/bin/bash"' <<<"$detail"
 check "package detail lists installed reverse deps" grep -q '"reverse_deps":\[' <<<"$detail"
 check "detail of a missing package is 404" test "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/pkgs/apt/nope:amd64")" = 404
-echo "  updates without PackageKit: $(pkgs_api pkgs/updates)"
-check "without PackageKit updates say so" grep -q 'PackageKit' <<<"$(pkgs_api pkgs/updates)"
+echo "  updates: $(pkgs_api pkgs/updates | head -c 300)"
+check "updates are listed through PackageKit" grep -q '"updates":\[' <<<"$(pkgs_api pkgs/updates)"
 hold_preview() {
 	curl -s -X POST -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$port" \
 		-d "{\"target\":\"$1\",\"preview\":true}" "http://127.0.0.1:$port/api/v1/actions/package/hold"
@@ -621,6 +622,197 @@ check "a non-JSON request is refused" grep -q 'not a path check request' <<<"$(n
 check "a user cannot ask it" grep -q 'error EACCES' <<<"$(asuser node -e 'const c=require("net").createConnection("/run/hearth/pathcheck.sock");c.on("error",e=>process.stdout.write("error "+e.code));c.on("connect",()=>process.stdout.write("connected"))' 2>&1)"
 check "it created nothing" test ! -e /srv/itest-app/nope
 check "it wrote no stack" not test -e /var/lib/hearth/stacks
+echo "== uninstall completely (11.6)"
+for a in uninstall restore; do
+	check "polkit has org.hearth.packages.$a" grep -q "action id=\"org.hearth.packages.$a\"" /usr/share/polkit-1/actions/org.hearth.policy
+done
+for u in hearth-archive@.service hearth-restore-leftovers@.service hearth-purge@.service hearth-removed-clean.service; do
+	check "$u is installed" test -f /usr/lib/systemd/system/$u
+done
+check "the archives' clean-up timer is enabled" systemctl is-enabled hearth-removed-clean.timer
+check "the clean-up runs and keeps what is fresh" systemctl start hearth-removed-clean.service
+echo "== uninstall completely: acceptance (11.10)"
+home=/home/$user
+usermod -aG hearth "$user" # the broker serves members of hearth only
+# Sample packages in a local repository: an app with two dependencies only
+# it needs, one the user marked as installed by hand, and a conffile; a
+# package that was autoremovable before; a package owning a folder named
+# like the app; one whose removal fails; one for the swap attack.
+udeb() { # udeb name depends [conffile]
+	local d=/tmp/udeb/$1
+	mkdir -p "$d/DEBIAN" "$d/usr/share/doc/$1"
+	printf 'Package: %s\nVersion: 1.0\nArchitecture: all\nMaintainer: itest <itest@example.invalid>\n' "$1" >"$d/DEBIAN/control"
+	[ -z "$2" ] || printf 'Depends: %s\n' "$2" >>"$d/DEBIAN/control"
+	printf 'Description: itest uninstall sample %s\n' "$1" >>"$d/DEBIAN/control"
+	echo "$1" >"$d/usr/share/doc/$1/README"
+	if [ -n "${3:-}" ]; then
+		mkdir -p "$d$(dirname "$3")"
+		echo default >"$d$3"
+		echo "$3" >"$d/DEBIAN/conffiles"
+	fi
+}
+rm -rf /tmp/udeb /srv/itest-repo && mkdir -p /srv/itest-repo
+udeb itest-un-lib1 ''
+udeb itest-un-lib2 ''
+udeb itest-un-keep ''
+udeb itest-un-old ''
+udeb itest-un-app 'itest-un-lib1, itest-un-lib2, itest-un-keep' /etc/itest-un-app/app.conf
+udeb itest-un-other ''
+mkdir -p /tmp/udeb/itest-un-other/var/lib/itest-un-app && echo x >/tmp/udeb/itest-un-other/var/lib/itest-un-app/data
+udeb itest-un-b ''
+udeb itest-un-fail ''
+printf '#!/bin/sh\necho "itest: refusing to be removed" >&2\nexit 1\n' >/tmp/udeb/itest-un-fail/DEBIAN/prerm
+chmod 0755 /tmp/udeb/itest-un-fail/DEBIAN/prerm
+for d in /tmp/udeb/*; do dpkg-deb --build "$d" /srv/itest-repo/ >/dev/null; done
+(cd /srv/itest-repo && apt-ftparchive packages . >Packages)
+echo 'deb [trusted=yes] file:/srv/itest-repo ./' >/etc/apt/sources.list.d/itest-un.list
+apt_local() { apt-get "$@" -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/itest-un.list -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0; }
+apt_local update -qq >/dev/null 2>&1
+apt_local install -y -qq itest-un-app itest-un-old itest-un-other itest-un-b itest-un-fail >/dev/null 2>&1
+apt-mark auto itest-un-old >/dev/null && apt-mark manual itest-un-keep >/dev/null
+check "samples installed" dpkg -s itest-un-app itest-un-lib1 itest-un-lib2 itest-un-keep itest-un-old
+check "itest-un-old was autoremovable before" grep -q 'Remv itest-un-old' <<<"$(apt-get -s autoremove 2>/dev/null)"
+echo edited >/etc/itest-un-app/app.conf
+asuser mkdir -p "$home/.config/itest-un-app" "$home/.cache/itest-un-app" "$home/.config/autostart" "$home/.config/itest-un-b" "$home/.config/itest-un-fail"
+echo cache | asuser tee "$home/.config/itest-un-app/settings" >/dev/null
+mkdir -p /var/cache/itest-un-app && echo x >/var/cache/itest-un-app/blob
+cat >/etc/polkit-1/rules.d/53-hearth-itest-uninstall.rules <<'RULES'
+polkit.addRule(function(action, subject) {
+	var ok = ["org.freedesktop.packagekit.package-remove", "org.freedesktop.packagekit.package-install",
+		"org.freedesktop.packagekit.package-install-untrusted", "org.hearth.packages.uninstall", "org.hearth.packages.restore"];
+	if (subject.user == "tester" && ok.indexOf(action.id) >= 0) {
+		return polkit.Result.YES;
+	}
+});
+RULES
+sleep 1
+uplan() { pkgs_api "uninstall/plan?item=$1"; }
+ucode() { curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $key" "http://127.0.0.1:$port/api/v1/uninstall/plan?item=$1"; }
+# every key the plan offers (remains excluded)
+uselect() { jq -c '[.candidates[] | select(.group != "remains") | .group + "|" + .id]' <<<"$1"; }
+upreview() { # upreview item select-json
+	post actions/uninstall/remove "$(jq -nc --arg t "$1" --arg s "$2" '{target:$t, params:{select:$s}, preview:true}')"
+}
+urun() { # urun item select-json token confirm
+	post actions/uninstall/remove "$(jq -nc --arg t "$1" --arg s "$2" --arg k "$3" --arg c "$4" '{target:$t, params:{select:$s}, token:$k, confirm:$c}')"
+}
+uninstall_all() { # uninstall_all item -> the run's result
+	local p s pv tok conf
+	p=$(uplan "$1")
+	s=$(uselect "$p")
+	pv=$(upreview "$1" "$s")
+	tok=$(jq -r '.token // empty' <<<"$pv")
+	[ -n "$tok" ] || echo "  preview without a token: $(head -c 800 <<<"$pv")" >&2
+	conf=$(jq -r '.confirm // empty' <<<"$pv")
+	urun "$1" "$s" "$tok" "$conf"
+}
+
+p=$(uplan package:itest-un-app)
+echo "  plan: $(jq -c '[.candidates[] | .group + " " + .id + " " + (.preselect|tostring) + " (" + .reason + ")"]' <<<"$p" | head -c 2500)"
+in_group() { jq -e --arg g "$1" --arg id "$2" '[.candidates[] | select(.group == $g and .id == $id)] | length > 0' <<<"$p" >/dev/null; }
+check "the plan offers the newly orphaned dependencies" in_group orphans itest-un-lib1:all
+check "both of them" in_group orphans itest-un-lib2:all
+check "a package already autoremovable is not offered" not grep -q 'itest-un-old' <<<"$p"
+check "a dependency installed by hand is not offered" not grep -q 'itest-un-keep' <<<"$p"
+check "its configuration is purged" in_group purge itest-un-app:all
+check "a user leftover named like it is offered, unchecked" jq -e --arg id "$home/.config/itest-un-app" '.candidates[] | select(.id == $id and .group == "user" and .preselect == false)' <<<"$p"
+check "a shared folder is never offered" not grep -q '"/home/tester/.config/autostart"' <<<"$p"
+check "an unowned system leftover is offered, unchecked" jq -e '.candidates[] | select(.id == "/var/cache/itest-un-app" and .group == "system" and .preselect == false)' <<<"$p"
+check "a folder another package owns stays" in_group remains /var/lib/itest-un-app
+check "an Essential package is blocked" grep -q 'essential' <<<"$(uplan package:bash | jq -r .blocked)"
+check "Hearth itself is blocked" grep -q 'self' <<<"$(uplan package:hearth | jq -r .blocked)"
+for bad in 'package:../x' 'package:-x' 'package:a%2Fb' '../etc' 'shell:rm' 'app:..%2F..%2Fetc'; do
+	check "a crafted item is refused: $bad" test "$(ucode "$bad")" -ge 400
+done
+res=$(uninstall_all package:itest-un-app)
+echo "  run: $res"
+check "the uninstall ran without a failure" jq -e '.failed == [] and .done > 0' <<<"$res"
+check "the app is purged" not dpkg-query -W itest-un-app
+check "its orphaned dependencies are gone" not dpkg-query -W itest-un-lib1 itest-un-lib2
+check "the autoremovable-before package stays" dpkg -s itest-un-old
+check "the hand-installed dependency stays" dpkg -s itest-un-keep
+check "its configuration folder is gone" test ! -e /etc/itest-un-app
+check "the user leftover is in the trash" grep -rqs "itest-un-app" "$home/.local/share/Trash/info"
+check "and not where it was" test ! -e "$home/.config/itest-un-app"
+check "the system leftover is gone" test ! -e /var/cache/itest-un-app
+check "and archived with a manifest" grep -qs '/var/cache/itest-un-app' /var/lib/hearth/removed/*/manifest.json
+check "the conffile was copied into the archive first" grep -qs '/etc/itest-un-app/app.conf' /var/lib/hearth/removed/*/manifest.json
+check "the archives are root's only" test "$(stat -c %a /var/lib/hearth/removed)" = 700
+check "every step is audited" grep -q 'uninstall.program' <<<"$(sqlite3 "$home/.local/share/hearth/hearth.db" "SELECT action FROM audit_log WHERE action LIKE 'uninstall.%'")"
+ops=$(pkgs_api uninstall/ops)
+check "Recently removed lists it" jq -e '.[] | select(.item == "package:itest-un-app" and .state == "done")' <<<"$ops"
+
+echo "  -- a leftover swapped for a link to /etc between preview and run"
+pb=$(uplan package:itest-un-b)
+sb=$(uselect "$pb")
+pvb=$(upreview package:itest-un-b "$sb")
+asuser rm -rf "$home/.config/itest-un-b" && asuser ln -s /etc "$home/.config/itest-un-b"
+resb=$(urun package:itest-un-b "$sb" "$(jq -r .token <<<"$pvb")" "$(jq -r '.confirm // empty' <<<"$pvb")")
+echo "  run: $resb"
+check "the swapped path is refused" grep -q 'changed since the preview' <<<"$resb"
+check "nothing ran: the package is still installed" dpkg -s itest-un-b
+check "the link is still there, and /etc with it" test -L "$home/.config/itest-un-b" -a -f /etc/passwd
+
+echo "  -- a failure mid-way"
+resf=$(uninstall_all package:itest-un-fail)
+echo "  run: $resf"
+check "the run reports the failure" jq -e '.failed | length > 0' <<<"$resf"
+check "and stops: the leftover after it is untouched" test -d "$home/.config/itest-un-fail"
+check "the record says where it stopped" jq -e '.[] | select(.item == "package:itest-un-fail" and .state == "failed" and .failed == "program")' <<<"$(pkgs_api uninstall/ops)"
+
+echo "  -- restore"
+opid=$(jq -r '.[] | select(.item == "package:itest-un-app") | .id' <<<"$ops")
+rpv=$(post actions/uninstall/restore "$(jq -nc --arg t "$opid" '{target:$t, preview:true}')")
+echo "  restore preview: $(head -c 600 <<<"$rpv")"
+rres=$(post actions/uninstall/restore "$(jq -nc --arg t "$opid" --arg k "$(jq -r .token <<<"$rpv")" '{target:$t, token:$k}')")
+echo "  restore: $rres"
+check "the restore ran without a failure" jq -e '.failed == []' <<<"$rres"
+journalctl -q --no-pager -n 15 -u 'hearth-restore-leftovers@*' | sed 's/^/  | /' || true
+check "the package is back" dpkg -s itest-un-app
+check "with the user's configuration, not the default" grep -qx edited /etc/itest-un-app/app.conf
+check "the user leftover is back from the trash" test -f "$home/.config/itest-un-app/settings"
+check "the system leftover is back from the archive" test -f /var/cache/itest-un-app/blob
+check "the operation is marked restored" jq -e '.[] | select(.id == "'"$opid"'" and .state == "restored")' <<<"$(pkgs_api uninstall/ops)"
+
+echo "  -- an AppImage and its desktop integration"
+asuser mkdir -p "$home/Applications" "$home/.local/share/applications" "$home/.local/share/icons/hicolor/48x48/apps"
+printf '#!/bin/true\n' | asuser tee "$home/Applications/ItestApp.AppImage" >/dev/null && chmod 0755 "$home/Applications/ItestApp.AppImage"
+printf '[Desktop Entry]\nType=Application\nName=Itest App\nExec=%s %%U\nIcon=appimagekit_abc_ItestApp\n' "$home/Applications/ItestApp.AppImage" | asuser tee "$home/.local/share/applications/appimagekit_abc-ItestApp.desktop" >/dev/null
+printf 'png' | asuser tee "$home/.local/share/icons/hicolor/48x48/apps/appimagekit_abc_ItestApp.png" >/dev/null
+appimage_listed() { test "$(ucode app:appimage.itestapp)" = 200; }
+check "the AppImage is listed (a new folder is watched within a minute)" wait_until 90 appimage_listed
+resa=$(uninstall_all app:appimage.itestapp)
+echo "  run: $resa"
+check "the AppImage uninstall ran" jq -e '.failed == [] and .done > 0' <<<"$resa"
+check "the AppImage is gone" test ! -e "$home/Applications/ItestApp.AppImage"
+check "its desktop entry is gone" test ! -e "$home/.local/share/applications/appimagekit_abc-ItestApp.desktop"
+check "its icon is gone" test ! -e "$home/.local/share/icons/hicolor/48x48/apps/appimagekit_abc_ItestApp.png"
+check "all three are in the trash" test "$(grep -rls 'ItestApp' "$home/.local/share/Trash/info" | wc -l)" -ge 3
+
+echo "  -- a Flatpak (a stub flatpak: a real one needs a runtime and the network)"
+fp=$home/.local/share/flatpak
+asuser mkdir -p "$fp/app/org.itest.App/x86_64/stable/active/files" "$fp/exports/share/applications" "$home/.var/app/org.itest.App/config"
+printf '[Application]\nname=org.itest.App\n' | asuser tee "$fp/app/org.itest.App/x86_64/stable/active/metadata" >/dev/null
+printf '[Desktop Entry]\nType=Application\nName=Itest Flatpak\nExec=/usr/bin/flatpak run org.itest.App\nX-Flatpak=org.itest.App\n' | asuser tee "$fp/exports/share/applications/org.itest.App.desktop" >/dev/null
+echo data | asuser tee "$home/.var/app/org.itest.App/config/state" >/dev/null
+cat >/usr/bin/flatpak <<'STUB'
+#!/bin/sh
+# itest stub: only what Hearth's uninstall runs, "flatpak uninstall -y --user <ref>".
+[ "$1" = uninstall ] && [ "$2" = -y ] && [ "$3" = --user ] || exit 2
+id=$(echo "$4" | cut -d/ -f2)
+rm -rf "$HOME/.local/share/flatpak/app/$id" "$HOME/.local/share/flatpak/exports/share/applications/$id.desktop"
+echo "$*" >>"$HOME/.flatpak-stub.log"
+STUB
+chmod 0755 /usr/bin/flatpak
+resp=$(uninstall_all flatpak:user/app/org.itest.App/x86_64/stable)
+echo "  run: $resp"
+check "the Flatpak uninstall ran" jq -e '.failed == [] and .done > 0' <<<"$resp"
+check "flatpak uninstall was asked for that ref only" grep -qx 'uninstall -y --user app/org.itest.App/x86_64/stable' "$home/.flatpak-stub.log"
+check "its app data is in the trash" test ! -e "$home/.var/app/org.itest.App" -a -n "$(grep -rls 'org.itest.App' "$home/.local/share/Trash/info")"
+rm -f /usr/bin/flatpak "$home/.flatpak-stub.log"
+apt_local remove -y -qq itest-un-app itest-un-old itest-un-other itest-un-b itest-un-fail itest-un-keep >/dev/null 2>&1 || true
+rm -f /etc/apt/sources.list.d/itest-un.list /etc/polkit-1/rules.d/53-hearth-itest-uninstall.rules
+
 echo "== stack lifecycle (9.4)"
 for a in deploy control remove danger grant; do
 	check "polkit has org.hearth.stack.$a" grep -q "action id=\"org.hearth.stack.$a\"" /usr/share/polkit-1/actions/org.hearth.policy
@@ -1223,7 +1415,9 @@ purge_out=$(apt-get purge -y -qq hearth 2>&1 || true)
 check "purge removes backup timers" not test -e /etc/systemd/system/hearth-backup-probe.timer
 check "purge keeps app backups" test -f /var/lib/hearth/backups/probe/20261106T000000Z.tar.zst
 check "and says so" grep -q 'app backups kept in /var/lib/hearth/backups' <<<"$purge_out"
-check "and keeps nothing else" test "$(ls -A /var/lib/hearth)" = backups
+check "purge keeps uninstall archives" test -n "$(ls /var/lib/hearth/removed/*/*.tar.zst 2>/dev/null)"
+check "and says so too" grep -q 'uninstall archives kept in /var/lib/hearth/removed' <<<"$purge_out"
+check "and keeps nothing else" test "$(ls -A /var/lib/hearth | tr '\n' ' ')" = "backups removed "
 check "and drops the units' plans" not test -e /var/lib/hearth/backups/probe/.plan.json
 rm -rf /var/lib/hearth
 check "purge removes the Lynis schedule" not test -e /etc/systemd/system/hearth-lynis.timer

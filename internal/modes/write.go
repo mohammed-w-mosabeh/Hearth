@@ -2,6 +2,7 @@ package modes
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -147,5 +148,38 @@ func trashFile(root *os.Root, id, hash string, now time.Time) error {
 	if err := root.Rename(name, dst); err != nil {
 		return fmt.Errorf("modes: delete %s: %w", name, err)
 	}
+	return nil
+}
+
+// Edit rewrites mode id's file with fn's change, refusing a file that
+// changed on disk since it was read (ErrChanged), and reads the folder
+// again. A changed file disarms its triggers on that reload (SECURITY
+// S15b), so an edit can never arm anything. fn returns false to leave the
+// file alone.
+func (s *Set) Edit(ctx context.Context, id string, fn func(m *Mode) bool) error {
+	m, ok := s.Mode(id)
+	if !ok {
+		return fmt.Errorf("modes: no mode %s", id)
+	}
+	if !fn(&m) {
+		return nil
+	}
+	raw, err := Encode(m)
+	if err != nil {
+		return err
+	}
+	if _, err := Parse(id, raw); err != nil {
+		return fmt.Errorf("modes: %s: %w", id, err)
+	}
+	root, err := openDir(s.cfg.Dir)
+	if err != nil {
+		return err
+	}
+	err = writeFile(root, id, raw, m.Hash)
+	_ = root.Close()
+	if err != nil {
+		return err
+	}
+	s.Load(ctx)
 	return nil
 }

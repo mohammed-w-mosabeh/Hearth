@@ -85,6 +85,7 @@ const pages: { name: string; hash: string; text: string }[] = [
   { name: 'Settings autostart entry', hash: '#/settings', text: PAYLOAD },
   { name: 'Modes name', hash: '#/modes', text: PAYLOAD },
   { name: 'Space advisor cache folder', hash: '#/space', text: PAYLOAD },
+  { name: 'Uninstall plan of a hostile game', hash: '#/removed?item=game:steam.9', text: PAYLOAD },
 ];
 
 for (const p of pages) {

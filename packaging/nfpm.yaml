@@ -104,6 +104,26 @@ contents:
     dst: /usr/lib/systemd/system/hearth-ufw.service
     file_info:
       mode: 0644
+  - src: packaging/systemd/hearth-archive@.service
+    dst: /usr/lib/systemd/system/hearth-archive@.service
+    file_info:
+      mode: 0644
+  - src: packaging/systemd/hearth-restore-leftovers@.service
+    dst: /usr/lib/systemd/system/hearth-restore-leftovers@.service
+    file_info:
+      mode: 0644
+  - src: packaging/systemd/hearth-purge@.service
+    dst: /usr/lib/systemd/system/hearth-purge@.service
+    file_info:
+      mode: 0644
+  - src: packaging/systemd/hearth-removed-clean.service
+    dst: /usr/lib/systemd/system/hearth-removed-clean.service
+    file_info:
+      mode: 0644
+  - src: packaging/systemd/hearth-removed-clean.timer
+    dst: /usr/lib/systemd/system/hearth-removed-clean.timer
+    file_info:
+      mode: 0644
   - src: packaging/polkit/org.hearth.policy
     dst: /usr/share/polkit-1/actions/org.hearth.policy
     file_info:

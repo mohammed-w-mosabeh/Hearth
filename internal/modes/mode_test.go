@@ -1,6 +1,11 @@
 package modes
 
 import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"unicode"
@@ -179,4 +184,37 @@ func FuzzParse(f *testing.F) {
 			t.Fatal("accepted an empty mode")
 		}
 	})
+}
+
+func TestEdit(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "evening.toml"), []byte("name = \"Evening\"\n[session]\nopen = [\"vlc\", \"firefox\"]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := NewSet(Config{Dir: dir})
+	s.Load(ctx)
+	before, _ := s.Mode("evening")
+	if err := s.Edit(ctx, "evening", func(m *Mode) bool {
+		m.Session.Open = slices.DeleteFunc(m.Session.Open, func(a string) bool { return a == "vlc" })
+		return true
+	}); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := s.Mode("evening")
+	if !slices.Equal(after.Session.Open, []string{"firefox"}) || after.Hash == before.Hash {
+		t.Fatalf("%+v", after)
+	}
+	// A file changed on disk since it was read is refused.
+	stale := NewSet(Config{Dir: dir})
+	stale.Load(ctx)
+	if err := os.WriteFile(filepath.Join(dir, "evening.toml"), []byte("name = \"Changed\"\n[session]\ndo_not_disturb = true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := stale.Edit(ctx, "evening", func(m *Mode) bool { m.Name = "X"; return true }); !errors.Is(err, ErrChanged) {
+		t.Fatalf("%v", err)
+	}
+	if err := s.Edit(ctx, "nope", func(*Mode) bool { return true }); err == nil {
+		t.Fatal("edited a mode that does not exist")
+	}
 }

@@ -4,7 +4,7 @@
 import type { App } from './apps';
 import type { Unit } from './services';
 
-export type EntryKind = 'page' | 'app' | 'unit';
+export type EntryKind = 'page' | 'app' | 'unit' | 'uninstall';
 
 export interface Entry {
   kind: EntryKind;
@@ -30,6 +30,13 @@ export function appEntries(apps: App[]): Entry[] {
     detail: a.generic_name ?? a.comment ?? '',
     keywords: [a.id, ...(a.keywords ?? [])].join(' '),
   }));
+}
+
+/** "Uninstall <app> completely" for each app (ROADMAP 11.9); title is
+ *  the localized words with the app's name. Ranked after the apps
+ *  themselves. */
+export function uninstallEntries(apps: App[], title: (name: string) => string): Entry[] {
+  return apps.map((a) => ({ kind: 'uninstall', id: a.id, title: title(a.name), detail: '', keywords: `uninstall remove ${a.id}`, weight: 1 }));
 }
 
 // Unit types worth jumping to, most wanted first (devices, slices and
@@ -71,7 +78,7 @@ export function score(e: Entry, query: string): number | null {
   return null;
 }
 
-const kindOrder: Record<EntryKind, number> = { page: 0, app: 1, unit: 2 };
+const kindOrder: Record<EntryKind, number> = { page: 0, app: 1, unit: 2, uninstall: 3 };
 
 /** The best matches: by score, then pages before apps before units, then shorter titles. */
 export function search(entries: Entry[], query: string, max = MAX_RESULTS): Entry[] {

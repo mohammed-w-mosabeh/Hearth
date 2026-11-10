@@ -10,6 +10,7 @@
   import { href, router } from '../lib/router.svelte';
   import { openTool } from '../lib/shell';
   import { toast } from '../lib/toast.svelte';
+  import { uninstallHref } from '../lib/uninstall';
   import { sourceCounts, view, type SortKey, type SourceFilter, type Tool, type ToolList } from '../lib/tools';
 
   // Every program in PATH (SPEC 3): what owns it, its version and what it
@@ -225,6 +226,9 @@
     {#if x.manager && removeKind(x.manager) && x.package_id}
       <hr />
       <button type="button" class="danger" onclick={() => removeOwner(x)}>{t('tools.op.remove', { name: x.package ?? '' })}</button>
+    {/if}
+    {#if x.manager}
+      <a class="danger" href={uninstallHref(`tool:${x.name}`)} onclick={() => menu.hidePopover()}>{t('uninstall.menu')}</a>
     {/if}
   {/if}
 </div>

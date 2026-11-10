@@ -38,7 +38,7 @@ func lutrisGames(home string) []Game {
 		for _, r := range rows {
 			gm := Game{ID: "lutris." + strconv.FormatInt(r.id, 10), Name: r.name, Source: GameLutris, Store: r.runner,
 				LastPlayed: max(r.lastPlayed, 0), Playtime: int64(max(r.hours, 0) * 3600),
-				url: "lutris:rungameid/" + strconv.FormatInt(r.id, 10)}
+				url: "lutris:rungameid/" + strconv.FormatInt(r.id, 10), dir: r.dir}
 			if lutrisSlug.MatchString(r.slug) {
 				gm.cover = lutrisCover(append([]string{d}, cache...), r.slug)
 			}
@@ -51,6 +51,7 @@ func lutrisGames(home string) []Game {
 type lutrisRow struct {
 	id                 int64
 	name, slug, runner string
+	dir                string // the game's folder, as Lutris records it
 	hours              float64
 	lastPlayed         int64
 }
@@ -72,6 +73,19 @@ func lutrisRows(path string) ([]lutrisRow, error) {
 	return nil, err
 }
 
+// lutrisQueries read the installed games, newest schema first: hidden and
+// directory are newer than some databases.
+var lutrisQueries = []string{
+	`SELECT id, COALESCE(name, ''), COALESCE(slug, ''), COALESCE(runner, ''), COALESCE(CAST(playtime AS REAL), 0),
+		COALESCE(CAST(lastplayed AS INTEGER), 0), COALESCE(directory, '') FROM games WHERE installed = 1 AND COALESCE(hidden, 0) = 0 LIMIT 10000`,
+	`SELECT id, COALESCE(name, ''), COALESCE(slug, ''), COALESCE(runner, ''), COALESCE(CAST(playtime AS REAL), 0),
+		COALESCE(CAST(lastplayed AS INTEGER), 0), COALESCE(directory, '') FROM games WHERE installed = 1 LIMIT 10000`,
+	`SELECT id, COALESCE(name, ''), COALESCE(slug, ''), COALESCE(runner, ''), COALESCE(CAST(playtime AS REAL), 0),
+		COALESCE(CAST(lastplayed AS INTEGER), 0), '' FROM games WHERE installed = 1 AND COALESCE(hidden, 0) = 0 LIMIT 10000`,
+	`SELECT id, COALESCE(name, ''), COALESCE(slug, ''), COALESCE(runner, ''), COALESCE(CAST(playtime AS REAL), 0),
+		COALESCE(CAST(lastplayed AS INTEGER), 0), '' FROM games WHERE installed = 1 LIMIT 10000`,
+}
+
 func lutrisQuery(path, mode string) ([]lutrisRow, error) {
 	dsn := (&url.URL{Scheme: "file", Path: path, RawQuery: mode + "&_pragma=busy_timeout(1000)"}).String()
 	db, err := sql.Open("sqlite", dsn)
@@ -83,23 +97,20 @@ func lutrisQuery(path, mode string) ([]lutrisRow, error) {
 	defer cancel()
 	// Columns vary across Lutris versions in type more than in name;
 	// CAST and COALESCE keep the scan simple.
-	res, err := db.QueryContext(ctx, `SELECT id, COALESCE(name, ''), COALESCE(slug, ''), COALESCE(runner, ''),
-		COALESCE(CAST(playtime AS REAL), 0), COALESCE(CAST(lastplayed AS INTEGER), 0)
-		FROM games WHERE installed = 1 AND COALESCE(hidden, 0) = 0 LIMIT 10000`)
-	if err != nil {
-		// hidden is newer than some databases.
-		res, err = db.QueryContext(ctx, `SELECT id, COALESCE(name, ''), COALESCE(slug, ''), COALESCE(runner, ''),
-			COALESCE(CAST(playtime AS REAL), 0), COALESCE(CAST(lastplayed AS INTEGER), 0)
-			FROM games WHERE installed = 1 LIMIT 10000`)
-		if err != nil {
-			return nil, err
+	var res *sql.Rows
+	for _, q := range lutrisQueries {
+		if res, err = db.QueryContext(ctx, q); err == nil {
+			break
 		}
+	}
+	if err != nil {
+		return nil, err
 	}
 	defer func() { _ = res.Close() }()
 	var out []lutrisRow
 	for res.Next() {
 		var r lutrisRow
-		if err := res.Scan(&r.id, &r.name, &r.slug, &r.runner, &r.hours, &r.lastPlayed); err != nil {
+		if err := res.Scan(&r.id, &r.name, &r.slug, &r.runner, &r.hours, &r.lastPlayed, &r.dir); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

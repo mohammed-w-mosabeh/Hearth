@@ -44,7 +44,7 @@ func heroicGames(home string) []Game {
 				title = filepath.Base(installPath)
 			}
 			gm := Game{ID: "heroic." + runner + "." + app, Name: title, Source: GameHeroic, Store: heroicStores[runner],
-				Size: max(size, 0), url: "heroic://launch/" + runner + "/" + app}
+				Size: max(size, 0), url: "heroic://launch/" + runner + "/" + app, dir: installPath}
 			if p, ok := played[app]; ok {
 				gm.Playtime, gm.LastPlayed = p.minutes*60, p.last
 			}

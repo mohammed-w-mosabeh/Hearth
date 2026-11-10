@@ -631,23 +631,30 @@ func sortExtra(ps []ExtraPackage) {
 }
 
 // HandleExtra serves GET /api/v1/pkgs/{manager} for the managers above.
+// ListExtra lists manager's packages ("flatpak", "snap", "pip", "npm",
+// "cargo", "go" or "gobin"); ok is false for an unknown manager.
+func ListExtra(ctx context.Context, c ExtraConfig, manager string) (ExtraList, bool) {
+	switch manager {
+	case "flatpak":
+		return Flatpak(c), true
+	case "snap":
+		return Snap(ctx, c), true
+	case "pip":
+		return Pip(c), true
+	case "npm":
+		return Npm(c), true
+	case "cargo":
+		return Cargo(c), true
+	case "go", "gobin":
+		return GoBinaries(c), true
+	}
+	return ExtraList{}, false
+}
+
 func HandleExtra(c ExtraConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var l ExtraList
-		switch r.PathValue("manager") {
-		case "flatpak":
-			l = Flatpak(c)
-		case "snap":
-			l = Snap(r.Context(), c)
-		case "pip":
-			l = Pip(c)
-		case "npm":
-			l = Npm(c)
-		case "cargo":
-			l = Cargo(c)
-		case "go":
-			l = GoBinaries(c)
-		default:
+		l, ok := ListExtra(r.Context(), c, r.PathValue("manager"))
+		if !ok {
 			http.Error(w, "unknown package manager", http.StatusNotFound)
 			return
 		}

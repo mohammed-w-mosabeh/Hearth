@@ -109,6 +109,16 @@ func steamManifest(s string) (Game, bool) {
 	return Game{ID: "steam." + appid, Name: name, Source: GameSteam, Size: max(size, 0), LastPlayed: max(last, 0)}, true
 }
 
+// SteamLibraries are every Steam library of home: each Steam
+// installation and the library folders it lists.
+func SteamLibraries(home string) []string {
+	var libs []string
+	for _, root := range steamRoots(home) {
+		libs = append(libs, steamLibraries(root)...)
+	}
+	return uniqueDirs(libs)
+}
+
 // steamLibraries are root and the library folders libraryfolders.vdf lists.
 func steamLibraries(root string) []string {
 	libs := []string{root}

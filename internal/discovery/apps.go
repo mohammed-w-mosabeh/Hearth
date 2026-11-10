@@ -390,14 +390,28 @@ func (x *Index) Run(ctx context.Context) {
 		return
 	}
 	defer func() { _ = w.Close() }()
+	// A folder missing now (a new ~/Applications) is tried again every
+	// minute, and found apps are scanned in once it is watched.
+	missing := map[string]bool{}
 	for _, d := range append(x.appDirs(), x.cfg.AppImageDirs...) {
-		_ = w.Add(d) // missing directories are not watched
+		if w.Add(d) != nil {
+			missing[d] = true
+		}
 	}
+	retry := time.NewTicker(time.Minute)
+	defer retry.Stop()
 	var debounce <-chan time.Time
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-retry.C:
+			for d := range missing {
+				if w.Add(d) == nil {
+					delete(missing, d)
+					debounce = time.After(500 * time.Millisecond)
+				}
+			}
 		case _, ok := <-w.Events:
 			if !ok {
 				return

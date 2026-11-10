@@ -36,6 +36,7 @@ export const railGroups: RailGroup[] = [
       { id: 'packages', label: 'nav.packages', icon: 'package' },
       { id: 'tools', label: 'nav.tools', icon: 'wrench' },
       { id: 'space', label: 'nav.space', icon: 'broom' },
+      { id: 'removed', label: 'nav.removed', icon: 'trash' },
       { id: 'hardware', label: 'nav.hardware', icon: 'grid' },
       { id: 'terminal', label: 'nav.terminal', icon: 'terminal' },
       { id: 'settings', label: 'nav.settings', icon: 'sliders' },

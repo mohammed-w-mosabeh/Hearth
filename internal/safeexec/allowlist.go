@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/stacks/backup"
+	"github.com/mohammed-w-mosabeh/hearth/internal/uninstall/rules"
 )
 
 // desktopEnv is what a browser needs from the user's session.
@@ -120,6 +121,27 @@ var allowlist = map[string]Spec{
 		Paths:    []string{"/usr/bin/apt-mark"},
 		Validate: exactly(OneOf("hold", "unhold"), DebPackageArch),
 		Timeout:  30 * time.Second,
+	},
+	// apt-get simulating autoremove, alone or with the packages to remove,
+	// as the user (Uninstall completely, SECURITY S16k): -s changes
+	// nothing and needs no root, Debug::NoLocking takes no lock, and no
+	// package cache is written. The C
+	// locale keeps the "Remv" lines parseable. Names are validated and
+	// can never start with "-".
+	"apt-get-simulate": {
+		Paths:    []string{"/usr/bin/apt-get"},
+		Validate: AptSimulateArgs,
+		SetEnv:   []string{"LANG=C", "LC_ALL=C", "LANGUAGE=C"},
+		Timeout:  2 * time.Minute,
+	},
+	// apt-cache madison: the versions apt can install of up to 64 packages,
+	// as the user, so a restore can reinstall the version an uninstall
+	// removed (SECURITY S16l). Read-only; no cache written.
+	"apt-cache-madison": {
+		Paths:    []string{"/usr/bin/apt-cache"},
+		Validate: AptMadisonArgs,
+		SetEnv:   []string{"LANG=C", "LC_ALL=C", "LANGUAGE=C"},
+		Timeout:  time.Minute,
 	},
 	// smartctl reading one whole disk's report as JSON, or starting one of
 	// its self-tests, run by hearth-broker as root (SECURITY S16f). -n
@@ -276,6 +298,30 @@ var allowlist = map[string]Spec{
 		Paths:    []string{"/usr/bin/tar", "/bin/tar"},
 		Validate: backup.CheckTarCreate,
 		Timeout:  backup.UnitTimeout,
+	},
+	// tar in the uninstall's archive and restore units, run as root by
+	// hearth-archive@ and hearth-restore-leftovers@ (SECURITY S16k, S16l):
+	// four fixed shapes, the archive under /var/lib/hearth/removed/<op>,
+	// one member, a system root or / to work in.
+	"leftovers-tar-create": {
+		Paths:    []string{"/usr/bin/tar", "/bin/tar"},
+		Validate: rules.CheckTarCreate,
+		Timeout:  6 * time.Hour,
+	},
+	"leftovers-tar-list": {
+		Paths:    []string{"/usr/bin/tar", "/bin/tar"},
+		Validate: rules.CheckTarList,
+		Timeout:  time.Hour,
+	},
+	"leftovers-tar-extract": {
+		Paths:    []string{"/usr/bin/tar", "/bin/tar"},
+		Validate: rules.CheckTarExtract,
+		Timeout:  6 * time.Hour,
+	},
+	"leftovers-tar-cat": {
+		Paths:    []string{"/usr/bin/tar", "/bin/tar"},
+		Validate: rules.CheckTarCat,
+		Timeout:  time.Minute,
 	},
 	"tar-extract": {
 		Paths:    []string{"/usr/bin/tar", "/bin/tar"},
@@ -648,4 +694,70 @@ func exactly(vs ...Validator) func([]string) error {
 		}
 		return nil
 	}
+}
+
+// aptSimulatePrefix is the fixed start of every apt-get-simulate argv.
+// No cache is written: hearthd's sandbox keeps /var read-only.
+var aptSimulatePrefix = []string{"-s", "-q", "-o", "Debug::NoLocking=true", "-o", "Dir::Cache::pkgcache=", "-o", "Dir::Cache::srcpkgcache=", "autoremove"}
+
+// MaxAptSimulate bounds the packages one simulation names.
+const MaxAptSimulate = 64
+
+// AptSimulateArgs accepts AptSimulate's argv: the fixed prefix, then up to
+// MaxAptSimulate distinct package names.
+func AptSimulateArgs(args []string) error {
+	if len(args) < len(aptSimulatePrefix) || !slices.Equal(args[:len(aptSimulatePrefix)], aptSimulatePrefix) {
+		return invalid("apt-get must be called as apt-get %s", strings.Join(aptSimulatePrefix, " "))
+	}
+	names := args[len(aptSimulatePrefix):]
+	if len(names) > MaxAptSimulate {
+		return invalid("at most %d packages", MaxAptSimulate)
+	}
+	seen := map[string]bool{}
+	for _, n := range names {
+		if err := DebPackageArch(n); err != nil {
+			return err
+		}
+		if seen[n] {
+			return invalid("%s is named twice", n)
+		}
+		seen[n] = true
+	}
+	return nil
+}
+
+// AptSimulate is the argv for simulating autoremove with names removed.
+func AptSimulate(names ...string) []string {
+	return append(slices.Clone(aptSimulatePrefix), names...)
+}
+
+// aptMadisonPrefix is the fixed start of every apt-cache-madison argv.
+var aptMadisonPrefix = []string{"-q", "-o", "Dir::Cache::pkgcache=", "-o", "Dir::Cache::srcpkgcache=", "madison"}
+
+// AptMadisonArgs accepts AptMadison's argv: the fixed prefix, then 1 to
+// MaxAptSimulate distinct package names without architecture.
+func AptMadisonArgs(args []string) error {
+	if len(args) <= len(aptMadisonPrefix) || !slices.Equal(args[:len(aptMadisonPrefix)], aptMadisonPrefix) {
+		return invalid("apt-cache must be called as apt-cache %s <names>", strings.Join(aptMadisonPrefix, " "))
+	}
+	names := args[len(aptMadisonPrefix):]
+	if len(names) > MaxAptSimulate {
+		return invalid("at most %d packages", MaxAptSimulate)
+	}
+	seen := map[string]bool{}
+	for _, n := range names {
+		if err := DebPackage(n); err != nil {
+			return err
+		}
+		if seen[n] {
+			return invalid("%s is named twice", n)
+		}
+		seen[n] = true
+	}
+	return nil
+}
+
+// AptMadison is the argv listing the available versions of names.
+func AptMadison(names ...string) []string {
+	return append(slices.Clone(aptMadisonPrefix), names...)
 }
