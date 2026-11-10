@@ -221,6 +221,12 @@ func (p *Proxy) closeLocked() {
 	if p.srv != nil {
 		_ = p.srv.Close()
 	}
+	// srv.Close closes only listeners Serve has taken already: the port is
+	// freed here even if Serve's goroutine has not started yet, so a
+	// relisten on the same port never finds it in use.
+	if p.ln != nil {
+		_ = p.ln.Close()
+	}
 	p.srv, p.ln = nil, nil
 }
 
@@ -250,7 +256,7 @@ func (p *Proxy) relisten() {
 	}
 	p.srv, p.ln = srv, ln
 	go func() {
-		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) && !errors.Is(err, net.ErrClosed) {
 			p.log().Warn("proxy: serve", "err", err)
 		}
 	}()
