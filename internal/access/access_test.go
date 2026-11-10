@@ -228,3 +228,15 @@ func TestReadPartsFailAlone(t *testing.T) {
 		t.Fatalf("%+v", r)
 	}
 }
+
+func TestFailures(t *testing.T) {
+	at := time.Now()
+	in := entry(at, "Accepted password for me from 192.0.2.1 port 1 ssh2") +
+		entry(at, "Failed password for me from 192.0.2.1 port 1 ssh2") +
+		entry(at, "Invalid user a from 192.0.2.2 port 1") +
+		entry(at, "Invalid user <img> from 192.0.2.2 port 1")
+	n, sources := Failures([]byte(in))
+	if n != 3 || len(sources) != 2 || sources[0] != "192.0.2.2" {
+		t.Fatalf("%d %v", n, sources)
+	}
+}

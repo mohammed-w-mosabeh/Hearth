@@ -78,7 +78,7 @@ type RunRecord struct {
 type State struct {
 	ActiveModes    func(ctx context.Context) ([]string, error)
 	GameRunning    func() bool
-	ContainerState func(ctx context.Context, name string) (string, error) // running, stopped, healthy, unhealthy
+	ContainerState func(ctx context.Context, name string) (string, error) // "running" or "stopped", then "healthy" or "unhealthy"
 	UnitState      func(ctx context.Context, scope, name string) (string, error)
 }
 
@@ -103,6 +103,7 @@ type Config struct {
 	Store    EngineStore
 	Registry *actions.Registry
 	Sources  modes.Sources
+	Watch    Watch
 	State    State
 	Steps    StepRunner
 	// Notify tells the user when the global limit pauses everything.
@@ -140,6 +141,9 @@ type Engine struct {
 	tags    map[int64]map[string]time.Time // instances the automation's own actions touched, until
 	poll    map[int64]*pollState
 	acts    []time.Time // actions in the last minute, all automations
+	src     map[int64]*sourceState
+	files   *fileWatch
+	runCtx  context.Context // Run's, for the file watches set up on reload
 	wg      sync.WaitGroup
 }
 
@@ -206,6 +210,17 @@ func (e *Engine) Load(ctx context.Context) error {
 		}
 	}
 	e.autos = list
+	for id := range e.src {
+		if !keep[id] {
+			delete(e.src, id)
+		}
+	}
+	runCtx := e.runCtx
+	e.mu.Unlock()
+	if runCtx != nil {
+		e.watchFiles(runCtx, list)
+	}
+	e.mu.Lock()
 	return nil
 }
 
@@ -381,6 +396,7 @@ func (e *Engine) Tick(ctx context.Context) {
 			e.Fire(ctx, a, *ev, "trigger")
 		}
 	}
+	e.tickSources(ctx, autos, now)
 }
 
 // Login fires the login triggers once (hearthd starts with the session).
@@ -397,6 +413,10 @@ func (e *Engine) Login(ctx context.Context) {
 
 // Run loads, fires the login triggers, and polls until ctx ends.
 func (e *Engine) Run(ctx context.Context) {
+	e.mu.Lock()
+	e.runCtx = ctx
+	e.mu.Unlock()
+	e.watchResume(ctx)
 	if err := e.Load(ctx); err != nil {
 		e.cfg.Log.Warn("automations: load", "err", err)
 	}
@@ -622,7 +642,7 @@ func (e *Engine) condition(ctx context.Context, c spec.Condition, now time.Time)
 		if err != nil {
 			return false, "state could not be read"
 		}
-		return got == c.State, got
+		return slices.Contains(strings.Fields(got), c.State), got
 	case "unit":
 		if st.UnitState == nil {
 			return false, "no unit source"

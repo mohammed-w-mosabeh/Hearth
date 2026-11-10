@@ -17,6 +17,7 @@ import (
 	"path"
 	"regexp"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -426,4 +427,20 @@ func (a *API) Handle(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(a.Read(r.Context()))
+}
+
+// Failures counts the failed SSH logins in journalctl-ssh's output and
+// lists their sources, most failures first, at most 10 (automations'
+// ssh_failed trigger, ROADMAP 12.4). Sources are addresses or plain host
+// names only, as the Access page shows them (S16j).
+func Failures(b []byte) (failed int, sources []string) {
+	list, _, _, _ := parseSSH(b, time.Local)
+	sort.Slice(list, func(i, j int) bool { return list[i].Failed > list[j].Failed })
+	for _, s := range list {
+		failed += s.Failed
+		if s.Failed > 0 && len(sources) < 10 {
+			sources = append(sources, s.Source)
+		}
+	}
+	return failed, sources
 }

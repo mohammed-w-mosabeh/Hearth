@@ -969,7 +969,31 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	// Automations (ROADMAP Phase 12, SECURITY S15d): storage and the API;
 	// every save is checked against the action registry and systemd.
 	autoEngine := automations.NewEngine(automations.Config{Store: db, Registry: reg, Sources: trigSources, Log: log,
+		Watch: automations.Watch{
+			Home:        appsCfg.Home,
+			IdleSeconds: idleSeconds,
+			Resumes:     resumes,
+			RunningApps: func() map[string]bool {
+				on := map[string]bool{}
+				for id := range apps.Running(running()) {
+					on[id] = true
+				}
+				return on
+			},
+			Games:           games.Playing,
+			SSHFailures:     sshFailures,
+			SecurityUpdates: securityUpdates(updates),
+			ImageUpdates:    imageUpdates(db),
+		},
 		State: automations.State{
+			GameRunning: func() bool { g, err := games.Playing(); return err == nil && len(g) > 0 },
+			ContainerState: func(_ context.Context, name string) (string, error) {
+				st, ok := dockerMon.State(name)
+				if !ok {
+					return "", fmt.Errorf("no container %s", name)
+				}
+				return st, nil
+			},
 			ActiveModes: func(ctx context.Context) ([]string, error) {
 				act, err := db.ActiveModes(ctx)
 				var ids []string
