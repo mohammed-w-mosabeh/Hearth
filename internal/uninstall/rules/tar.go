@@ -68,7 +68,7 @@ func TarListArgs(archive string) []string {
 // TarExtractArgs extracts member of archive into dir, never over an
 // existing file or folder.
 func TarExtractArgs(archive, dir, member string) []string {
-	return []string{"--zstd", "--extract", "--keep-old-files", "--no-overwrite-dir", "--numeric-owner", "--same-owner",
+	return []string{"--zstd", "--extract", "--keep-old-files", "--numeric-owner", "--same-owner",
 		"--same-permissions", "--acls", "--file", archive, "-C", dir, "--", member}
 }
 

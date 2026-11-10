@@ -472,17 +472,25 @@ func (u *uninstaller) purge(ctx context.Context, c Caller, p json.RawMessage) (a
 	if err != nil {
 		return nil, Errorf(CodeFailed, "dpkg's status could not be read")
 	}
+	var names, gone []string
 	for _, n := range v.Names {
 		if !slices.Contains(plan.Purge, n) {
 			return nil, Errorf(CodeUnauthorized, "%s is not in the authorized uninstall", n)
 		}
 		found := archive.Find(pkgs, n)
+		if len(found) == 0 {
+			// Removed with no configuration files: dpkg forgot it, so
+			// there is nothing left to purge.
+			gone = append(gone, n)
+			continue
+		}
 		if len(found) != 1 || !found[0].ConfigOnly() {
 			return nil, Errorf(CodeConflict, "%s is not a package with only its configuration left", n)
 		}
 		if why := found[0].Undeletable(); why != "" {
 			return nil, Errorf(CodeRefused, "%s can never be removed (%s)", n, why)
 		}
+		names = append(names, n)
 	}
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -491,9 +499,12 @@ func (u *uninstaller) purge(ctx context.Context, c Caller, p json.RawMessage) (a
 			return nil, err
 		}
 	}
+	if len(names) == 0 {
+		return map[string]any{"purged": gone, "left": []string{}}, nil
+	}
 	args := filepath.Join(u.c.Roots.OpDir(v.Op), purgeArgs)
 	_ = os.Remove(args)
-	if err := writeExcl(args, []byte("PURGE_ARGS="+strings.Join(v.Names, " ")+"\n")); err != nil {
+	if err := writeExcl(args, []byte("PURGE_ARGS="+strings.Join(names, " ")+"\n")); err != nil {
 		return nil, Errorf(CodeFailed, "the purge could not be prepared")
 	}
 	defer func() { _ = os.Remove(args) }()
@@ -502,8 +513,8 @@ func (u *uninstaller) purge(ctx context.Context, c Caller, p json.RawMessage) (a
 	if err != nil {
 		return nil, Errorf(CodeFailed, "dpkg's status could not be read after the purge")
 	}
-	var purged, left []string
-	for _, n := range v.Names {
+	purged, left := gone, []string{}
+	for _, n := range names {
 		if len(archive.Find(after, n)) == 0 {
 			purged = append(purged, n)
 		} else {

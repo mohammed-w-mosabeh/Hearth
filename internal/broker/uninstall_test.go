@@ -432,3 +432,23 @@ func TestUninstallRestoreChecks(t *testing.T) {
 		t.Fatal("polkit asked for a refused restore")
 	}
 }
+
+// A dependency removed with no configuration files is gone from dpkg's
+// status: purging it is already done, and no unit starts for it alone.
+func TestUninstallPurgeOfForgottenPackage(t *testing.T) {
+	g := newUninstallRig(t)
+	op, err := g.authorize(1000, UninstallAuthorizeParams{Item: "Foo", Purge: []string{"libfoo1:amd64", "foo:amd64"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(g.r.DpkgStatus)
+	g.write(g.r.DpkgStatus, strings.Replace(string(b), "Package: libfoo1\nStatus: install ok installed\nArchitecture: amd64\n\n", "", 1))
+	res, err := g.call(1000, "pkg.purge", PurgeParams{Op: op, Names: []string{"libfoo1:amd64"}})
+	if err != nil || !slices.Equal(res.(map[string]any)["purged"].([]string), []string{"libfoo1:amd64"}) || len(g.bus.started) != 0 {
+		t.Fatalf("%v %v %v", res, err, g.bus.started)
+	}
+	// Still installed: refused, never purged.
+	if _, err := g.call(1000, "pkg.purge", PurgeParams{Op: op, Names: []string{"foo:amd64"}}); code(err) != CodeConflict {
+		t.Fatalf("%v", err)
+	}
+}

@@ -44,6 +44,9 @@ RestrictNamespaces=yes
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallFilter=~@privileged @resources
+# @privileged holds @chown, which keeping each file's owner needs; later
+# lines add back (as hearth-restore@.service does).
+SystemCallFilter=@chown
 SystemCallErrorNumber=EPERM
 RestrictAddressFamilies=AF_UNIX
 IPAddressDeny=any

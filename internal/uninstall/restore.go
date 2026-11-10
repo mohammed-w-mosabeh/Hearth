@@ -363,11 +363,9 @@ func (r *Restorer) run(ctx context.Context, _ actions.Request, ap actions.Plan) 
 	// 5. The user's files, from the trash, never over anything.
 	for _, i := range idx("trash") {
 		for _, t := range u.Trashed {
-			if t.Path != rows[i].ID {
-				continue
+			if t.Path == rows[i].ID {
+				r.step(ctx, &rows[i], r.untrash(ctx, t))
 			}
-			_, err := r.Run(ctx, "Restore from the trash", "/usr/bin/gio", []string{"gio", "trash", "--restore", "--", t.URI}, nil)
-			r.step(ctx, &rows[i], err)
 		}
 	}
 	rec := st.rec
@@ -453,6 +451,32 @@ func (r *Restorer) installPackages(ctx context.Context, rows []RestoreRow, ids [
 	for _, i := range ids {
 		r.step(ctx, &rows[i], err)
 	}
+}
+
+// untrash puts a trashed path back with local paths only: gio trash
+// --restore needs gvfs for its trash:// URI, which a session may lack.
+// gio move never overwrites, so something at the place again stays.
+func (r *Restorer) untrash(ctx context.Context, t Trashed) error {
+	if t.Name == "" || strings.ContainsAny(t.Name, "/\x00") || !filepath.IsAbs(t.Path) || filepath.Clean(t.Path) != t.Path {
+		return errors.New("not restorable")
+	}
+	trash := filepath.Join(r.Home, ".local/share/Trash")
+	file, info := filepath.Join(trash, "files", t.Name), filepath.Join(trash, "info", t.Name+".trashinfo")
+	if _, err := os.Lstat(t.Path); err == nil {
+		return errors.New("something is there again; it stays as it is")
+	}
+	if dir := filepath.Dir(t.Path); dir != "/" {
+		if _, err := os.Stat(dir); err != nil {
+			if _, err := r.Run(ctx, "Restore from the trash", "/usr/bin/gio", []string{"gio", "mkdir", "-p", "--", dir}, nil); err != nil {
+				return err
+			}
+		}
+	}
+	if _, err := r.Run(ctx, "Restore from the trash", "/usr/bin/gio", []string{"gio", "move", "--", file, t.Path}, nil); err != nil {
+		return err
+	}
+	_, _ = r.Run(ctx, "Restore from the trash", "/usr/bin/gio", []string{"gio", "remove", "--", info}, nil)
+	return nil
 }
 
 // restoreSnap installs a snap again and restores snapd's newest automatic

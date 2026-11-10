@@ -199,3 +199,22 @@ func TestRefs(t *testing.T) {
 		t.Fatalf("%+v", steam)
 	}
 }
+
+// An inode number can be reused at once: a link put where a folder was may
+// carry the folder's device and inode. Its type still differs.
+func TestRecheckComparesType(t *testing.T) {
+	l := local(t)
+	link := filepath.Join(l.Home, ".config/vlc")
+	mkdir(t, filepath.Dir(link))
+	if err := os.Symlink("/etc", link); err != nil {
+		t.Fatal(err)
+	}
+	c, _ := pathCandidate(GroupUser, KindTrash, link, "x", true)
+	if err := Recheck(c); err != nil {
+		t.Fatal(err)
+	}
+	c.Type = os.ModeDir // as previewed: a folder with this inode
+	if err := Recheck(c); !errors.Is(err, ErrChanged) {
+		t.Fatalf("%v", err)
+	}
+}

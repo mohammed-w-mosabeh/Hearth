@@ -51,7 +51,7 @@ func Recheck(c Candidate) error {
 		return fmt.Errorf("%s: %w", c.ID, err)
 	}
 	st, ok := fi.Sys().(*syscall.Stat_t)
-	if !ok || st.Dev != c.Dev || st.Ino != c.Ino {
+	if !ok || st.Dev != c.Dev || st.Ino != c.Ino || fi.Mode().Type() != c.Type {
 		return fmt.Errorf("%s: %w", c.ID, ErrChanged)
 	}
 	return nil

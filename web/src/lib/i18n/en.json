@@ -2346,7 +2346,7 @@
   "stacks.proxyStopped": "App names are off.",
   "nav.removed": "Uninstalled",
   "uninstall.menu": "Uninstall completely",
-  "uninstall.menuFor": "Uninstall {name} completely",
+  "uninstall.menuFor": "Uninstall completely: {name}",
   "uninstall.title": "Uninstall {name} completely",
   "uninstall.titleLoading": "Uninstall completely",
   "uninstall.intro": "Everything that goes with it, in one plan. Checked rows are removed; nothing outside this list is touched. Archived and trashed items can be restored for 7 days.",

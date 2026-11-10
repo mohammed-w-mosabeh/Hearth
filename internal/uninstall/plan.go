@@ -128,6 +128,15 @@ func (b *Builder) Build(ctx context.Context, item string) (Plan, error) {
 	}
 	var removals, orphans []string
 	if res.Owner.Manager == ManagerApt {
+		// The program's own packages first: a protected one blocks the plan
+		// before PackageKit is asked anything (it may refuse to simulate).
+		for _, id := range res.Owner.Packages {
+			if why := guard.Blocked(id); why != "" {
+				p.Blocked = fmt.Sprintf("%s can never be removed (%s)", id, why)
+				p.Candidates = program
+				return p, nil
+			}
+		}
 		var kept []Kept
 		removals, orphans, kept, err = b.packages(ctx, res, installed)
 		if err != nil {
@@ -283,8 +292,9 @@ func (b *Builder) others(ctx context.Context, res Resolved, going []string, inst
 	var o Identifiers
 	if b.Apps != nil {
 		for _, a := range b.Apps() {
-			if slices.Contains(res.Identifiers.Desktop, a.ID) {
-				continue
+			if slices.Contains(res.Identifiers.Desktop, a.ID) || slices.Contains(res.Identifiers.AppIDs, a.ID) ||
+				(a.FlatpakID != "" && slices.Contains(res.Identifiers.AppIDs, a.FlatpakID)) {
+				continue // the item's own entries
 			}
 			o.Desktop = append(o.Desktop, a.ID)
 			o.WMClass = append(o.WMClass, a.WMClass)

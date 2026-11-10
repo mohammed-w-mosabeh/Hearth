@@ -184,7 +184,9 @@ func TestRestore(t *testing.T) {
 	if len(pk.installed) != 1 || !slices.Equal(pk.installed[0], []string{"vlc;3.0.23-0+deb13u1;amd64;"}) {
 		t.Fatalf("%v", pk.installed)
 	}
-	if !slices.Equal(ran, []string{"gio trash --restore -- trash:///vlc"}) {
+	if len(ran) != 3 || ran[0] != "gio mkdir -p -- "+filepath.Join(home, ".config") ||
+		ran[1] != "gio move -- "+filepath.Join(home, ".local/share/Trash/files/vlc")+" "+filepath.Join(home, ".config/vlc") ||
+		!strings.HasPrefix(ran[2], "gio remove -- ") {
 		t.Fatalf("%v", ran)
 	}
 	// Archived folders first, configuration after the packages.

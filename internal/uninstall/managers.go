@@ -125,7 +125,7 @@ func (l Local) manual(p string) Candidate {
 	case uid == l.UID:
 		c, _ := pathCandidate(GroupProgram, KindTrash, p, "the program's own folder, yours", true)
 		return c
-	case uid != 0:
+	case !rootOwned(uid):
 		return remains(p, p, "owned by another user")
 	case !safe:
 		return remains(p, p, "its folder can be written by someone other than root")

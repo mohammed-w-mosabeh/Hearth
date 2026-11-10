@@ -2346,7 +2346,7 @@
   "stacks.proxyStopped": "أسماء التطبيقات معطّلة.",
   "nav.removed": "المُزالة",
   "uninstall.menu": "إزالة كاملة",
-  "uninstall.menuFor": "إزالة كاملة لـ {name}",
+  "uninstall.menuFor": "إزالة كاملة: {name}",
   "uninstall.title": "إزالة كاملة لـ {name}",
   "uninstall.titleLoading": "إزالة كاملة",
   "uninstall.intro": "كل ما يتبعه في خطة واحدة. تُزال الصفوف المحددة فقط، ولا يُمس شيء خارج هذه القائمة. يمكن استعادة ما أُرشف أو نُقل إلى المهملات خلال 7 أيام.",

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -250,7 +251,8 @@ func (d *Dpkg) Packages() ([]Package, error) {
 		}
 	}
 	for i := range pkgs {
-		pkgs[i].Auto = auto[pkgs[i].ID()]
+		// apt records an "all" package under the native architecture.
+		pkgs[i].Auto = auto[pkgs[i].ID()] || (pkgs[i].Arch == "all" && auto[pkgs[i].Name+":"+nativeArch()])
 	}
 	sort.Slice(pkgs, func(i, j int) bool {
 		if pkgs[i].Name != pkgs[j].Name {
@@ -384,4 +386,17 @@ func parseVersions(r io.Reader) (map[string]string, error) {
 	}
 	flush()
 	return out, sc.Err()
+}
+
+// nativeArch is dpkg's name for the architecture Hearth runs on.
+func nativeArch() string {
+	switch runtime.GOARCH {
+	case "386":
+		return "i386"
+	case "arm":
+		return "armhf"
+	case "ppc64le":
+		return "ppc64el"
+	}
+	return runtime.GOARCH
 }

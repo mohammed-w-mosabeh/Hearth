@@ -3,6 +3,8 @@ package uninstall
 import (
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/uninstall/archive"
@@ -52,6 +54,10 @@ type Candidate struct {
 	// same path is refused when the plan runs.
 	Dev uint64 `json:"-"`
 	Ino uint64 `json:"-"`
+	// Type is the file type previewed (folder, file, link): an inode
+	// number can be reused at once, so a link put where a folder was can
+	// have the folder's device and inode.
+	Type os.FileMode `json:"-"`
 }
 
 // pathCandidate is a Candidate for path p, with its device and inode, or
@@ -66,6 +72,7 @@ func pathCandidate(group, kind, p, reason string, pre bool) (Candidate, bool) {
 	if st, ok := fi.Sys().(*syscall.Stat_t); ok {
 		c.Dev, c.Ino = st.Dev, st.Ino
 	}
+	c.Type = fi.Mode().Type()
 	if fi.Mode().IsRegular() {
 		c.Size = fi.Size()
 	}
@@ -88,6 +95,27 @@ func owner(p string) (uid uint32, safeParent bool, err error) {
 		return st.Uid, false, nil
 	}
 	pst, ok := pfi.Sys().(*syscall.Stat_t)
-	safe := ok && pfi.IsDir() && pst.Uid == archive.RootUID && pfi.Mode().Perm()&0o022 == 0
+	safe := ok && pfi.IsDir() && rootOwned(pst.Uid) && pfi.Mode().Perm()&0o022 == 0
 	return st.Uid, safe, nil
+}
+
+// overflowUID is the owner an unmapped uid shows as inside a user
+// namespace. systemd puts a sandboxed user service (hearthd) in one, so
+// there root's files show as owned by it; hearthd cannot tell root from
+// another unmapped user, and the broker checks the real owner again.
+var overflowUID = func() uint32 {
+	b, err := os.ReadFile("/proc/sys/kernel/overflowuid")
+	if err != nil {
+		return 65534
+	}
+	n, err := strconv.ParseUint(strings.TrimSpace(string(b)), 10, 32)
+	if err != nil {
+		return 65534
+	}
+	return uint32(n)
+}()
+
+// rootOwned reports whether uid is root as hearthd can see it.
+func rootOwned(uid uint32) bool {
+	return uid == archive.RootUID || (archive.RootUID == 0 && uid == overflowUID)
 }
