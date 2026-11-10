@@ -1,0 +1,27 @@
+[Unit]
+Description=Hearth: purge the configuration an uninstall left (%i)
+Documentation=https://github.com/mohammed-w-mosabeh/hearth
+# Started only by hearth-broker's pkg.purge (SECURITY S16k), after the
+# uninstall's polkit check, for packages with only their configuration left.
+ConditionPathExists=/var/lib/hearth/uninstall/%i/purge.args
+
+[Service]
+Type=oneshot
+# One line of validated package names, written by the broker just before
+# the start. systemd splits $PURGE_ARGS into words; no shell is involved.
+EnvironmentFile=/var/lib/hearth/uninstall/%i/purge.args
+ExecStart=/usr/bin/dpkg --purge $PURGE_ARGS
+StandardOutput=journal
+StandardError=journal
+Environment=LC_ALL=C DEBIAN_FRONTEND=noninteractive
+TimeoutStartSec=15min
+
+# --- Hardening ---
+# This is what `apt purge` does: dpkg runs each package's maintainer
+# scripts as root, and those may touch any part of the system (remove a
+# system user, drop a database), so the usual sandbox would break them.
+# The broker's checks are what bound it: only packages already removed,
+# with nothing but their configuration left, and never one S16 protects.
+# Nothing here needs the network.
+PrivateNetwork=yes
+NoNewPrivileges=yes

@@ -1,0 +1,40 @@
+[Unit]
+Description=Hearth: drop uninstall archives older than 7 days
+Documentation=https://github.com/mohammed-w-mosabeh/hearth
+ConditionPathIsDirectory=/var/lib/hearth
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/hearth-broker clean-removed
+StandardOutput=journal
+StandardError=journal
+UMask=0077
+
+# --- Hardening (SECURITY.md "systemd hardening") ---
+# Removes only folders named as operations under /var/lib/hearth/removed and
+# /var/lib/hearth/uninstall; archives are root's, so no capability is needed.
+CapabilityBoundingSet=
+AmbientCapabilities=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/hearth
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any

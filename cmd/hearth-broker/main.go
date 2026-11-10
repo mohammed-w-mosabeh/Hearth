@@ -16,6 +16,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"syscall"
+	"time"
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/broker"
 	"github.com/mohammed-w-mosabeh/hearth/internal/dbusx"
@@ -25,6 +26,8 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/scheduler"
 	"github.com/mohammed-w-mosabeh/hearth/internal/stacks/backup"
 	"github.com/mohammed-w-mosabeh/hearth/internal/stacks/spec"
+	"github.com/mohammed-w-mosabeh/hearth/internal/uninstall/archive"
+	"github.com/mohammed-w-mosabeh/hearth/internal/uninstall/rules"
 )
 
 // stateDir is the unit's StateDirectory= (created by systemd, mode 0700).
@@ -50,6 +53,27 @@ func main() {
 		}
 		if err := unitStep(step, os.Args[2]); err != nil {
 			log.Error(step+" failed", "error", err.Error()) // JSON: each value escaped
+			os.Exit(1)
+		}
+		return
+	}
+	// hearth-archive@<op> and hearth-restore-leftovers@<op> run the job the
+	// broker wrote for an uninstall (SECURITY S16k, S16l);
+	// hearth-removed-clean drops archives older than 7 days.
+	if len(os.Args) == 3 && (os.Args[1] == "archive" || os.Args[1] == "unarchive") {
+		msg := "archive failed"
+		if os.Args[1] == "unarchive" {
+			msg = "restore failed"
+		}
+		if err := leftoversStep(os.Args[1], os.Args[2]); err != nil {
+			log.Error(msg, "error", err.Error())
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) == 2 && os.Args[1] == "clean-removed" {
+		if err := archive.Clean(archive.Roots{}, time.Now()); err != nil {
+			log.Error("clean-up failed", "error", err.Error())
 			os.Exit(1)
 		}
 		return
@@ -117,6 +141,33 @@ func unitStep(step, stack string) error {
 	return backup.RunRestore(ctx, backup.Roots{}, stack, tar("tar-extract"))
 }
 
+// leftoversStep runs one archive or restore of an uninstall's operation
+// op, with tar through safeexec.
+func leftoversStep(step, op string) error {
+	if os.Geteuid() != 0 {
+		return errors.New("runs as root, started by the broker")
+	}
+	if !rules.ValidOp(op) {
+		return errors.New("not an operation ID")
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	defer stop()
+	tar := func(ctx context.Context, name string, args []string) ([]byte, bool, error) {
+		res, err := safeexec.Run(ctx, name, args...)
+		if len(res.Stderr) > 0 {
+			_, _ = os.Stderr.Write(res.Stderr) // tar's own lines, to the journal
+		}
+		if err == nil && res.ExitCode != 0 {
+			err = fmt.Errorf("tar exited with %d", res.ExitCode)
+		}
+		return res.Stdout, res.Truncated, err
+	}
+	if step == "archive" {
+		return archive.RunArchive(ctx, archive.Roots{}, op, tar)
+	}
+	return archive.RunRestore(ctx, archive.Roots{}, op, tar)
+}
+
 func run(log *slog.Logger) error {
 	if os.Geteuid() != 0 {
 		return errors.New("hearth-broker runs as root, started by hearth-broker.socket")
@@ -145,6 +196,13 @@ func run(log *slog.Logger) error {
 	methods = append(methods, broker.SmartMethods(safeexec.Run, broker.SysRoot)...)
 	methods = append(methods, broker.BatteryMethods(broker.SysRoot)...)
 	methods = append(methods, broker.NeedrestartMethods(broker.NeedrestartConfig{Bus: func(ctx context.Context) (broker.SystemBus, error) {
+		c, err := dbusx.SystemBus(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return c, nil
+	}})...)
+	methods = append(methods, broker.UninstallMethods(broker.UninstallConfig{Bus: func(ctx context.Context) (broker.SystemBus, error) {
 		c, err := dbusx.SystemBus(ctx)
 		if err != nil {
 			return nil, err

@@ -66,6 +66,8 @@ func (f fakeDpkg) Owners(paths []string) (map[string]string, error) {
 	return out, nil
 }
 
+const home = "/home/u"
+
 func rig() *Resolver {
 	return &Resolver{
 		Home: home,

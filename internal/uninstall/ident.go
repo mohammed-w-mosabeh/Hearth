@@ -165,3 +165,11 @@ func (ids Identifiers) MatchSystem(root, name string) (Match, bool) {
 	}
 	return Match{}, false
 }
+
+func set(names ...string) map[string]bool {
+	m := make(map[string]bool, len(names))
+	for _, n := range names {
+		m[n] = true
+	}
+	return m
+}

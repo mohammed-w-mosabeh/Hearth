@@ -58,6 +58,29 @@
       <allow_active>auth_admin_keep</allow_active>
     </defaults>
   </action>
+  <!-- Uninstall completely (SECURITY S16k): one check covers one uninstall's
+       steps as root, which the broker keeps for 30 minutes; no keep. -->
+  <action id="org.hearth.packages.uninstall">
+    <description>Uninstall a program completely through Hearth</description>
+    <message>Authentication is required to let Hearth uninstall a program completely</message>
+    <icon_name>system-software-install</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+  <!-- Putting back what an uninstall archived (SECURITY S16l). -->
+  <action id="org.hearth.packages.restore">
+    <description>Restore files an uninstall archived through Hearth</description>
+    <message>Authentication is required to let Hearth restore files an uninstall archived</message>
+    <icon_name>system-software-install</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
   <!-- Root scheduled jobs (SECURITY S13): a job's script runs as root. -->
   <action id="org.hearth.space.clean">
     <description>Free disk space through Hearth</description>

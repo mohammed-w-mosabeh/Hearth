@@ -1,0 +1,11 @@
+[Unit]
+Description=Hearth: drop uninstall archives older than 7 days, daily
+Documentation=https://github.com/mohammed-w-mosabeh/hearth
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=1h
+
+[Install]
+WantedBy=timers.target

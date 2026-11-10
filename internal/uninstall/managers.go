@@ -1,6 +1,8 @@
 package uninstall
 
 import (
+	"github.com/mohammed-w-mosabeh/hearth/internal/uninstall/rules"
+
 	"bufio"
 	"bytes"
 	"fmt"
@@ -108,7 +110,7 @@ func (l Local) manual(p string) Candidate {
 	if under(l.Home, p) {
 		rel := strings.TrimPrefix(p, l.Home+"/")
 		dir, base := path.Split(rel)
-		if (dir != ".local/opt/" && dir != "Applications/") || !systemNameRe.MatchString(base) {
+		if (dir != ".local/opt/" && dir != "Applications/") || !rules.SystemName(base) {
 			return remains(p, p, "not a folder Hearth removes")
 		}
 		return l.userFile(p, "the program's own folder")

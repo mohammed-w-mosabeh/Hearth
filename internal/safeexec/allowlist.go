@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/stacks/backup"
+	"github.com/mohammed-w-mosabeh/hearth/internal/uninstall/rules"
 )
 
 // desktopEnv is what a browser needs from the user's session.
@@ -287,6 +288,30 @@ var allowlist = map[string]Spec{
 		Paths:    []string{"/usr/bin/tar", "/bin/tar"},
 		Validate: backup.CheckTarCreate,
 		Timeout:  backup.UnitTimeout,
+	},
+	// tar in the uninstall's archive and restore units, run as root by
+	// hearth-archive@ and hearth-restore-leftovers@ (SECURITY S16k, S16l):
+	// four fixed shapes, the archive under /var/lib/hearth/removed/<op>,
+	// one member, a system root or / to work in.
+	"leftovers-tar-create": {
+		Paths:    []string{"/usr/bin/tar", "/bin/tar"},
+		Validate: rules.CheckTarCreate,
+		Timeout:  6 * time.Hour,
+	},
+	"leftovers-tar-list": {
+		Paths:    []string{"/usr/bin/tar", "/bin/tar"},
+		Validate: rules.CheckTarList,
+		Timeout:  time.Hour,
+	},
+	"leftovers-tar-extract": {
+		Paths:    []string{"/usr/bin/tar", "/bin/tar"},
+		Validate: rules.CheckTarExtract,
+		Timeout:  6 * time.Hour,
+	},
+	"leftovers-tar-cat": {
+		Paths:    []string{"/usr/bin/tar", "/bin/tar"},
+		Validate: rules.CheckTarCat,
+		Timeout:  time.Minute,
 	},
 	"tar-extract": {
 		Paths:    []string{"/usr/bin/tar", "/bin/tar"},

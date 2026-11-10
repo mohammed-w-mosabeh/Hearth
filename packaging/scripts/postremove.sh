@@ -14,13 +14,23 @@ if [ "$1" = "purge" ]; then
 	rm -f /etc/systemd/user/default.target.wants/hearthd.service
 	rm -f /etc/systemd/system/sockets.target.wants/hearth-broker.socket
 	rm -f /etc/systemd/system/sockets.target.wants/hearth-pathcheck.socket
-	# App backups (SECURITY S12d) are the owner's data: purge keeps
-	# /var/lib/hearth/backups when it holds an archive, and says so.
+	rm -f /etc/systemd/system/timers.target.wants/hearth-removed-clean.timer
+	# App backups (SECURITY S12d) and uninstall archives (S16l) are the
+	# owner's data: purge keeps /var/lib/hearth/backups and
+	# /var/lib/hearth/removed when they hold an archive, and says so.
 	kept=""
+	keptremoved=""
 	if [ -d /var/lib/hearth/backups ] && find /var/lib/hearth/backups -name '*.tar.zst' -type f | grep -q .; then
 		kept=1
-		find /var/lib/hearth -mindepth 1 -maxdepth 1 ! -name backups -exec rm -rf {} +
-		find /var/lib/hearth/backups -name '.*' -type f -delete
+	fi
+	if [ -d /var/lib/hearth/removed ] && find /var/lib/hearth/removed -name '*.tar.zst' -type f | grep -q .; then
+		keptremoved=1
+	fi
+	if [ -n "$kept" ] || [ -n "$keptremoved" ]; then
+		find /var/lib/hearth -mindepth 1 -maxdepth 1 ! -name backups ! -name removed -exec rm -rf {} +
+		[ -n "$kept" ] || rm -rf /var/lib/hearth/backups
+		[ -n "$keptremoved" ] || rm -rf /var/lib/hearth/removed
+		[ ! -d /var/lib/hearth/backups ] || find /var/lib/hearth/backups -name '.*' -type f -delete
 	else
 		rm -rf /var/lib/hearth
 	fi
@@ -40,6 +50,9 @@ if [ "$1" = "purge" ]; then
 	fi
 	if [ -n "$kept" ]; then
 		echo "hearth: app backups kept in /var/lib/hearth/backups; remove the folder to delete them" >&2
+	fi
+	if [ -n "$keptremoved" ]; then
+		echo "hearth: uninstall archives kept in /var/lib/hearth/removed; remove the folder to delete them" >&2
 	fi
 	members=$(getent group hearth | cut -d: -f4)
 	if getent group hearth >/dev/null && [ -z "$members" ]; then

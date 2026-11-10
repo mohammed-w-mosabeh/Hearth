@@ -1,6 +1,8 @@
 package uninstall
 
 import (
+	"github.com/mohammed-w-mosabeh/hearth/internal/uninstall/rules"
+
 	"context"
 	"errors"
 	"fmt"
@@ -226,13 +228,13 @@ func (r *Resolver) manual(prog, name string) (Owner, bool) {
 			continue
 		}
 		top, _, _ := strings.Cut(rest, "/")
-		if top == "" || !systemNameRe.MatchString(top) {
+		if top == "" || !rules.SystemName(top) {
 			return Owner{}, false
 		}
 		dir := path.Join(root, top)
 		return Owner{Manager: ManagerManual, Target: dir, Name: name, Paths: []string{dir}}, true
 	}
-	if path.Dir(prog) == "/usr/local/bin" && systemNameRe.MatchString(path.Base(prog)) {
+	if path.Dir(prog) == "/usr/local/bin" && rules.SystemName(path.Base(prog)) {
 		return Owner{Manager: ManagerManual, Target: prog, Name: name, Paths: []string{prog}}, true
 	}
 	return Owner{}, false

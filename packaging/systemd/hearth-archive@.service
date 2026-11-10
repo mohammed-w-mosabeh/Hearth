@@ -1,0 +1,55 @@
+[Unit]
+Description=Hearth: archive what an uninstall removes (%i)
+Documentation=https://github.com/mohammed-w-mosabeh/hearth
+# Started only by hearth-broker's leftovers.archive (SECURITY S16k), after
+# the uninstall's polkit check, on the job it wrote for operation %i.
+ConditionPathExists=/var/lib/hearth/uninstall/%i/job.json
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/hearth-broker archive %i
+StandardOutput=journal
+StandardError=journal
+Environment=LC_ALL=C
+UMask=0077
+TimeoutStartSec=6h
+Nice=10
+IOSchedulingClass=idle
+
+# --- Hardening (SECURITY.md "systemd hardening") ---
+# Leftovers may belong to other users (/var/lib/postgresql is postgres's,
+# mode 0700): reading them needs CAP_DAC_READ_SEARCH, renaming and removing
+# what is inside needs CAP_DAC_OVERRIDE and CAP_FOWNER. This unit holds them
+# so the broker does not.
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_DAC_OVERRIDE CAP_FOWNER
+AmbientCapabilities=
+NoNewPrivileges=yes
+ProtectSystem=strict
+# The leftovers' roots (only their direct children are ever touched, each
+# rechecked by device and inode) and the archives.
+ReadWritePaths=/etc /var/lib /var/cache /var/log -/opt -/usr/local/bin
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+KeyringMode=private
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources @chown
+SystemCallErrorNumber=EPERM
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+MemoryMax=512M
+CPUQuota=100%
+TasksMax=16

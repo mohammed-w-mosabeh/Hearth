@@ -351,7 +351,8 @@ func (s *Server) call(ctx context.Context, c Caller, line []byte, conn net.Conn,
 		var ok bool
 		if decided, ok = m.Authorized(ctx, c, req.Params); decided && !ok {
 			s.audit(c, req.Method, audited, "refused: not authorized without a password")
-			return send(Response{ID: req.ID, Error: Errorf(CodeUnauthorized, "not authorized")}) == nil
+			// Its own words, so a refusal polkit never saw can be told apart.
+			return send(Response{ID: req.ID, Error: Errorf(CodeUnauthorized, "not authorized without a password")}) == nil
 		}
 	}
 	if m.Privileged && !decided {

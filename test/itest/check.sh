@@ -621,6 +621,15 @@ check "a non-JSON request is refused" grep -q 'not a path check request' <<<"$(n
 check "a user cannot ask it" grep -q 'error EACCES' <<<"$(asuser node -e 'const c=require("net").createConnection("/run/hearth/pathcheck.sock");c.on("error",e=>process.stdout.write("error "+e.code));c.on("connect",()=>process.stdout.write("connected"))' 2>&1)"
 check "it created nothing" test ! -e /srv/itest-app/nope
 check "it wrote no stack" not test -e /var/lib/hearth/stacks
+echo "== uninstall completely (11.6)"
+for a in uninstall restore; do
+	check "polkit has org.hearth.packages.$a" grep -q "action id=\"org.hearth.packages.$a\"" /usr/share/polkit-1/actions/org.hearth.policy
+done
+for u in hearth-archive@.service hearth-restore-leftovers@.service hearth-purge@.service hearth-removed-clean.service; do
+	check "$u is installed" test -f /usr/lib/systemd/system/$u
+done
+check "the archives' clean-up timer is enabled" systemctl is-enabled hearth-removed-clean.timer
+check "the clean-up runs and keeps what is fresh" systemctl start hearth-removed-clean.service
 echo "== stack lifecycle (9.4)"
 for a in deploy control remove danger grant; do
 	check "polkit has org.hearth.stack.$a" grep -q "action id=\"org.hearth.stack.$a\"" /usr/share/polkit-1/actions/org.hearth.policy

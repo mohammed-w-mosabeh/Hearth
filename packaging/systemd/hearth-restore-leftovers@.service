@@ -1,0 +1,52 @@
+[Unit]
+Description=Hearth: put back what an uninstall archived (%i)
+Documentation=https://github.com/mohammed-w-mosabeh/hearth
+# Started only by hearth-broker's leftovers.restore (SECURITY S16l), after
+# polkit, on the job it wrote for operation %i.
+ConditionPathExists=/var/lib/hearth/uninstall/%i/restore.json
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/hearth-broker unarchive %i
+StandardOutput=journal
+StandardError=journal
+Environment=LC_ALL=C
+UMask=0077
+TimeoutStartSec=6h
+Nice=10
+IOSchedulingClass=idle
+
+# --- Hardening (SECURITY.md "systemd hardening") ---
+# Restoring keeps each file's owner and mode: tar --same-owner needs
+# CAP_CHOWN, setting modes and times on others' files CAP_FOWNER and
+# CAP_FSETID, writing into others' folders CAP_DAC_OVERRIDE.
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_DAC_OVERRIDE CAP_FOWNER CAP_FSETID CAP_CHOWN
+AmbientCapabilities=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/etc /var/lib /var/cache /var/log -/opt -/usr/local/bin
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+KeyringMode=private
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+MemoryMax=512M
+CPUQuota=100%
+TasksMax=16
