@@ -223,3 +223,69 @@ func TestModeActivateOnlyFromArming(t *testing.T) {
 		t.Fatalf("%d %v", code, out)
 	}
 }
+
+type fakeTester struct{ ids []int64 }
+
+func (f *fakeTester) Test(_ context.Context, id int64, check func(context.Context, spec.Spec) error) error {
+	if check == nil {
+		return errors.New("the save-time check must be passed on")
+	}
+	f.ids = append(f.ids, id)
+	return nil
+}
+
+// Test now and the dry run: a mode's trigger is not tested here, the dry
+// run takes the editor's spec through the save-time checks and stores
+// nothing.
+func TestTestAndDryRunRoutes(t *testing.T) {
+	db, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "h.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	tester := &fakeTester{}
+	var dry []spec.Spec
+	a := &API{Store: db, Tester: tester,
+		Check: NewChecker(CheckDeps{Known: func(action string) bool { return action == "power/profile" }}),
+		DryRun: func(_ context.Context, id int64, s spec.Spec) (DryRun, error) {
+			dry = append(dry, s)
+			return DryRun{Total: int(id)}, nil
+		}}
+	m := mux{http.NewServeMux()}
+	a.Register(m)
+	srv := httptest.NewServer(m)
+	t.Cleanup(srv.Close)
+	ctx := context.Background()
+	login := json.RawMessage(`{"trigger":{"kind":"login"},"then":[{"step":"action","action":"power/profile","target":"a"}],"options":{"cooldown_s":300,"max_per_hour":6}}`)
+	ids, _ := db.CreateAutomations(ctx, []store.Automation{{Name: "a", Spec: login, Origin: "ui"}, {Name: "m", Spec: login, Origin: "mode:x#0@" + strings.Repeat("a", 64)}})
+	if code, _ := do(t, srv, "POST", "/api/v1/automations/"+itoa(ids[0])+"/test", ""); code != http.StatusAccepted || len(tester.ids) != 1 {
+		t.Fatal(code, tester.ids)
+	}
+	if code, _ := do(t, srv, "POST", "/api/v1/automations/"+itoa(ids[1])+"/test", ""); code != http.StatusConflict || len(tester.ids) != 1 {
+		t.Fatal("a mode's trigger tested", code)
+	}
+	if code, _ := do(t, srv, "POST", "/api/v1/automations/99/test", ""); code != http.StatusNotFound {
+		t.Fatal(code)
+	}
+	code, out := do(t, srv, "POST", "/api/v1/automations/dry-run", `{"id":3,"spec":`+string(login)+`}`)
+	if code != 200 || out["total"] != float64(3) || len(dry) != 1 {
+		t.Fatal(code, out)
+	}
+	for _, bad := range []string{
+		`{"spec":{"trigger":{"kind":"shell"},"then":[]}}`,
+		`{"spec":{"trigger":{"kind":"login"},"then":[{"step":"action","action":"unknown/thing","target":"a"}]}}`,
+		`{"spec":{"trigger":{"kind":"login"},"then":[{"step":"action","action":"mode/activate","target":"x","params":{"trigger":"0","hash":"` + strings.Repeat("a", 64) + `"}}]}}`,
+		`{"spec":` + string(login) + `,"name":"extra"}`,
+		`{"id":-1,"spec":` + string(login) + `}`,
+	} {
+		if code, _ := do(t, srv, "POST", "/api/v1/automations/dry-run", bad); code != http.StatusBadRequest {
+			t.Errorf("%s: %d", bad, code)
+		}
+	}
+	if len(dry) != 1 {
+		t.Fatal("a refused spec was replayed")
+	}
+	if list, _ := db.Automations(ctx); len(list) != 2 {
+		t.Fatal("a dry run stored something")
+	}
+}

@@ -119,9 +119,11 @@ type Config struct {
 	Store    EngineStore
 	Registry *actions.Registry
 	Sources  modes.Sources
-	Watch    Watch
-	State    State
-	Steps    StepRunner
+	// History is what the dry run replays (ROADMAP 12.8).
+	History History
+	Watch   Watch
+	State   State
+	Steps   StepRunner
 	// Protect names why a target is protected beyond what an action's own
 	// preview blocks (CheckDeps.Protect), or "".
 	Protect func(action, target string) string
@@ -153,6 +155,7 @@ type Engine struct {
 	cfg     Config
 	tracker alerts.Tracker
 
+	dry     sync.Mutex // one dry run at a time
 	mu      sync.Mutex
 	autos   []loaded
 	running map[int64]bool
@@ -520,8 +523,10 @@ func (e *Engine) tag(id int64, instance string, until time.Time) {
 
 // gate decides whether a firing becomes a run: the kill switch, the global
 // limit, quiet hours, the cooldown and the hourly maximum, in that order.
-// It reserves the run when it may go.
-func (e *Engine) gate(ctx context.Context, a loaded, now time.Time) (state, reason string) {
+// It reserves the run when it may go. A test (by "test") is the user's
+// click: it skips quiet hours, the cooldown and the hourly maximum, and
+// does not count toward them.
+func (e *Engine) gate(ctx context.Context, a loaded, now time.Time, by string) (state, reason string) {
 	if e.Paused(ctx) {
 		return RunSkipped, "all automations are paused"
 	}
@@ -532,10 +537,6 @@ func (e *Engine) gate(ctx context.Context, a loaded, now time.Time) (state, reas
 	if len(e.acts) >= e.cfg.GlobalLimit {
 		return RunLimited, "the global limit was reached"
 	}
-	o := a.spec.Options
-	if o.QuietFrom != "" && within(now, o.QuietFrom, o.QuietTo) {
-		return RunSkipped, "quiet hours"
-	}
 	// An alert rule's incident is already debounced, per instance, by its
 	// duration and hysteresis: two disks filling within a minute are two
 	// notifications, as alerts have always been (ROADMAP 12.7).
@@ -543,36 +544,56 @@ func (e *Engine) gate(ctx context.Context, a loaded, now time.Time) (state, reas
 	if !alert && e.running[a.ID] {
 		return RunSkipped, "a run is still going"
 	}
-	hour := now.Add(-time.Hour)
-	e.runs[a.ID] = slices.DeleteFunc(e.runs[a.ID], func(t time.Time) bool { return t.Before(hour) })
-	if r := e.runs[a.ID]; !alert && len(r) > 0 && now.Sub(r[len(r)-1]) < time.Duration(o.CooldownS)*time.Second {
-		return RunSkipped, "cooldown"
+	if by != "test" {
+		var why string
+		e.runs[a.ID], why = timeGate(a.spec.Options, alert, e.runs[a.ID], now)
+		if why != "" {
+			return RunSkipped, why
+		}
+		e.runs[a.ID] = append(e.runs[a.ID], now)
 	}
-	if len(e.runs[a.ID]) >= o.MaxPerHour {
-		return RunSkipped, "the hourly maximum was reached"
-	}
-	e.runs[a.ID] = append(e.runs[a.ID], now)
 	if !alert {
 		e.running[a.ID] = true
 	}
 	return "", ""
 }
 
+// timeGate applies quiet hours, the cooldown and the hourly maximum to a
+// firing at now, given the earlier run starts (the engine and the dry run
+// share it). It returns the starts still within the hour, and why the
+// firing is skipped, or "".
+func timeGate(o spec.Options, alert bool, runs []time.Time, now time.Time) ([]time.Time, string) {
+	hour := now.Add(-time.Hour)
+	runs = slices.DeleteFunc(runs, func(t time.Time) bool { return t.Before(hour) })
+	if o.QuietFrom != "" && within(now, o.QuietFrom, o.QuietTo) {
+		return runs, "quiet hours"
+	}
+	if r := runs; !alert && len(r) > 0 && now.Sub(r[len(r)-1]) < time.Duration(o.CooldownS)*time.Second {
+		return runs, "cooldown"
+	}
+	if len(runs) >= o.MaxPerHour {
+		return runs, "the hourly maximum was reached"
+	}
+	return runs, ""
+}
+
 // Fire starts a run of a for ev, unless its own actions caused ev. The run
 // goes on in the background; gate's refusals are recorded.
-func (e *Engine) Fire(ctx context.Context, a loaded, ev Event, by string) {
+//
+// It returns why the run did not start, or "" when it did.
+func (e *Engine) Fire(ctx context.Context, a loaded, ev Event, by string) string {
 	now := e.cfg.Clock()
 	if by == "trigger" && e.tagged(a.ID, ev.Instance, now) {
-		return
+		return "its own action caused this"
 	}
 	rec := RunRecord{Trigger: ev, By: by, Steps: []StepResult{}}
-	if state, reason := e.gate(ctx, a, now); state != "" {
+	if state, reason := e.gate(ctx, a, now, by); state != "" {
 		rec.Reason = reason
 		e.save(ctx, a.ID, now, now, state, rec)
 		if state == RunLimited {
 			e.limitReached(ctx)
 		}
-		return
+		return reason
 	}
 	e.wg.Add(1)
 	go func() {
@@ -589,6 +610,7 @@ func (e *Engine) Fire(ctx context.Context, a loaded, ev Event, by string) {
 		_ = e.cfg.Store.Audit(rctx, store.AuditEntry{Origin: store.Origin("automation:" + strconv.FormatInt(a.ID, 10)),
 			Action: "automation.run", Target: "automation:" + strconv.FormatInt(a.ID, 10), Result: state})
 	}()
+	return ""
 }
 
 // limitReached pauses everything and tells the user, once.
@@ -843,4 +865,37 @@ func clean(s string) string {
 		s = s[:300]
 	}
 	return s
+}
+
+// ErrNotTestable is returned by Test for an automation that cannot be
+// tested now.
+var ErrNotTestable = errors.New("automations: cannot test")
+
+// Test runs automation id once as if triggered (ROADMAP 12.8, "Test now"),
+// even if it is turned off: what may run unattended runs, the rest waits
+// as an approval the user confirms on the approval screen, where each step
+// is previewed and polkit may ask. The run is recorded with by "test". The
+// spec is checked again first; check is the save-time check (may be nil).
+func (e *Engine) Test(ctx context.Context, id int64, check func(context.Context, spec.Spec) error) error {
+	a, err := e.cfg.Store.GetAutomation(ctx, id)
+	if err != nil {
+		return err
+	}
+	if strings.HasPrefix(a.Origin, "mode:") {
+		return fmt.Errorf("%w: a mode's trigger is tested by switching the mode on", ErrNotTestable)
+	}
+	s, err := spec.Parse(a.Spec)
+	if err == nil {
+		err = userMade(s)
+	}
+	if err == nil && check != nil {
+		err = check(ctx, s)
+	}
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrNotTestable, err)
+	}
+	if why := e.Fire(ctx, loaded{Automation: a, spec: s}, Event{Kind: s.Trigger.Kind, Detail: "Test now", Time: e.cfg.Clock()}, "test"); why != "" {
+		return fmt.Errorf("%w: %s", ErrNotTestable, why)
+	}
+	return nil
 }

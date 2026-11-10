@@ -126,7 +126,7 @@ func (r *Registry) RunUnattended(ctx context.Context, key string, req Request, b
 	if err != nil {
 		return Unattended{}, err
 	}
-	if effective(a, plan) == Destructive || plan.Confirm != "" || r.AuthorityOf(key, req) != AuthorityNone {
+	if !r.unattendedOK(a, key, req, plan) {
 		return Unattended{Plan: plan}, ErrNeedsApproval
 	}
 	res, runErr := a.Run(ctx, req, plan)
@@ -142,6 +142,33 @@ func (r *Registry) RunUnattended(ctx context.Context, key string, req Request, b
 		return Unattended{Result: res, Plan: plan}, errors.New("action ran but could not be written to the audit log")
 	}
 	return Unattended{Result: res, Plan: plan}, runErr
+}
+
+// unattendedOK is RunUnattended's rule: safe or reversible, no typed
+// confirmation, authority none.
+func (r *Registry) unattendedOK(a Action, key string, req Request, plan Plan) bool {
+	return effective(a, plan) != Destructive && plan.Confirm == "" && r.AuthorityOf(key, req) == AuthorityNone
+}
+
+// PlanUnattended previews key on req as RunUnattended would, under the
+// unattended mark, without running it (the automations dry run): ok says
+// whether it would run unattended or wait for the user's approval.
+func (r *Registry) PlanUnattended(ctx context.Context, key string, req Request) (plan Plan, ok bool, err error) {
+	a, found := r.Lookup(key)
+	if !found {
+		return Plan{}, false, fmt.Errorf("no action %s", key)
+	}
+	if req.Params == nil {
+		req.Params = map[string]string{}
+	}
+	if err := a.Validate(req); err != nil {
+		return Plan{}, false, err
+	}
+	plan, err = a.Plan(unattended.With(ctx), req)
+	if err != nil {
+		return Plan{}, false, err
+	}
+	return plan, r.unattendedOK(a, key, req, plan), nil
 }
 
 // PlanFor previews key on req without running it (approvals, dry runs).

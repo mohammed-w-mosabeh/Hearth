@@ -1072,7 +1072,44 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	}
 	// Automations (ROADMAP Phase 12, SECURITY S15d): storage and the API;
 	// every save is checked against the action registry and systemd.
-	autoEngine := automations.NewEngine(automations.Config{Store: db, Registry: reg, Sources: trigSources, Log: log,
+	// What the dry run replays (ROADMAP 12.8): the stored history only.
+	autoHistory := automations.History{
+		Elapses: func(ctx context.Context, expr string, from, to time.Time) ([]time.Time, bool, error) {
+			return scheduler.PastElapses(ctx, safeexec.Run, expr, from, to)
+		},
+		Series: func(ctx context.Context, metric string, from, to time.Time) ([]store.Agg, error) {
+			return db.Series(ctx, store.Res1m, metric, from, to)
+		},
+		SeriesLike: db.SeriesLike,
+		Totals: func() automations.Totals {
+			s, _ := sampler.Ring().Last()
+			t := automations.Totals{Mem: float64(s.Mem.Total), Swap: float64(s.Mem.SwapTotal), Disks: map[string]float64{}}
+			for _, d := range s.Disks {
+				t.Disks[d.Mount] = float64(d.Used + d.Avail) // as the sampler's percent counts it
+			}
+			return t
+		},
+		Events:  db.AlertEventsBetween,
+		Outages: db.Outages,
+		Boots: func(ctx context.Context) ([]time.Time, error) {
+			list, err := services.Boots(ctx, safeexec.Run)
+			out := make([]time.Time, 0, len(list))
+			for _, b := range list {
+				out = append(out, time.UnixMilli(b.First))
+			}
+			return out, err
+		},
+		Resumes: func(ctx context.Context) ([]time.Time, error) {
+			var out []time.Time
+			for _, sl := range sleepAPI.Read(ctx).Sleeps {
+				if sl.To > 0 {
+					out = append(out, time.UnixMilli(sl.To))
+				}
+			}
+			return out, nil
+		},
+	}
+	autoEngine := automations.NewEngine(automations.Config{Store: db, Registry: reg, Sources: trigSources, Log: log, History: autoHistory,
 		Watch: automations.Watch{
 			Home:        appsCfg.Home,
 			IdleSeconds: idleSeconds,
@@ -1104,7 +1141,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	autoDone := make(chan struct{})
 	go func() { autoEngine.Run(autoCtx); close(autoDone) }()
 	defer func() { stopAuto(); <-autoDone }()
-	(&automations.API{Store: db, Engine: autoEngine, Approvals: autoEngine,
+	(&automations.API{Store: db, Engine: autoEngine, Approvals: autoEngine, Tester: autoEngine, DryRun: autoEngine.DryRun,
 		ModeApprovals: func(ctx context.Context) (any, error) { return approvals.Pending(ctx) },
 		// An alert automation edited here changes the alert engine's rules too.
 		Changed: func() { _ = autoEngine.Load(context.Background()); _ = engine.Reload(context.Background()) }, Check: automations.NewChecker(automations.CheckDeps{

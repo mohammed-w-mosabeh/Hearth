@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"strings"
 	"time"
 )
 
@@ -240,6 +241,33 @@ func (db *DB) Series(ctx context.Context, res Resolution, metric string, from, t
 		}
 		a.Time = time.Unix(ts, 0)
 		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// SeriesLike returns the minute buckets in [from, to) of every metric named
+// prefix followed by ":" and an instance, by instance, oldest first (the
+// automations dry run, ROADMAP 12.8). At most limit buckets in all.
+func (db *DB) SeriesLike(ctx context.Context, prefix string, from, to time.Time, limit int) (map[string][]Agg, error) {
+	// LIKE's wildcards in prefix are escaped; metric names are ours.
+	esc := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(prefix + ":")
+	rows, err := db.QueryContext(ctx, `SELECT metric, ts, avg, min, max, n FROM metrics_1m
+		WHERE metric LIKE ? ESCAPE '\' AND ts >= ? AND ts < ? ORDER BY metric, ts LIMIT ?`, esc+"%", from.Unix(), to.Unix(), limit)
+	if err != nil {
+		return nil, fmt.Errorf("store: series: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string][]Agg{}
+	for rows.Next() {
+		var a Agg
+		var metric string
+		var ts int64
+		if err := rows.Scan(&metric, &ts, &a.Avg, &a.Min, &a.Max, &a.N); err != nil {
+			return nil, fmt.Errorf("store: series: %w", err)
+		}
+		a.Time = time.Unix(ts, 0)
+		in := strings.TrimPrefix(metric, prefix+":")
+		out[in] = append(out[in], a)
 	}
 	return out, rows.Err()
 }

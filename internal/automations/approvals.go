@@ -59,6 +59,9 @@ type Parked struct {
 	Trigger Event       `json:"trigger"`
 	// Updated is the automation's as it ran: an edit since expires it.
 	Updated int64 `json:"updated"`
+	// Test marks a run the user started with Test now (ROADMAP 12.8): it
+	// may be of an automation turned off.
+	Test bool `json:"test,omitempty"`
 }
 
 // park stores the parked steps of a waiting run and tells the user. A
@@ -67,7 +70,8 @@ func (e *Engine) park(ctx context.Context, a loaded, runID int64, rec RunRecord)
 	if runID == 0 || len(rec.parked) == 0 {
 		return
 	}
-	raw, err := json.Marshal(Parked{Steps: rec.parked, Trigger: rec.Trigger, Updated: a.Updated})
+	test := rec.By == "test"
+	raw, err := json.Marshal(Parked{Steps: rec.parked, Trigger: rec.Trigger, Updated: a.Updated, Test: test})
 	if err == nil {
 		now := e.cfg.Clock()
 		_, err = e.cfg.Store.AddAutomationApproval(ctx, store.AutomationApproval{RunID: runID, Created: now.UnixMilli(),
@@ -78,7 +82,7 @@ func (e *Engine) park(ctx context.Context, a loaded, runID int64, rec RunRecord)
 		e.finish(ctx, runID, RunFailed, "the approval could not be stored", nil)
 		return
 	}
-	if e.cfg.Notify != nil {
+	if e.cfg.Notify != nil && !test { // a test's user is at the screen
 		// Words only: the link opens Hearth, where the steps are previewed
 		// and approved; nothing runs on a click of the notification.
 		e.cfg.Notify(ctx, "Waiting for your approval",
@@ -131,7 +135,7 @@ func (e *Engine) stale(ctx context.Context, ap store.AutomationApproval, p Parke
 		return "", a
 	case e.cfg.Clock().UnixMilli() >= ap.Expires:
 		return "it waited too long", a
-	case !a.Enabled:
+	case !a.Enabled && !p.Test:
 		return "the automation was turned off", a
 	case a.Updated != p.Updated:
 		return "the automation was edited", a

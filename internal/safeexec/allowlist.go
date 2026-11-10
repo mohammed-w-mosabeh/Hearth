@@ -183,6 +183,14 @@ var allowlist = map[string]Spec{
 		Validate: exactly(Literal("calendar"), Literal("--iterations=5"), Literal("--"), CalendarExpr),
 		Timeout:  5 * time.Second,
 	},
+	// The elapses of a calendar expression after a past base time: the
+	// automations dry run replays a schedule over the last 7 days (ROADMAP
+	// 12.8). Fixed iterations; the base time is digits only.
+	"calendar-past": {
+		Paths:    []string{"/usr/bin/systemd-analyze"},
+		Validate: exactly(Literal("calendar"), BaseTime, Literal("--iterations="+strconv.Itoa(CalendarPastIterations)), Literal("--"), CalendarExpr),
+		Timeout:  5 * time.Second,
+	},
 	"timespan-check": {
 		Paths:    []string{"/usr/bin/systemd-analyze"},
 		Validate: exactly(Literal("timespan"), Literal("--"), TimeSpan),
@@ -465,6 +473,24 @@ const (
 var sleepFlags = []string{"--quiet", "--no-pager", "--output=json", "--reverse", "--lines=500", "--output-fields=MESSAGE_ID,SLEEP"}
 
 // SleepArgs is journalctl-sleep's command line from a unix time.
+// CalendarPastIterations bounds the elapses one calendar-past lists.
+const CalendarPastIterations = 1000
+
+var baseTimeRe = regexp.MustCompile(`^--base-time=@[0-9]{1,12}$`)
+
+// BaseTime accepts "--base-time=@<unix seconds>".
+func BaseTime(s string) error {
+	if !baseTimeRe.MatchString(s) {
+		return invalid("want --base-time=@<unix seconds>, got %q", s)
+	}
+	return nil
+}
+
+// CalendarPastArgs are calendar-past's arguments for expr after base.
+func CalendarPastArgs(base int64, expr string) []string {
+	return []string{"calendar", "--base-time=@" + strconv.FormatInt(base, 10), "--iterations=" + strconv.Itoa(CalendarPastIterations), "--", expr}
+}
+
 func SleepArgs(since int64) []string {
 	return slices.Concat(sleepFlags, []string{"--since=@" + strconv.FormatInt(since, 10), "MESSAGE_ID=" + SleepEnteredID, "MESSAGE_ID=" + SleepLeftID})
 }

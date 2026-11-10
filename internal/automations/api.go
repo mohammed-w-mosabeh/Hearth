@@ -53,6 +53,13 @@ type API struct {
 		Approvals(ctx context.Context) ([]ApprovalView, error)
 	}
 	ModeApprovals func(ctx context.Context) (any, error)
+	// Tester runs Test now (the engine); nil serves no test route.
+	Tester interface {
+		Test(ctx context.Context, id int64, check func(context.Context, spec.Spec) error) error
+	}
+	// DryRun replays a spec over the last 7 days (the engine); nil serves
+	// no dry-run route.
+	DryRun func(ctx context.Context, id int64, s spec.Spec) (DryRun, error)
 }
 
 // View is an automation as the API shows it.
@@ -91,6 +98,12 @@ func (a *API) Register(mux interface {
 	mux.HandleFunc("POST /api/v1/automations/import", a.importFile)
 	mux.HandleFunc("GET /api/v1/automations/export", a.export)
 	mux.HandleFunc("GET /api/v1/automations/approvals", a.approvals)
+	if a.Tester != nil {
+		mux.HandleFunc("POST /api/v1/automations/{id}/test", a.test)
+	}
+	if a.DryRun != nil {
+		mux.HandleFunc("POST /api/v1/automations/dry-run", a.dryRun)
+	}
 	if a.Engine != nil {
 		mux.HandleFunc("GET /api/v1/automations/pause", a.getPause)
 		mux.HandleFunc("PUT /api/v1/automations/pause", a.setPause)
@@ -442,4 +455,84 @@ func userMade(s spec.Spec) error {
 		return errors.New("a mode switches on by itself only through a trigger armed on the Modes page")
 	}
 	return nil
+}
+
+// test serves Test now: the run starts in the background; its record and
+// any approval appear in the runs and on the approval screen.
+func (a *API) test(w http.ResponseWriter, r *http.Request) {
+	id, ok := a.id(w, r)
+	if !ok {
+		return
+	}
+	if _, code, err := a.owned(r, id); err != nil {
+		httpError(w, code, err.Error())
+		return
+	}
+	var check func(context.Context, spec.Spec) error
+	if a.Check != nil {
+		check = a.Check
+	}
+	err := a.Tester.Test(r.Context(), id, check)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		httpError(w, http.StatusNotFound, "no such automation")
+		return
+	case errors.Is(err, ErrNotTestable):
+		a.auditOnly(r, "automation.test", id, "refused")
+		httpError(w, http.StatusConflict, strings.TrimPrefix(err.Error(), ErrNotTestable.Error()+": "))
+		return
+	case err != nil:
+		httpError(w, http.StatusInternalServerError, "the test could not start")
+		return
+	}
+	a.auditOnly(r, "automation.test", id, "ok")
+	writeJSON(w, http.StatusAccepted, map[string]bool{"started": true})
+}
+
+// auditOnly audits without telling Changed (nothing was saved).
+func (a *API) auditOnly(r *http.Request, action string, id int64, result string) {
+	_ = a.Store.Audit(r.Context(), store.AuditEntry{Origin: store.OriginLocal, UID: os.Getuid(),
+		Action: action, Target: "automation:" + strconv.FormatInt(id, 10), Result: result})
+}
+
+// dryRun serves "What would have happened?": {spec} of the editor, and the
+// automation's id when it is saved. The spec is checked as a save checks
+// it; nothing is stored, run or audited.
+func (a *API) dryRun(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		ID   int64           `json:"id"`
+		Spec json.RawMessage `json:"spec"`
+	}
+	raw, err := io.ReadAll(io.LimitReader(r.Body, maxBody+1))
+	if err != nil || len(raw) > maxBody {
+		httpError(w, http.StatusBadRequest, "body too large")
+		return
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&b); err != nil || b.ID < 0 {
+		httpError(w, http.StatusBadRequest, "body must be {spec} or {id, spec}")
+		return
+	}
+	s, err := spec.Parse(b.Spec)
+	if err == nil {
+		err = userMade(s)
+	}
+	if err == nil && a.Check != nil {
+		err = a.Check(r.Context(), s)
+	}
+	if err != nil {
+		httpError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	out, err := a.DryRun(r.Context(), b.ID, s)
+	switch {
+	case errors.Is(err, ErrDryRunBusy):
+		httpError(w, http.StatusTooManyRequests, err.Error())
+		return
+	case err != nil:
+		httpError(w, http.StatusInternalServerError, "the dry run could not finish")
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
 }
