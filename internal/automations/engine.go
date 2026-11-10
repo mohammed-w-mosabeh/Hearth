@@ -106,6 +106,9 @@ type Config struct {
 	Watch    Watch
 	State    State
 	Steps    StepRunner
+	// Protect names why a target is protected beyond what an action's own
+	// preview blocks (CheckDeps.Protect), or "".
+	Protect func(action, target string) string
 	// Notify tells the user when the global limit pauses everything.
 	Notify      func(ctx context.Context, summary, body string)
 	GlobalLimit int
@@ -690,9 +693,23 @@ func (e *Engine) steps(ctx context.Context, a loaded, steps []spec.Step, rec *Ru
 				e.limitReached(ctx)
 				return RunLimited
 			}
+			// Protected targets are refused again from live data (S15d):
+			// such a step fails, it never waits for an approval.
+			if e.cfg.Protect != nil {
+				if why := e.cfg.Protect(st.Action, st.Target); why != "" {
+					res.Result, res.Detail = "failed", "refused: "+clean(why)
+					rec.Steps = append(rec.Steps, res)
+					return RunFailed
+				}
+			}
 			var u actions.Unattended
 			u, err = e.cfg.Registry.RunUnattended(ctx, st.Action, actions.Request{Target: st.Target, Params: st.Params}, by)
 			if errors.Is(err, actions.ErrNeedsApproval) {
+				if why := actions.Refusal(u.Plan); why != "" {
+					res.Result, res.Detail = "failed", "refused: "+clean(why)
+					rec.Steps = append(rec.Steps, res)
+					return RunFailed
+				}
 				res.Result, res.Detail = "waiting", "needs your approval"
 				rec.Steps = append(rec.Steps, res)
 				for _, rest := range steps[i+1:] {

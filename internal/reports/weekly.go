@@ -3,6 +3,7 @@ package reports
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -25,9 +26,10 @@ const (
 	weeklyKeep  = 12 // saved reports; older ones are deleted
 )
 
-// savedRe matches the names of saved weekly reports; nothing else in the
-// directory is listed or served.
-var savedRe = regexp.MustCompile(`^hearth-week-\d{4}-\d{2}-\d{2}(-\d+)?\.html$`)
+// savedRe matches the names of saved reports (weekly, and those an
+// automation's report/generate saved); nothing else in the directory is
+// listed or served.
+var savedRe = regexp.MustCompile(`^hearth-(day|week|month)-\d{4}-\d{2}-\d{2}(-\d+)?\.html$`)
 
 // WeeklyState is the weekly report setting.
 type WeeklyState struct {
@@ -160,26 +162,8 @@ func (w *Weekly) Check(ctx context.Context) error {
 	if st.Last > 0 && now.Sub(time.UnixMilli(st.Last)) < weeklyEvery {
 		return nil
 	}
-	m, err := w.B.Machine(ctx, "week")
-	if err != nil {
+	if _, err := w.write(ctx, "week", now); err != nil {
 		return err
-	}
-	page, err := MachineHTML(m)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(w.Dir, 0o700); err != nil {
-		return fmt.Errorf("reports: %w", err)
-	}
-	name := "hearth-week-" + now.Local().Format("2006-01-02") + ".html"
-	for i := 2; ; i++ { // a second report on the same day (re-enabled) keeps the first
-		if _, err := os.Lstat(filepath.Join(w.Dir, name)); os.IsNotExist(err) {
-			break
-		}
-		name = fmt.Sprintf("hearth-week-%s-%d.html", now.Local().Format("2006-01-02"), i)
-	}
-	if err := os.WriteFile(filepath.Join(w.Dir, name), page, 0o600); err != nil {
-		return fmt.Errorf("reports: %w", err)
 	}
 	st.Last = now.UnixMilli()
 	if err := w.save(ctx, st); err != nil {
@@ -187,6 +171,62 @@ func (w *Weekly) Check(ctx context.Context) error {
 	}
 	w.prune()
 	return nil
+}
+
+// write saves the machine report for period as a new file and returns its
+// name; a second report on the same day keeps the first.
+func (w *Weekly) write(ctx context.Context, period string, now time.Time) (string, error) {
+	m, err := w.B.Machine(ctx, period)
+	if err != nil {
+		return "", err
+	}
+	page, err := MachineHTML(m)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(w.Dir, 0o700); err != nil {
+		return "", fmt.Errorf("reports: %w", err)
+	}
+	day := now.Local().Format("2006-01-02")
+	name := "hearth-" + period + "-" + day + ".html"
+	for i := 2; ; i++ {
+		if _, err := os.Lstat(filepath.Join(w.Dir, name)); os.IsNotExist(err) {
+			break
+		}
+		if i > 100 {
+			return "", errors.New("reports: too many reports today")
+		}
+		name = fmt.Sprintf("hearth-%s-%s-%d.html", period, day, i)
+	}
+	// O_EXCL: a file that appeared in between is never overwritten.
+	f, err := os.OpenFile(filepath.Join(w.Dir, name), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- a name built above, in Hearth's own directory
+	if err != nil {
+		return "", fmt.Errorf("reports: %w", err)
+	}
+	_, werr := f.Write(page)
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
+		return "", fmt.Errorf("reports: %w", werr)
+	}
+	return name, nil
+}
+
+// Generate saves a machine report for period now (report/generate), and
+// keeps the newest saved reports only.
+func (w *Weekly) Generate(ctx context.Context, period string) (string, error) {
+	if _, ok := Periods[period]; !ok {
+		return "", ErrPeriod
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	name, err := w.write(ctx, period, w.now())
+	if err != nil {
+		return "", err
+	}
+	w.prune()
+	return name, nil
 }
 
 // List returns the saved reports, newest first.

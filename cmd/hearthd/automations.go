@@ -4,14 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"sort"
 	"time"
 
 	"github.com/godbus/dbus/v5"
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/access"
+	"github.com/mohammed-w-mosabeh/hearth/internal/collect"
 	"github.com/mohammed-w-mosabeh/hearth/internal/dbusx"
 	"github.com/mohammed-w-mosabeh/hearth/internal/pkgs"
 	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
+	"github.com/mohammed-w-mosabeh/hearth/internal/services"
 	"github.com/mohammed-w-mosabeh/hearth/internal/stacks"
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
 )
@@ -125,4 +129,46 @@ func imageUpdates(db *store.DB) func(context.Context) (map[string]bool, error) {
 		}
 		return out, nil
 	}
+}
+
+// topProcesses returns the busiest process groups by CPU, as "name 12%",
+// for a notification's {top}. It samples twice, a second apart, with a
+// sampler of its own, so the Processes page's sampler is left alone; the
+// sampler is dropped afterwards, so nothing stays in memory.
+func topProcesses(appName func(string) (string, bool)) func(ctx context.Context) ([]string, error) {
+	return func(ctx context.Context) ([]string, error) {
+		p := collect.NewProcSampler(collect.ProcConfig{AppName: appName})
+		if _, err := p.Scan(); err != nil {
+			return nil, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(time.Second):
+		}
+		snap, err := p.Scan()
+		if err != nil {
+			return nil, err
+		}
+		groups := snap.Groups
+		sort.Slice(groups, func(i, j int) bool { return groups[i].CPU > groups[j].CPU })
+		var out []string
+		for _, g := range groups[:min(len(groups), 3)] {
+			out = append(out, fmt.Sprintf("%s %.0f%%", g.Name, g.CPU))
+		}
+		return out, nil
+	}
+}
+
+// unitJournal returns the last lines of "scope/unit", for {journal}.
+func unitJournal(ctx context.Context, unit string, lines int) ([]string, error) {
+	entries, _, err := services.ReadUnit(ctx, safeexec.Run, unit, lines)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, e.Msg)
+	}
+	return out, nil
 }

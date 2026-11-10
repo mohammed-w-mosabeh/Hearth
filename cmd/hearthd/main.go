@@ -728,6 +728,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		Run: posture.Runner(safeexec.Run), Settings: db, Log: log,
 	})
 	security.Register(srv.API, db)
+	security.RegisterActions(reg)
 	lynisAudits := lynis.New(lynis.Config{Broker: brokerClient, Store: db, Audit: db, Log: log,
 		Observe: func(ctx context.Context, now time.Time, v map[string]float64) {
 			engine.Observe(ctx, now, lynis.Metric, v)
@@ -966,6 +967,65 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	modesDone := make(chan struct{})
 	go func() { modeSet.Run(modesCtx); close(modesDone) }()
 	defer func() { stopModes(); <-modesDone }()
+	autoState := automations.State{
+		GameRunning: func() bool { g, err := games.Playing(); return err == nil && len(g) > 0 },
+		ContainerState: func(_ context.Context, name string) (string, error) {
+			st, ok := dockerMon.State(name)
+			if !ok {
+				return "", fmt.Errorf("no container %s", name)
+			}
+			return st, nil
+		},
+		ActiveModes: func(ctx context.Context) ([]string, error) {
+			act, err := db.ActiveModes(ctx)
+			var ids []string
+			for _, a := range act {
+				ids = append(ids, a.ModeID)
+			}
+			return ids, err
+		},
+		UnitState: func(_ context.Context, scope, name string) (string, error) {
+			active, _, ok := unitState(scope == "user", name)
+			if !ok {
+				return "", fmt.Errorf("%s is not loaded", name)
+			}
+			return active, nil
+		},
+	}
+	// Notify and check steps (ROADMAP 12.5): the alert channels, the
+	// busiest processes and the triggering unit's journal.
+	autoSteps := automations.Steps{
+		Desktop: func(ctx context.Context, summary, body string) error {
+			return notifier.Notify(ctx, summary, body, "info")
+		},
+		Send: func(ctx context.Context, channel, summary, body string) error {
+			return channels.Send(ctx, channel, summary, body, "info")
+		},
+		Top:     topProcesses(apps.Name),
+		Journal: unitJournal,
+		State:   autoState,
+	}
+	autoSteps.RegisterActions(reg)
+	// kernelProtect: the running kernel and the two newest are never
+	// removed by an automation (S16c), on top of package/remove's checks.
+	kernelProtect := func(action, target string) string {
+		if action != "package/remove" {
+			return ""
+		}
+		name, _, err := pkgs.Target(target)
+		if err != nil {
+			return ""
+		}
+		list, err := dpkgDB.Packages()
+		if err != nil {
+			return "the package database could not be read"
+		}
+		b, _ := os.ReadFile("/proc/sys/kernel/osrelease")
+		if space.KeptKernel(list, strings.TrimSpace(string(b)), name) {
+			return "the running kernel or one of the two newest"
+		}
+		return ""
+	}
 	// Automations (ROADMAP Phase 12, SECURITY S15d): storage and the API;
 	// every save is checked against the action registry and systemd.
 	autoEngine := automations.NewEngine(automations.Config{Store: db, Registry: reg, Sources: trigSources, Log: log,
@@ -985,45 +1045,22 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 			SecurityUpdates: securityUpdates(updates),
 			ImageUpdates:    imageUpdates(db),
 		},
-		State: automations.State{
-			GameRunning: func() bool { g, err := games.Playing(); return err == nil && len(g) > 0 },
-			ContainerState: func(_ context.Context, name string) (string, error) {
-				st, ok := dockerMon.State(name)
-				if !ok {
-					return "", fmt.Errorf("no container %s", name)
-				}
-				return st, nil
-			},
-			ActiveModes: func(ctx context.Context) ([]string, error) {
-				act, err := db.ActiveModes(ctx)
-				var ids []string
-				for _, a := range act {
-					ids = append(ids, a.ModeID)
-				}
-				return ids, err
-			},
-			UnitState: func(_ context.Context, scope, name string) (string, error) {
-				active, _, ok := unitState(scope == "user", name)
-				if !ok {
-					return "", fmt.Errorf("%s is not loaded", name)
-				}
-				return active, nil
-			},
-		},
+		State: autoState,
+		Steps: autoSteps, Protect: kernelProtect,
 		Notify: func(ctx context.Context, summary, body string) { _ = notifier.Notify(ctx, summary, body, "warning") }})
 	engine.Tap = autoEngine.Observe
 	autoCtx, stopAuto := context.WithCancel(ctx)
 	autoDone := make(chan struct{})
 	go func() { autoEngine.Run(autoCtx); close(autoDone) }()
 	defer func() { stopAuto(); <-autoDone }()
-	(&automations.API{Store: db, Engine: autoEngine, Changed: func() { _ = autoEngine.Load(context.Background()) }, Check: automations.NewChecker(
-		func(action string) bool { _, ok := reg.Lookup(action); return ok },
-		func(ctx context.Context, expr string) error {
+	(&automations.API{Store: db, Engine: autoEngine, Changed: func() { _ = autoEngine.Load(context.Background()) }, Check: automations.NewChecker(automations.CheckDeps{
+		Registry: reg, Protect: kernelProtect,
+		Calendar: func(ctx context.Context, expr string) error {
 			if c := scheduler.CheckSchedule(ctx, safeexec.Run, scheduler.Schedule{Kind: scheduler.KindCalendar, Value: expr}); !c.Valid {
 				return errors.New(c.Error)
 			}
 			return nil
-		})}).Register(srv.API)
+		}})}).Register(srv.API)
 	// Uninstall completely (ROADMAP 11.7, SECURITY S16k).
 	uninstallSvc := setupUninstall(srv.API, reg, uninstallDeps{DB: db, Apps: apps, Tools: tools, Games: games, Dpkg: dpkgDB,
 		Extra: extraFind, UserRun: userRun, PK: pkgCfg.PK, Broker: brokerClient, Modes: modeSet, Home: appsCfg.Home, Log: log})
@@ -1080,6 +1117,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	go func() { weekly.Run(weeklyCtx, time.Hour); close(weeklyDone) }()
 	defer func() { stopWeekly(); <-weeklyDone }()
 	(&reports.API{B: reportBuilder, Weekly: weekly, Audit: db}).Register(srv.API)
+	weekly.RegisterActions(reg)
 
 	backups := backup.New(backup.Config{
 		DB: db, Dir: filepath.Join(paths.DataDir, "backups"), ValidateProfile: profileManager.ValidateImported, Profiles: modeProfiles,

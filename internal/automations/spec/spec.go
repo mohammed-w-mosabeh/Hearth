@@ -516,7 +516,7 @@ func checkSteps(steps []Step, top bool) (int, error) {
 				return 0, fmt.Errorf("step %d: %w", i+1, err)
 			}
 		case "notify":
-			if err := checkNotify(st); err != nil {
+			if err := CheckNotify(st); err != nil {
 				return 0, fmt.Errorf("step %d: %w", i+1, err)
 			}
 		case "wait":
@@ -572,7 +572,8 @@ func checkAction(st Step) error {
 	return nil
 }
 
-func checkNotify(st Step) error {
+// CheckNotify validates a notify step (also notify/send's request).
+func CheckNotify(st Step) error {
 	if len(st.Channels) == 0 || len(st.Channels) > 3 {
 		return errors.New("1 to 3 channels")
 	}

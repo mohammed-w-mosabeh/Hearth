@@ -28,13 +28,13 @@ func rig(t *testing.T) (*httptest.Server, *store.DB, *int) {
 	t.Cleanup(func() { _ = db.Close() })
 	changed := 0
 	a := &API{Store: db, Changed: func() { changed++ },
-		Check: NewChecker(func(action string) bool { return action == "power/profile" || action == "notify/send" },
-			func(_ context.Context, expr string) error {
+		Check: NewChecker(CheckDeps{Known: func(action string) bool { return action == "power/profile" || action == "notify/send" },
+			Calendar: func(_ context.Context, expr string) error {
 				if expr == "nonsense" {
 					return errors.New("systemd does not understand this schedule")
 				}
 				return nil
-			})}
+			}})}
 	m := mux{http.NewServeMux()}
 	a.Register(m)
 	srv := httptest.NewServer(m)

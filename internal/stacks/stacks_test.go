@@ -35,6 +35,9 @@ func (f *fakeBroker) Call(_ context.Context, method string, params, out any) err
 	case "stack.status":
 		var p struct{ Name string }
 		_ = json.Unmarshal(b, &p)
+		if params == nil {
+			return remarshal(f.status, out)
+		}
 		for _, s := range f.status {
 			if s.Name == p.Name {
 				return remarshal([]broker.StackInfo{s}, out)

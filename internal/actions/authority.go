@@ -162,3 +162,31 @@ func (r *Registry) PlanFor(ctx context.Context, key string, req Request) (Plan, 
 	}
 	return plan, effective(a, plan), nil
 }
+
+// protectedReasons are the blocked reasons that mean a target S16 or S15a
+// protects: critical units, Hearth itself, Essential, Protected and
+// required packages, the session, the system's own processes, the
+// browser showing Hearth.
+var protectedReasons = map[string]bool{
+	"critical": true, "essential": true, "protected": true, "required": true,
+	"self": true, "session": true, "system": true, "browser": true,
+}
+
+// Refusal says why an automation may never hold a step with this plan
+// (SECURITY S15d), or "": it needs a typed confirmation, or it aims at a
+// protected target. Checked at save and again before each run.
+func Refusal(p Plan) string {
+	if p.Confirm != "" {
+		return "needs a typed confirmation, which an automation cannot give"
+	}
+	for _, b := range p.Blocked {
+		if protectedReasons[b.Reason] {
+			name := b.Name
+			if name == "" {
+				name = b.ID
+			}
+			return fmt.Sprintf("%s is protected (%s)", name, b.Reason)
+		}
+	}
+	return ""
+}

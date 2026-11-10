@@ -632,6 +632,7 @@ func (a *Advisor) Register(reg *actions.Registry) {
 			keep, _ := strconv.Atoi(r.Target)
 			return a.brokerRun(ctx, "journal.vacuum", broker.JournalParams{KeepMiB: keep}, p.Items[0])
 		}})
+	a.RegisterFiles(reg)
 }
 
 // Mux is the subset of api.Mux the routes need.

@@ -104,6 +104,7 @@ func Register(reg *actions.Registry, b Broker, tags docker.TagChecker, notes *Up
 				return call(ctx, b, p, "stack.control", broker.StackControlParams{Name: r.Target, Verb: op.verb})
 			}})
 	}
+	registerCheckUpdates(reg, b, tags, notes)
 	reg.Register(actions.Action{Kind: Kind, Name: "update", Risk: actions.Destructive,
 		Validate: nameOnly,
 		Plan: func(ctx context.Context, r actions.Request) (actions.Plan, error) {
