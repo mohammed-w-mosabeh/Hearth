@@ -140,3 +140,31 @@ func TestAPI(t *testing.T) {
 }
 
 func itoa(n int64) string { b, _ := json.Marshal(n); return string(b) }
+
+type fakePause struct{ on bool }
+
+func (f *fakePause) Paused(context.Context) bool { return f.on }
+func (f *fakePause) SetPaused(_ context.Context, on bool, _ string) error {
+	f.on = on
+	return nil
+}
+
+func TestPauseRoutes(t *testing.T) {
+	p := &fakePause{}
+	a := &API{Engine: p}
+	m := mux{http.NewServeMux()}
+	a.Register(m)
+	srv := httptest.NewServer(m)
+	defer srv.Close()
+	if code, out := do(t, srv, "PUT", "/api/v1/automations/pause", `{"paused":true}`); code != 200 || out["paused"] != true || !p.on {
+		t.Fatalf("%d %v", code, out)
+	}
+	if code, out := do(t, srv, "GET", "/api/v1/automations/pause", ""); code != 200 || out["paused"] != true {
+		t.Fatalf("%d %v", code, out)
+	}
+	for _, bad := range []string{`{}`, `{"paused":"yes"}`, `{"paused":true,"x":1}`} {
+		if code, _ := do(t, srv, "PUT", "/api/v1/automations/pause", bad); code != 400 {
+			t.Errorf("%s: %d", bad, code)
+		}
+	}
+}

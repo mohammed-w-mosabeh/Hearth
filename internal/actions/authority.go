@@ -1,6 +1,15 @@
 package actions
 
-import "strings"
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/mohammed-w-mosabeh/hearth/internal/store"
+	"github.com/mohammed-w-mosabeh/hearth/internal/unattended"
+)
 
 // Authority says whether running an action can ask for a password
 // (SECURITY S15d). An automation runs a step unattended only when its
@@ -84,4 +93,72 @@ func Classified() []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// ErrNeedsApproval is why a step cannot run with nobody at the screen: it
+// is destructive, needs a typed confirmation, or may ask for a password.
+var ErrNeedsApproval = errors.New("needs your approval")
+
+// Unattended is how a step ran with nobody at the screen.
+type Unattended struct {
+	Result Result
+	Plan   Plan
+}
+
+// RunUnattended runs key on req for an automation (SECURITY S15d): only if
+// its effective risk is safe or reversible, its plan asks for no typed
+// confirmation and its authority is none; otherwise ErrNeedsApproval and
+// nothing runs. It runs under the unattended mark (so nothing in it can
+// ask polkit) and is audited with origin by, as a request is.
+func (r *Registry) RunUnattended(ctx context.Context, key string, req Request, by string) (Unattended, error) {
+	a, ok := r.Lookup(key)
+	if !ok {
+		return Unattended{}, fmt.Errorf("no action %s", key)
+	}
+	if req.Params == nil {
+		req.Params = map[string]string{}
+	}
+	if err := a.Validate(req); err != nil {
+		return Unattended{}, err
+	}
+	ctx = unattended.With(ctx)
+	plan, err := a.Plan(ctx, req)
+	if err != nil {
+		return Unattended{}, err
+	}
+	if effective(a, plan) == Destructive || plan.Confirm != "" || r.AuthorityOf(key, req) != AuthorityNone {
+		return Unattended{Plan: plan}, ErrNeedsApproval
+	}
+	res, runErr := a.Run(ctx, req, plan)
+	outcome := "ok"
+	switch {
+	case runErr != nil:
+		outcome = "error: " + runErr.Error()
+	case len(res.Failed) > 0:
+		outcome = fmt.Sprintf("partial: %d done, %d failed", res.Done, len(res.Failed))
+	}
+	if err := r.audit.Audit(ctx, store.AuditEntry{Origin: store.Origin(by), UID: os.Getuid(), Action: a.Kind + "." + a.Name,
+		Target: req.Target, Params: req.Params, Result: outcome}); err != nil {
+		return Unattended{Result: res, Plan: plan}, errors.New("action ran but could not be written to the audit log")
+	}
+	return Unattended{Result: res, Plan: plan}, runErr
+}
+
+// PlanFor previews key on req without running it (approvals, dry runs).
+func (r *Registry) PlanFor(ctx context.Context, key string, req Request) (Plan, Risk, error) {
+	a, ok := r.Lookup(key)
+	if !ok {
+		return Plan{}, "", fmt.Errorf("no action %s", key)
+	}
+	if req.Params == nil {
+		req.Params = map[string]string{}
+	}
+	if err := a.Validate(req); err != nil {
+		return Plan{}, "", err
+	}
+	plan, err := a.Plan(ctx, req)
+	if err != nil {
+		return Plan{}, "", err
+	}
+	return plan, effective(a, plan), nil
 }

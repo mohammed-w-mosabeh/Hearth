@@ -40,6 +40,11 @@ type Checker func(ctx context.Context, s spec.Spec) error
 type API struct {
 	Store Store
 	Check Checker
+	// Engine holds the kill switch; nil serves no pause routes.
+	Engine interface {
+		Paused(ctx context.Context) bool
+		SetPaused(ctx context.Context, on bool, by string) error
+	}
 	// Changed is told after any change, so the engine reloads.
 	Changed func()
 }
@@ -79,6 +84,32 @@ func (a *API) Register(mux interface {
 	mux.HandleFunc("GET /api/v1/automations/{id}/runs", a.runs)
 	mux.HandleFunc("POST /api/v1/automations/import", a.importFile)
 	mux.HandleFunc("GET /api/v1/automations/export", a.export)
+	if a.Engine != nil {
+		mux.HandleFunc("GET /api/v1/automations/pause", a.getPause)
+		mux.HandleFunc("PUT /api/v1/automations/pause", a.setPause)
+	}
+}
+
+func (a *API) getPause(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]bool{"paused": a.Engine.Paused(r.Context())})
+}
+
+// setPause is the kill switch: "Pause all automations".
+func (a *API) setPause(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		Paused *bool `json:"paused"`
+	}
+	dec := json.NewDecoder(io.LimitReader(r.Body, 1024))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&b); err != nil || b.Paused == nil {
+		httpError(w, http.StatusBadRequest, "body must be {paused}")
+		return
+	}
+	if err := a.Engine.SetPaused(r.Context(), *b.Paused, "you"); err != nil {
+		httpError(w, http.StatusInternalServerError, "the switch could not be saved")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"paused": *b.Paused})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

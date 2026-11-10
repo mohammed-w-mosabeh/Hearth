@@ -927,28 +927,30 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	// shown, they switch a mode on when what they wait for changes:
 	// unattended items only, never a dialog.
 	modes.RegisterArming(reg, modeSet, db, nil)
-	triggers := modes.NewTriggers(modes.TriggerConfig{Set: modeSet, DB: db, Log: log,
-		Sources: modes.Sources{
-			Next: func(ctx context.Context, cal string) (time.Time, error) {
-				c := scheduler.CheckSchedule(ctx, safeexec.Run, scheduler.Schedule{Kind: scheduler.KindCalendar, Value: cal})
-				now := time.Now()
-				for _, ms := range c.Next {
-					if t := time.UnixMilli(ms); t.After(now) {
-						return t, nil
-					}
+	// What mode triggers and automations watch (ROADMAP 10.6, 12.3).
+	trigSources := modes.Sources{
+		Next: func(ctx context.Context, cal string) (time.Time, error) {
+			c := scheduler.CheckSchedule(ctx, safeexec.Run, scheduler.Schedule{Kind: scheduler.KindCalendar, Value: cal})
+			now := time.Now()
+			for _, ms := range c.Next {
+				if t := time.UnixMilli(ms); t.After(now) {
+					return t, nil
 				}
-				return time.Time{}, fmt.Errorf("no next run for %q: %s", cal, c.Error)
-			},
-			Connections: sysSettings.ActiveConnections,
-			Battery: func() (float64, bool, bool) {
-				bats := pw.Snapshot().Batteries
-				if len(bats) == 0 {
-					return 0, false, false
-				}
-				return bats[0].Pct, bats[0].State == "discharging", true
-			},
-			Displays: func() (int, error) { return session.ConnectedDisplays("/sys") },
+			}
+			return time.Time{}, fmt.Errorf("no next run for %q: %s", cal, c.Error)
 		},
+		Connections: sysSettings.ActiveConnections,
+		Battery: func() (float64, bool, bool) {
+			bats := pw.Snapshot().Batteries
+			if len(bats) == 0 {
+				return 0, false, false
+			}
+			return bats[0].Pct, bats[0].State == "discharging", true
+		},
+		Displays: func() (int, error) { return session.ConnectedDisplays("/sys") },
+	}
+	triggers := modes.NewTriggers(modes.TriggerConfig{Set: modeSet, DB: db, Log: log,
+		Sources: trigSources,
 		Activate: func(ctx context.Context, modeID, by, why string) error {
 			nums, err := db.ModeNumbers(ctx, []string{modeID})
 			if err != nil {
@@ -966,7 +968,31 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	defer func() { stopModes(); <-modesDone }()
 	// Automations (ROADMAP Phase 12, SECURITY S15d): storage and the API;
 	// every save is checked against the action registry and systemd.
-	(&automations.API{Store: db, Check: automations.NewChecker(
+	autoEngine := automations.NewEngine(automations.Config{Store: db, Registry: reg, Sources: trigSources, Log: log,
+		State: automations.State{
+			ActiveModes: func(ctx context.Context) ([]string, error) {
+				act, err := db.ActiveModes(ctx)
+				var ids []string
+				for _, a := range act {
+					ids = append(ids, a.ModeID)
+				}
+				return ids, err
+			},
+			UnitState: func(_ context.Context, scope, name string) (string, error) {
+				active, _, ok := unitState(scope == "user", name)
+				if !ok {
+					return "", fmt.Errorf("%s is not loaded", name)
+				}
+				return active, nil
+			},
+		},
+		Notify: func(ctx context.Context, summary, body string) { _ = notifier.Notify(ctx, summary, body, "warning") }})
+	engine.Tap = autoEngine.Observe
+	autoCtx, stopAuto := context.WithCancel(ctx)
+	autoDone := make(chan struct{})
+	go func() { autoEngine.Run(autoCtx); close(autoDone) }()
+	defer func() { stopAuto(); <-autoDone }()
+	(&automations.API{Store: db, Engine: autoEngine, Changed: func() { _ = autoEngine.Load(context.Background()) }, Check: automations.NewChecker(
 		func(action string) bool { _, ok := reg.Lookup(action); return ok },
 		func(ctx context.Context, expr string) error {
 			if c := scheduler.CheckSchedule(ctx, safeexec.Run, scheduler.Schedule{Kind: scheduler.KindCalendar, Value: expr}); !c.Valid {

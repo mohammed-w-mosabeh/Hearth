@@ -55,6 +55,10 @@ type Engine struct {
 	pub    Publisher
 	log    *slog.Logger
 
+	// Tap, if set, sees every observation too (the automations engine,
+	// ROADMAP 12.3). Called without the engine's lock held.
+	Tap func(ctx context.Context, now time.Time, metric string, values map[string]float64)
+
 	mu     sync.Mutex
 	rules  []store.AlertRule // enabled only
 	states map[key]*state
@@ -141,6 +145,9 @@ func (e *Engine) rule(id int64) *store.AlertRule {
 // instance ("" for single-valued metrics). An instance a rule was
 // tracking that is no longer present resolves.
 func (e *Engine) Observe(ctx context.Context, now time.Time, metric string, values map[string]float64) {
+	if e.Tap != nil {
+		e.Tap(ctx, now, metric, values)
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	inst := make(map[string]bool, len(values))
