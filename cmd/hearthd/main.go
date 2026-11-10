@@ -35,6 +35,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/alerts"
 	"github.com/mohammed-w-mosabeh/hearth/internal/api"
 	"github.com/mohammed-w-mosabeh/hearth/internal/auth"
+	"github.com/mohammed-w-mosabeh/hearth/internal/automations"
 	"github.com/mohammed-w-mosabeh/hearth/internal/backup"
 	"github.com/mohammed-w-mosabeh/hearth/internal/bootinfo"
 	"github.com/mohammed-w-mosabeh/hearth/internal/broker"
@@ -963,6 +964,16 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	modesDone := make(chan struct{})
 	go func() { modeSet.Run(modesCtx); close(modesDone) }()
 	defer func() { stopModes(); <-modesDone }()
+	// Automations (ROADMAP Phase 12, SECURITY S15d): storage and the API;
+	// every save is checked against the action registry and systemd.
+	(&automations.API{Store: db, Check: automations.NewChecker(
+		func(action string) bool { _, ok := reg.Lookup(action); return ok },
+		func(ctx context.Context, expr string) error {
+			if c := scheduler.CheckSchedule(ctx, safeexec.Run, scheduler.Schedule{Kind: scheduler.KindCalendar, Value: expr}); !c.Valid {
+				return errors.New(c.Error)
+			}
+			return nil
+		})}).Register(srv.API)
 	// Uninstall completely (ROADMAP 11.7, SECURITY S16k).
 	uninstallSvc := setupUninstall(srv.API, reg, uninstallDeps{DB: db, Apps: apps, Tools: tools, Games: games, Dpkg: dpkgDB,
 		Extra: extraFind, UserRun: userRun, PK: pkgCfg.PK, Broker: brokerClient, Modes: modeSet, Home: appsCfg.Home, Log: log})
