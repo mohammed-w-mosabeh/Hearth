@@ -42,6 +42,9 @@ type StackGrant struct {
 type StackGrantParams struct {
 	Name  string `json:"name"`
 	Start bool   `json:"start"` // also allow start; stop is always allowed
+	// Restart also allows restart (a stop then a start), for self-healing
+	// automations (v1.8, S15b); it needs Start.
+	Restart bool `json:"restart,omitempty"`
 }
 
 // StackGrantName is stack.grant.revoke's params.
@@ -141,8 +144,10 @@ func (g *grantStore) allows(uid uint32, items []StackBatchItem, now time.Time) b
 	}
 	for _, it := range items {
 		gr, ok := m[grantKey(it.Name, uid)]
-		// Only stop and start are ever unattended, whatever the file says.
-		if !ok || (it.Verb != "stop" && it.Verb != "start") || now.UnixMilli() >= gr.Until || !contains(gr.Verbs, it.Verb) {
+		// Only stop, start and restart are ever unattended, whatever the
+		// file says, and each only as granted.
+		if !ok || (it.Verb != "stop" && it.Verb != "start" && it.Verb != "restart") || now.UnixMilli() >= gr.Until || !contains(gr.Verbs, it.Verb) ||
+			(it.Verb == "restart" && !contains(gr.Verbs, "start")) {
 			return false
 		}
 	}
@@ -176,7 +181,10 @@ func (s *stacks) grantMethods() []Method {
 					return "", nil
 				}
 				what := "stop"
-				if v.Start {
+				switch {
+				case v.Restart:
+					what = "stop, start or restart"
+				case v.Start:
 					what = "stop or start"
 				}
 				return ActionStackGrant, map[string]string{"stack": v.Name, "allows": what,
@@ -193,6 +201,9 @@ func (s *stacks) checkGrant(p json.RawMessage) (StackGrantParams, error) {
 	if err := decodeParams(p, &v); err != nil {
 		return v, err
 	}
+	if v.Restart && !v.Start {
+		return v, badParam("restart needs start as well")
+	}
 	if _, _, _, err := s.stored(v.Name); err != nil {
 		return v, err
 	}
@@ -207,6 +218,9 @@ func (s *stacks) setGrant(_ context.Context, c Caller, p json.RawMessage) (any, 
 	verbs := []string{"stop"}
 	if v.Start {
 		verbs = append(verbs, "start")
+	}
+	if v.Restart {
+		verbs = append(verbs, "restart")
 	}
 	s.unattended.mu.Lock()
 	defer s.unattended.mu.Unlock()

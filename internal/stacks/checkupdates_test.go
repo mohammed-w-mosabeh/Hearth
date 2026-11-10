@@ -18,7 +18,7 @@ func TestCheckUpdates(t *testing.T) {
 	_, fb := rig(t, fakeTags{})
 	notes := &UpdateNotes{}
 	reg := actions.NewRegistry(nopAudit{})
-	Register(reg, fb, fakeTags{status: docker.UpdateNewer, remote: "sha256:" + strings.Repeat("b", 64)}, notes)
+	Register(reg, fb, fakeTags{status: docker.UpdateNewer, remote: "sha256:" + strings.Repeat("b", 64)}, notes, nil)
 	if reg.AuthorityOf(Kind+"/check-updates", actions.Request{}) != actions.AuthorityNone {
 		t.Fatal("check-updates never asks")
 	}

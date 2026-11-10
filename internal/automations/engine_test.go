@@ -22,6 +22,7 @@ type memStore struct {
 	runs     []store.AutomationRun
 	settings map[string]json.RawMessage
 	audit    []store.AuditEntry
+	approvs  []store.AutomationApproval
 }
 
 func (m *memStore) Automations(context.Context) ([]store.Automation, error) {
@@ -32,9 +33,70 @@ func (m *memStore) Automations(context.Context) ([]store.Automation, error) {
 func (m *memStore) SaveAutomationRun(_ context.Context, r store.AutomationRun) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if r.ID > 0 && int(r.ID) <= len(m.runs) {
+		m.runs[r.ID-1] = r
+		return r.ID, nil
+	}
+	r.ID = int64(len(m.runs) + 1)
 	m.runs = append(m.runs, r)
-	return int64(len(m.runs)), nil
+	return r.ID, nil
 }
+func (m *memStore) GetAutomation(_ context.Context, id int64) (store.Automation, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, a := range m.autos {
+		if a.ID == id {
+			return a, nil
+		}
+	}
+	return store.Automation{}, store.ErrNotFound
+}
+func (m *memStore) GetAutomationRun(_ context.Context, id int64) (store.AutomationRun, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if id < 1 || int(id) > len(m.runs) {
+		return store.AutomationRun{}, store.ErrNotFound
+	}
+	return m.runs[id-1], nil
+}
+func (m *memStore) AddAutomationApproval(_ context.Context, a store.AutomationApproval) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a.ID = int64(len(m.approvs) + 1)
+	a.State = store.ApprovalPending
+	a.AutomationID = m.runs[a.RunID-1].AutomationID
+	m.approvs = append(m.approvs, a)
+	return a.ID, nil
+}
+func (m *memStore) AutomationApprovalByID(_ context.Context, id int64) (store.AutomationApproval, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if id < 1 || int(id) > len(m.approvs) {
+		return store.AutomationApproval{}, store.ErrNotFound
+	}
+	return m.approvs[id-1], nil
+}
+func (m *memStore) PendingAutomationApprovals(context.Context) ([]store.AutomationApproval, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []store.AutomationApproval
+	for _, a := range m.approvs {
+		if a.State == store.ApprovalPending {
+			out = append(out, a)
+		}
+	}
+	return out, nil
+}
+func (m *memStore) DecideAutomationApproval(_ context.Context, id int64, state string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if id < 1 || int(id) > len(m.approvs) || m.approvs[id-1].State != store.ApprovalPending {
+		return store.ErrNotFound
+	}
+	m.approvs[id-1].State = state
+	return nil
+}
+func (m *memStore) PruneAutomationApprovals(context.Context, time.Time) error { return nil }
 func (m *memStore) Setting(_ context.Context, k string) (json.RawMessage, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -85,11 +147,14 @@ func newEngineRig(t *testing.T) *engineRig {
 			Validate: func(actions.Request) error { return nil },
 			Plan:     func(context.Context, actions.Request) (actions.Plan, error) { return actions.Plan{}, nil },
 			Run: func(ctx context.Context, r actions.Request, _ actions.Plan) (actions.Result, error) {
+				// Triggered runs are unattended; only approved steps run with
+				// the user there, and say so.
+				line := kind + "/" + name + " " + r.Target
 				if !unattended.Is(ctx) {
-					t.Errorf("%s/%s ran attended", kind, name)
+					line += " (attended)"
 				}
 				g.mu.Lock()
-				g.ran = append(g.ran, kind+"/"+name+" "+r.Target)
+				g.ran = append(g.ran, line)
 				g.mu.Unlock()
 				if fail {
 					return actions.Result{}, errors.New("it failed")

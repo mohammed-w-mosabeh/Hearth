@@ -71,6 +71,9 @@ type RunRecord struct {
 	Values     []string     `json:"values,omitempty"` // each condition, in words
 	Steps      []StepResult `json:"steps"`
 	By         string       `json:"by"` // trigger or test
+	// parked are the steps left for the user's approval (not stored here:
+	// the approval holds them).
+	parked []spec.Step
 }
 
 // State answers the conditions' questions; each may be nil (the condition
@@ -96,6 +99,14 @@ type EngineStore interface {
 	Setting(ctx context.Context, key string) (json.RawMessage, bool, error)
 	SetSetting(ctx context.Context, key string, value json.RawMessage) error
 	Audit(ctx context.Context, e store.AuditEntry) error
+	// Approvals (ROADMAP 12.6).
+	GetAutomation(ctx context.Context, id int64) (store.Automation, error)
+	GetAutomationRun(ctx context.Context, id int64) (store.AutomationRun, error)
+	AddAutomationApproval(ctx context.Context, a store.AutomationApproval) (int64, error)
+	AutomationApprovalByID(ctx context.Context, id int64) (store.AutomationApproval, error)
+	PendingAutomationApprovals(ctx context.Context) ([]store.AutomationApproval, error)
+	DecideAutomationApproval(ctx context.Context, id int64, state string) error
+	PruneAutomationApprovals(ctx context.Context, before time.Time) error
 }
 
 // Config configures the engine.
@@ -145,6 +156,7 @@ type Engine struct {
 	poll    map[int64]*pollState
 	acts    []time.Time // actions in the last minute, all automations
 	src     map[int64]*sourceState
+	expired time.Time // when approvals were last looked at
 	files   *fileWatch
 	runCtx  context.Context // Run's, for the file watches set up on reload
 	wg      sync.WaitGroup
@@ -433,6 +445,12 @@ func (e *Engine) Run(ctx context.Context) {
 			return
 		case <-t.C:
 			e.Tick(ctx)
+			if e.cfg.Clock().Sub(e.expired) >= time.Minute {
+				e.expired = e.cfg.Clock()
+				if err := e.ExpireApprovals(ctx); err != nil {
+					e.cfg.Log.Warn("automations: approvals", "err", err)
+				}
+			}
 		}
 	}
 }
@@ -540,7 +558,10 @@ func (e *Engine) Fire(ctx context.Context, a loaded, ev Event, by string) {
 		e.mu.Lock()
 		delete(e.running, a.ID)
 		e.mu.Unlock()
-		e.save(rctx, a.ID, now, e.cfg.Clock(), state, rec)
+		runID := e.save(rctx, a.ID, now, e.cfg.Clock(), state, rec)
+		if state == RunWaiting {
+			e.park(rctx, a, runID, rec)
+		}
 		_ = e.cfg.Store.Audit(rctx, store.AuditEntry{Origin: store.Origin("automation:" + strconv.FormatInt(a.ID, 10)),
 			Action: "automation.run", Target: "automation:" + strconv.FormatInt(a.ID, 10), Result: state})
 	}()
@@ -560,15 +581,18 @@ func (e *Engine) limitReached(ctx context.Context) {
 	}
 }
 
-func (e *Engine) save(ctx context.Context, id int64, started, finished time.Time, state string, rec RunRecord) {
+func (e *Engine) save(ctx context.Context, id int64, started, finished time.Time, state string, rec RunRecord) int64 {
 	raw, err := json.Marshal(rec)
 	if err != nil {
-		return
+		return 0
 	}
-	if _, err := e.cfg.Store.SaveAutomationRun(ctx, store.AutomationRun{AutomationID: id, Started: started.UnixMilli(),
-		Finished: finished.UnixMilli(), State: state, Record: raw}); err != nil {
+	runID, err := e.cfg.Store.SaveAutomationRun(ctx, store.AutomationRun{AutomationID: id, Started: started.UnixMilli(),
+		Finished: finished.UnixMilli(), State: state, Record: raw})
+	if err != nil {
 		e.cfg.Log.Warn("automations: record run", "id", id, "err", err)
+		return 0
 	}
+	return runID
 }
 
 // conditions evaluates the IF part; values says each in words.
@@ -712,9 +736,8 @@ func (e *Engine) steps(ctx context.Context, a loaded, steps []spec.Step, rec *Ru
 				}
 				res.Result, res.Detail = "waiting", "needs your approval"
 				rec.Steps = append(rec.Steps, res)
-				for _, rest := range steps[i+1:] {
-					rec.Steps = append(rec.Steps, StepResult{Step: rest.Step, Action: rest.Action, Target: rest.Target, Label: rest.Label, Result: "waiting"})
-				}
+				parkRest(rec, steps[i+1:])
+				rec.parked = append(slices.Clone(steps[i:i+1]), rec.parked...)
 				return RunWaiting
 			}
 			if err == nil && len(u.Result.Failed) > 0 {
@@ -743,7 +766,12 @@ func (e *Engine) steps(ctx context.Context, a loaded, steps []spec.Step, rec *Ru
 				if pass {
 					branch = st.ThenDo
 				}
-				if state := e.steps(ctx, a, branch, rec); state != RunDone {
+				state := e.steps(ctx, a, branch, rec)
+				if state == RunWaiting {
+					// The rest of the run waits behind the branch's parked steps.
+					parkRest(rec, steps[i+1:])
+				}
+				if state != RunDone {
 					return state
 				}
 				continue
@@ -761,6 +789,14 @@ func (e *Engine) steps(ctx context.Context, a loaded, steps []spec.Step, rec *Ru
 		rec.Steps = append(rec.Steps, res)
 	}
 	return RunDone
+}
+
+// parkRest records steps as waiting and adds them to the parked steps.
+func parkRest(rec *RunRecord, steps []spec.Step) {
+	for _, rest := range steps {
+		rec.Steps = append(rec.Steps, StepResult{Step: rest.Step, Action: rest.Action, Target: rest.Target, Label: rest.Label, Result: "waiting"})
+	}
+	rec.parked = append(rec.parked, steps...)
 }
 
 // mayContinue: "continue on failure" is allowed only for steps that run

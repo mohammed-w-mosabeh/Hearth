@@ -67,3 +67,64 @@ func TestAutomations(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestAutomationApprovals(t *testing.T) {
+	db, _ := openTemp(t)
+	ctx := context.Background()
+	ids, err := db.CreateAutomations(ctx, []Automation{{Name: "a", Enabled: true, Spec: json.RawMessage(`{}`), Origin: "ui"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := db.SaveAutomationRun(ctx, AutomationRun{AutomationID: ids[0], Started: 1, State: "waiting", Record: json.RawMessage(`{}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r, err := db.GetAutomationRun(ctx, run); err != nil || r.State != "waiting" {
+		t.Fatal(r, err)
+	}
+	if _, err := db.GetAutomationRun(ctx, 99); !errors.Is(err, ErrNotFound) {
+		t.Fatal(err)
+	}
+	id, err := db.AddAutomationApproval(ctx, AutomationApproval{RunID: run, Created: 10, Expires: 20, Steps: json.RawMessage(`{"steps":[]}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.AddAutomationApproval(ctx, AutomationApproval{RunID: run, Steps: json.RawMessage(`{`)}); err == nil {
+		t.Fatal("invalid JSON stored")
+	}
+	ap, err := db.AutomationApprovalByID(ctx, id)
+	if err != nil || ap.AutomationID != ids[0] || ap.State != ApprovalPending || ap.Expires != 20 {
+		t.Fatalf("%+v %v", ap, err)
+	}
+	list, err := db.PendingAutomationApprovals(ctx)
+	if err != nil || len(list) != 1 {
+		t.Fatal(list, err)
+	}
+	if err := db.DecideAutomationApproval(ctx, id, ApprovalPending); err == nil {
+		t.Fatal("decided to pending")
+	}
+	if err := db.DecideAutomationApproval(ctx, id, ApprovalApproved); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.DecideAutomationApproval(ctx, id, ApprovalDismissed); !errors.Is(err, ErrNotFound) {
+		t.Fatal("one decision wins", err)
+	}
+	if list, _ := db.PendingAutomationApprovals(ctx); len(list) != 0 {
+		t.Fatal(list)
+	}
+	if err := db.PruneAutomationApprovals(ctx, time.UnixMilli(11)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.AutomationApprovalByID(ctx, id); !errors.Is(err, ErrNotFound) {
+		t.Fatal("a decided old approval is pruned", err)
+	}
+	// Deleting the automation removes its approvals.
+	run2, _ := db.SaveAutomationRun(ctx, AutomationRun{AutomationID: ids[0], Started: 2, State: "waiting", Record: json.RawMessage(`{}`)})
+	id2, _ := db.AddAutomationApproval(ctx, AutomationApproval{RunID: run2, Created: 10, Expires: 20, Steps: json.RawMessage(`{}`)})
+	if err := db.DeleteAutomation(ctx, ids[0]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.AutomationApprovalByID(ctx, id2); !errors.Is(err, ErrNotFound) {
+		t.Fatal(err)
+	}
+}

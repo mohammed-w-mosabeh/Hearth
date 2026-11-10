@@ -47,6 +47,12 @@ type API struct {
 	}
 	// Changed is told after any change, so the engine reloads.
 	Changed func()
+	// Approvals lists the waiting approvals (the engine); ModeApprovals
+	// those a mode switch left (modes.Approvals.Pending). Either may be nil.
+	Approvals interface {
+		Approvals(ctx context.Context) ([]ApprovalView, error)
+	}
+	ModeApprovals func(ctx context.Context) (any, error)
 }
 
 // View is an automation as the API shows it.
@@ -84,10 +90,38 @@ func (a *API) Register(mux interface {
 	mux.HandleFunc("GET /api/v1/automations/{id}/runs", a.runs)
 	mux.HandleFunc("POST /api/v1/automations/import", a.importFile)
 	mux.HandleFunc("GET /api/v1/automations/export", a.export)
+	mux.HandleFunc("GET /api/v1/automations/approvals", a.approvals)
 	if a.Engine != nil {
 		mux.HandleFunc("GET /api/v1/automations/pause", a.getPause)
 		mux.HandleFunc("PUT /api/v1/automations/pause", a.setPause)
 	}
+}
+
+// approvals serves the approval screen's list: automation approvals and
+// mode approvals together. Each is approved or dismissed through its own
+// action (automation/approve, mode/approve), with a preview first.
+func (a *API) approvals(w http.ResponseWriter, r *http.Request) {
+	out := struct {
+		Automations []ApprovalView `json:"automations"`
+		Modes       any            `json:"modes"`
+	}{Automations: []ApprovalView{}, Modes: []any{}}
+	if a.Approvals != nil {
+		list, err := a.Approvals.Approvals(r.Context())
+		if err != nil {
+			httpError(w, http.StatusInternalServerError, "approvals could not be read")
+			return
+		}
+		out.Automations = list
+	}
+	if a.ModeApprovals != nil {
+		list, err := a.ModeApprovals(r.Context())
+		if err != nil {
+			httpError(w, http.StatusInternalServerError, "approvals could not be read")
+			return
+		}
+		out.Modes = list
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (a *API) getPause(w http.ResponseWriter, r *http.Request) {

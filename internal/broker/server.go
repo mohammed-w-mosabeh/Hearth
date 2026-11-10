@@ -20,6 +20,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/mohammed-w-mosabeh/hearth/internal/unattended"
 )
 
 // Caller is the process on the other end of a connection.
@@ -349,7 +351,13 @@ func (s *Server) call(ctx context.Context, c Caller, line []byte, conn net.Conn,
 	decided := false
 	if m.Privileged && m.Authorized != nil {
 		var ok bool
-		if decided, ok = m.Authorized(ctx, c, req.Params); decided && !ok {
+		// The hook sees whether nobody is at the screen (unattended.Is):
+		// a grant may stand in for polkit then, and only then.
+		hctx := ctx
+		if req.Unattended {
+			hctx = unattended.With(ctx)
+		}
+		if decided, ok = m.Authorized(hctx, c, req.Params); decided && !ok {
 			s.audit(c, req.Method, audited, "refused: not authorized without a password")
 			// Its own words, so a refusal polkit never saw can be told apart.
 			return send(Response{ID: req.ID, Error: Errorf(CodeUnauthorized, "not authorized without a password")}) == nil

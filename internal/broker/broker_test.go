@@ -629,3 +629,30 @@ func TestUnattendedNeverAsksPolkit(t *testing.T) {
 		t.Fatalf("%v %v", err, h.auth.asked)
 	}
 }
+
+// A method's Authorized hook sees whether the request is unattended, so a
+// grant can stand in for polkit for an automation only (S15b, S15d).
+func TestAuthorizedHookSeesUnattended(t *testing.T) {
+	var saw []bool
+	h := start(t, true, func(c *Config) {
+		c.Methods = append(c.Methods, Method{Name: "test.granted", Privileged: true,
+			Authorized: func(ctx context.Context, _ Caller, _ json.RawMessage) (bool, bool) {
+				saw = append(saw, unattended.Is(ctx))
+				return unattended.Is(ctx), true
+			},
+			Handle: func(context.Context, Caller, json.RawMessage) (any, error) { return "ok", nil }})
+	})
+	if err := h.client().Call(unattended.With(context.Background()), "test.granted", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(h.auth.asked) != 0 {
+		t.Fatal("polkit asked although the hook decided")
+	}
+	h.auth.allow = true
+	if err := h.client().Call(context.Background(), "test.granted", nil, nil); err != nil || len(h.auth.asked) != 1 {
+		t.Fatalf("attended goes to polkit: %v %v", err, h.auth.asked)
+	}
+	if len(saw) != 2 || !saw[0] || saw[1] {
+		t.Fatalf("%v", saw)
+	}
+}

@@ -204,3 +204,109 @@ func (db *DB) PruneAutomationRuns(ctx context.Context, before time.Time) error {
 	}
 	return nil
 }
+
+// GetAutomationRun returns one run, or ErrNotFound.
+func (db *DB) GetAutomationRun(ctx context.Context, id int64) (AutomationRun, error) {
+	var r AutomationRun
+	var rec string
+	err := db.QueryRowContext(ctx, `SELECT id, automation_id, started, finished, state, record FROM automation_runs WHERE id = ?`, id).
+		Scan(&r.ID, &r.AutomationID, &r.Started, &r.Finished, &r.State, &rec)
+	if errors.Is(err, sql.ErrNoRows) {
+		return r, ErrNotFound
+	}
+	if err != nil {
+		return r, fmt.Errorf("store: run: %w", err)
+	}
+	r.Record = json.RawMessage(rec)
+	return r, nil
+}
+
+// AutomationApproval is one automation_approvals row: the steps of a run
+// that wait for the user's click (ROADMAP 12.6). AutomationID comes from
+// the run.
+type AutomationApproval struct {
+	ID           int64           `json:"id"`
+	RunID        int64           `json:"run_id"`
+	AutomationID int64           `json:"automation_id"`
+	Created      int64           `json:"created"`
+	Expires      int64           `json:"expires"`
+	State        string          `json:"state"` // ApprovalPending, ...
+	Steps        json.RawMessage `json:"steps"`
+}
+
+// AddAutomationApproval stores a pending approval and returns its ID.
+func (db *DB) AddAutomationApproval(ctx context.Context, a AutomationApproval) (int64, error) {
+	res, err := db.ExecContext(ctx, `INSERT INTO automation_approvals (run_id, created, expires, state, steps) VALUES (?, ?, ?, ?, ?)`,
+		a.RunID, a.Created, a.Expires, ApprovalPending, string(a.Steps))
+	if err != nil {
+		return 0, fmt.Errorf("store: add approval: %w", err)
+	}
+	return res.LastInsertId()
+}
+
+const approvalSelect = `SELECT p.id, p.run_id, COALESCE(r.automation_id, 0), p.created, p.expires, p.state, p.steps
+	FROM automation_approvals p LEFT JOIN automation_runs r ON r.id = p.run_id`
+
+func scanAutoApproval(scan func(...any) error) (AutomationApproval, error) {
+	var a AutomationApproval
+	var steps string
+	if err := scan(&a.ID, &a.RunID, &a.AutomationID, &a.Created, &a.Expires, &a.State, &steps); err != nil {
+		return a, err
+	}
+	a.Steps = json.RawMessage(steps)
+	return a, nil
+}
+
+// AutomationApprovalByID returns one approval, or ErrNotFound.
+func (db *DB) AutomationApprovalByID(ctx context.Context, id int64) (AutomationApproval, error) {
+	a, err := scanAutoApproval(db.QueryRowContext(ctx, approvalSelect+` WHERE p.id = ?`, id).Scan)
+	if errors.Is(err, sql.ErrNoRows) {
+		return a, ErrNotFound
+	}
+	if err != nil {
+		return a, fmt.Errorf("store: approval: %w", err)
+	}
+	return a, nil
+}
+
+// PendingAutomationApprovals returns the pending approvals, oldest first.
+func (db *DB) PendingAutomationApprovals(ctx context.Context) ([]AutomationApproval, error) {
+	rows, err := db.QueryContext(ctx, approvalSelect+` WHERE p.state = ? ORDER BY p.created, p.id`, ApprovalPending)
+	if err != nil {
+		return nil, fmt.Errorf("store: approvals: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := []AutomationApproval{}
+	for rows.Next() {
+		a, err := scanAutoApproval(rows.Scan)
+		if err != nil {
+			return nil, fmt.Errorf("store: approvals: %w", err)
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// DecideAutomationApproval moves a pending approval to state. It returns
+// ErrNotFound when no pending approval has that ID, so one decision wins.
+func (db *DB) DecideAutomationApproval(ctx context.Context, id int64, state string) error {
+	if state == ApprovalPending {
+		return errors.New("store: an approval is decided to approved, dismissed or expired")
+	}
+	res, err := db.ExecContext(ctx, `UPDATE automation_approvals SET state = ? WHERE id = ? AND state = ?`, state, id, ApprovalPending)
+	if err != nil {
+		return fmt.Errorf("store: decide approval: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// PruneAutomationApprovals deletes decided approvals created before before.
+func (db *DB) PruneAutomationApprovals(ctx context.Context, before time.Time) error {
+	if _, err := db.ExecContext(ctx, `DELETE FROM automation_approvals WHERE state != ? AND created < ?`, ApprovalPending, before.UnixMilli()); err != nil {
+		return fmt.Errorf("store: prune approvals: %w", err)
+	}
+	return nil
+}

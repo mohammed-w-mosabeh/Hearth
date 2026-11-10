@@ -168,3 +168,39 @@ func TestPauseRoutes(t *testing.T) {
 		}
 	}
 }
+
+type fakeApprovals struct{ err error }
+
+func (f fakeApprovals) Approvals(context.Context) ([]ApprovalView, error) {
+	return []ApprovalView{{ID: 1, Name: "<b>heal</b>"}}, f.err
+}
+
+func TestApprovalsRoute(t *testing.T) {
+	a := &API{Approvals: fakeApprovals{}, ModeApprovals: func(context.Context) (any, error) { return []map[string]int{{"id": 7}}, nil }}
+	m := mux{http.NewServeMux()}
+	a.Register(m)
+	srv := httptest.NewServer(m)
+	defer srv.Close()
+	code, out := do(t, srv, "GET", "/api/v1/automations/approvals", "")
+	autos, _ := out["automations"].([]any)
+	modes, _ := out["modes"].([]any)
+	if code != 200 || len(autos) != 1 || len(modes) != 1 || autos[0].(map[string]any)["name"] != "<b>heal</b>" {
+		t.Fatalf("%d %v", code, out)
+	}
+	a2 := &API{}
+	m2 := mux{http.NewServeMux()}
+	a2.Register(m2)
+	srv2 := httptest.NewServer(m2)
+	defer srv2.Close()
+	if code, out := do(t, srv2, "GET", "/api/v1/automations/approvals", ""); code != 200 || len(out["automations"].([]any)) != 0 {
+		t.Fatalf("%d %v", code, out)
+	}
+	a3 := &API{Approvals: fakeApprovals{err: errors.New("db")}}
+	m3 := mux{http.NewServeMux()}
+	a3.Register(m3)
+	srv3 := httptest.NewServer(m3)
+	defer srv3.Close()
+	if code, _ := do(t, srv3, "GET", "/api/v1/automations/approvals", ""); code != 500 {
+		t.Fatal(code)
+	}
+}

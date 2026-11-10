@@ -190,3 +190,77 @@ func Refusal(p Plan) string {
 	}
 	return ""
 }
+
+// ErrChanged is why an approved step does not run: what it would affect
+// now is not what the user approved.
+var ErrChanged = errors.New("it changed since you approved it")
+
+// RiskOf is the effective risk of a plan of key: the action's own, raised
+// by the plan.
+func (r *Registry) RiskOf(key string, p Plan) Risk {
+	a, ok := r.Lookup(key)
+	if !ok {
+		return Destructive
+	}
+	return effective(a, p)
+}
+
+// RunApproved runs a step the user approved on the approval screen
+// (ROADMAP 12.6): the user is there, so it is not unattended and polkit
+// may ask. It previews again and runs only if the step is still not
+// refused (Refusal), would affect exactly the items approved, and its risk
+// has not risen; otherwise ErrChanged and nothing runs. Audited with
+// origin by.
+func (r *Registry) RunApproved(ctx context.Context, key string, req Request, approved Plan, by string) (Result, error) {
+	a, ok := r.Lookup(key)
+	if !ok {
+		return Result{}, fmt.Errorf("no action %s", key)
+	}
+	if req.Params == nil {
+		req.Params = map[string]string{}
+	}
+	if err := a.Validate(req); err != nil {
+		return Result{}, err
+	}
+	fresh, err := a.Plan(ctx, req)
+	if err != nil {
+		return Result{}, err
+	}
+	if why := Refusal(fresh); why != "" {
+		return Result{}, errors.New("refused: " + why)
+	}
+	if !sameItems(approved, fresh) || riskLevel[effective(a, fresh)] > riskLevel[effective(a, approved)] {
+		return Result{}, ErrChanged
+	}
+	res, runErr := a.Run(ctx, req, fresh)
+	outcome := "ok"
+	switch {
+	case runErr != nil:
+		outcome = "error: " + runErr.Error()
+	case len(res.Failed) > 0:
+		outcome = fmt.Sprintf("partial: %d done, %d failed", res.Done, len(res.Failed))
+	}
+	if err := r.audit.Audit(ctx, store.AuditEntry{Origin: store.Origin(by), UID: os.Getuid(), Action: a.Kind + "." + a.Name,
+		Target: req.Target, Params: req.Params, Result: outcome}); err != nil {
+		return res, errors.New("action ran but could not be written to the audit log")
+	}
+	return res, runErr
+}
+
+// sameItems reports whether two plans affect the same items.
+func sameItems(a, b Plan) bool {
+	if len(a.Items) != len(b.Items) {
+		return false
+	}
+	seen := make(map[string]int, len(a.Items))
+	for _, it := range a.Items {
+		seen[it.ID]++
+	}
+	for _, it := range b.Items {
+		if seen[it.ID] == 0 {
+			return false
+		}
+		seen[it.ID]--
+	}
+	return true
+}

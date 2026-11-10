@@ -550,10 +550,11 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	images := &docker.Images{B: brokerClient, Registry: docker.NewRegistry(), Run: safeexec.Run, CacheDir: filepath.Join(paths.DataDir, "trivy")}
 	docker.RegisterUpdate(reg, brokerClient, images.Registry, safeexec.Run)
 	appUpdates := &stacks.UpdateNotes{Settings: db}
-	stacks.Register(reg, brokerClient, images.Registry, appUpdates)
+	stackGrants := &stacks.GrantCache{B: brokerClient}
+	stacks.Register(reg, brokerClient, images.Registry, appUpdates, stackGrants)
 	// Unattended grants (ROADMAP 10.8): one password, then a trigger may
 	// stop (or start) that stack with nobody there, for 90 days.
-	stacks.RegisterGrants(reg, brokerClient)
+	stacks.RegisterGrants(reg, brokerClient, stackGrants)
 	srv.API.HandleFunc("GET /api/v1/stack-grants", stacks.HandleGrants(brokerClient))
 	srv.API.HandleFunc("GET /api/v1/app-health", stacks.HandleHealth(brokerClient, appUpdates))
 	// App names at http://<app>.localhost:<port>/ (9.13): off until the
@@ -1047,20 +1048,28 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		},
 		State: autoState,
 		Steps: autoSteps, Protect: kernelProtect,
-		Notify: func(ctx context.Context, summary, body string) { _ = notifier.Notify(ctx, summary, body, "warning") }})
+		// The desktop, and ntfy when it is set: an approval waits, or the
+		// global limit paused everything. Words only, no action on click.
+		Notify: func(ctx context.Context, summary, body string) {
+			_ = notifier.Notify(ctx, summary, body, "warning")
+			_ = channels.Send(ctx, "ntfy", summary, body, "warning")
+		}})
+	autoEngine.RegisterApprovals(reg)
 	engine.Tap = autoEngine.Observe
 	autoCtx, stopAuto := context.WithCancel(ctx)
 	autoDone := make(chan struct{})
 	go func() { autoEngine.Run(autoCtx); close(autoDone) }()
 	defer func() { stopAuto(); <-autoDone }()
-	(&automations.API{Store: db, Engine: autoEngine, Changed: func() { _ = autoEngine.Load(context.Background()) }, Check: automations.NewChecker(automations.CheckDeps{
-		Registry: reg, Protect: kernelProtect,
-		Calendar: func(ctx context.Context, expr string) error {
-			if c := scheduler.CheckSchedule(ctx, safeexec.Run, scheduler.Schedule{Kind: scheduler.KindCalendar, Value: expr}); !c.Valid {
-				return errors.New(c.Error)
-			}
-			return nil
-		}})}).Register(srv.API)
+	(&automations.API{Store: db, Engine: autoEngine, Approvals: autoEngine,
+		ModeApprovals: func(ctx context.Context) (any, error) { return approvals.Pending(ctx) },
+		Changed:       func() { _ = autoEngine.Load(context.Background()) }, Check: automations.NewChecker(automations.CheckDeps{
+			Registry: reg, Protect: kernelProtect,
+			Calendar: func(ctx context.Context, expr string) error {
+				if c := scheduler.CheckSchedule(ctx, safeexec.Run, scheduler.Schedule{Kind: scheduler.KindCalendar, Value: expr}); !c.Valid {
+					return errors.New(c.Error)
+				}
+				return nil
+			}})}).Register(srv.API)
 	// Uninstall completely (ROADMAP 11.7, SECURITY S16k).
 	uninstallSvc := setupUninstall(srv.API, reg, uninstallDeps{DB: db, Apps: apps, Tools: tools, Games: games, Dpkg: dpkgDB,
 		Extra: extraFind, UserRun: userRun, PK: pkgCfg.PK, Broker: brokerClient, Modes: modeSet, Home: appsCfg.Home, Log: log})
