@@ -74,10 +74,10 @@ type lifeRig struct {
 	unit func(unit string) error
 }
 
-func newLifeRig(t *testing.T) *lifeRig { t.Helper(); return newLifeRigWith(t, nil) }
+func newLifeRig(t testing.TB) *lifeRig { t.Helper(); return newLifeRigWith(t, nil) }
 
 // newLifeRigWith lets more change the config before the methods are made.
-func newLifeRigWith(t *testing.T, more func(r *lifeRig, c *StackConfig)) *lifeRig {
+func newLifeRigWith(t testing.TB, more func(r *lifeRig, c *StackConfig)) *lifeRig {
 	t.Helper()
 	r := &lifeRig{store: StackStore{Dir: filepath.Join(t.TempDir(), "stacks")}, engine: &fakeStackEngine{},
 		paths: &fakePaths{first: okPaths(), second: okPaths()}, proc: t.TempDir(), methods: map[string]Method{}}
@@ -123,7 +123,7 @@ func newLifeRigWith(t *testing.T, more func(r *lifeRig, c *StackConfig)) *lifeRi
 	return r
 }
 
-func (r *lifeRig) mountinfo(t *testing.T, s string) {
+func (r *lifeRig) mountinfo(t testing.TB, s string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(r.proc, "42", "mountinfo"), []byte(s), 0o600); err != nil {
 		t.Fatal(err)
@@ -131,7 +131,7 @@ func (r *lifeRig) mountinfo(t *testing.T, s string) {
 }
 
 // call runs a method as the server does: Check before polkit, then Handle.
-func (r *lifeRig) call(t *testing.T, name string, params any) (any, error) {
+func (r *lifeRig) call(t testing.TB, name string, params any) (any, error) {
 	t.Helper()
 	m, ok := r.methods[name]
 	if !ok {

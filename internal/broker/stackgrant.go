@@ -141,7 +141,8 @@ func (g *grantStore) allows(uid uint32, items []StackBatchItem, now time.Time) b
 	}
 	for _, it := range items {
 		gr, ok := m[grantKey(it.Name, uid)]
-		if !ok || now.UnixMilli() >= gr.Until || !contains(gr.Verbs, it.Verb) {
+		// Only stop and start are ever unattended, whatever the file says.
+		if !ok || (it.Verb != "stop" && it.Verb != "start") || now.UnixMilli() >= gr.Until || !contains(gr.Verbs, it.Verb) {
 			return false
 		}
 	}

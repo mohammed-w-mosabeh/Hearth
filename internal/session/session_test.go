@@ -310,3 +310,41 @@ func TestConnectedDisplays(t *testing.T) {
 		t.Fatal("no error without sysfs")
 	}
 }
+
+// Gate 10: a wallpaper path that passes stays under its root, and its URI
+// is one GVariant string that gsettings-set accepts.
+func FuzzCheckWallpaper(f *testing.F) {
+	for _, s := range []string{"~/Pictures/a.png", "/usr/share/backgrounds/x/y.jpg", "~/../etc/a.png", "~/a b'c\\d.png", "~//a.png", "~/a/./b.svg", "/usr/share/wallpapers/%2e%2e/a.webp"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, p string) {
+		if CheckWallpaper(p) != nil {
+			return
+		}
+		rest := ""
+		for _, r := range WallpaperRoots {
+			if strings.HasPrefix(p, r) {
+				rest = strings.TrimPrefix(p, r)
+				break
+			}
+		}
+		if rest == "" || strings.HasPrefix(rest, "/") || rest == ".." || strings.HasPrefix(rest, "../") || strings.Contains(rest, "/../") || strings.HasSuffix(rest, "/..") {
+			t.Fatalf("accepted %q", p)
+		}
+		if err := safeexec.GSettingsFileURI(fileURI(filepath.Join("/home/u", rest))); err != nil {
+			t.Fatalf("%q: %v", p, err)
+		}
+	})
+}
+
+// Whatever path it is given, fileURI makes one quoted string with nothing
+// gsettings would parse as more than a string.
+func FuzzFileURI(f *testing.F) {
+	f.Add("/home/u/a b'c\\d\n.png")
+	f.Fuzz(func(t *testing.T, p string) {
+		u := fileURI("/" + strings.TrimLeft(p, "/"))
+		if strings.Count(u, "'") != 2 || strings.ContainsAny(u, "\\ \n\t\"") {
+			t.Fatalf("%q -> %q", p, u)
+		}
+	})
+}
