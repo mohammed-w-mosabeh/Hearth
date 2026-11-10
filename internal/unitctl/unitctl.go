@@ -55,6 +55,15 @@ type Bus interface {
 	Close() error
 }
 
+// userBus is the user's own manager: it never asks polkit, so its calls
+// need no interactive authorization, and run as well when nobody is at
+// the screen (an automation, SECURITY S15d).
+type userBus struct{ Bus }
+
+func (b userBus) CallInteractive(ctx context.Context, dest string, path dbus.ObjectPath, method string, out []any, args ...any) error {
+	return b.Call(ctx, dest, path, method, out, args...)
+}
+
 // Broker calls hearth-broker (*broker.Client in production).
 type Broker interface {
 	Call(ctx context.Context, method string, params, out any) error
@@ -188,7 +197,13 @@ func (c *ctl) run(ctx context.Context, o op, r actions.Request, p actions.Plan) 
 	}
 	dial := c.cfg.System
 	if scope == services.ScopeUser {
-		dial = c.cfg.User
+		dial = func(ctx context.Context) (Bus, error) {
+			b, err := c.cfg.User(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return userBus{b}, nil
+		}
 	}
 	bus, err := dial(ctx)
 	if err != nil {

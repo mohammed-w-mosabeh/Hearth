@@ -121,7 +121,7 @@ func (c *ctl) capAction() actions.Action {
 				return res, actions.Errorf(http.StatusServiceUnavailable, "cannot reach the user manager: %v", err)
 			}
 			defer func() { _ = bus.Close() }()
-			if err := bus.CallInteractive(ctx, systemd, objPath, manager+".SetUnitProperties", nil,
+			if err := (userBus{bus}).CallInteractive(ctx, systemd, objPath, manager+".SetUnitProperties", nil,
 				p.Items[0].Name, true, props); err != nil {
 				res.Failed = append(res.Failed, failure(p.Items[0], err))
 				return res, nil

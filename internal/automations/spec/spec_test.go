@@ -81,7 +81,7 @@ func TestParseRefuses(t *testing.T) {
 		"unknown step":     `{"trigger":{"kind":"login"},"then":[{"step":"exec","command":"id"}]}`,
 		"script field":     `{"trigger":{"kind":"login"},"then":[{"step":"action","action":"job/run","target":"user/x","script":"id"}]}`,
 		"denied action":    `{"trigger":{"kind":"login"},"then":[{"step":"action","action":"uninstall/remove","target":"package:bash"}]}`,
-		"action shape":     `{"trigger":{"kind":"login"},"then":[{"step":"action","action":"sh -c id"}]}`,
+		"action shape":     `{"trigger":{"kind":"login"},"then":[{"step":"action","action":"run this now"}]}`,
 		"target dash":      `{"trigger":{"kind":"login"},"then":[{"step":"action","action":"unit/stop","target":"--now"}]}`,
 		"control char":     `{"trigger":{"kind":"login"},"then":[{"step":"action","action":"unit/stop","target":"a\nb"}]}`,
 		"param key":        `{"trigger":{"kind":"login"},"then":[{"step":"action","action":"unit/stop","target":"x","params":{"Exec Start":"/bin/sh"}}]}`,

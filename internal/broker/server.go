@@ -355,6 +355,11 @@ func (s *Server) call(ctx context.Context, c Caller, line []byte, conn net.Conn,
 			return send(Response{ID: req.ID, Error: Errorf(CodeUnauthorized, "not authorized without a password")}) == nil
 		}
 	}
+	if m.Privileged && !decided && req.Unattended {
+		// Nobody is at the screen: never a password dialog (S15d).
+		s.audit(c, req.Method, audited, "refused: unattended, not authorized without a password")
+		return send(Response{ID: req.ID, Error: Errorf(CodeUnauthorized, "not authorized without a password")}) == nil
+	}
 	if m.Privileged && !decided {
 		action, details := m.Action, map[string]string(nil)
 		if m.Authorize != nil {

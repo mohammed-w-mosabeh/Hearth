@@ -97,6 +97,10 @@ type Action struct {
 	Plan func(ctx context.Context, r Request) (Plan, error)
 	// Run executes plan (from the preview for Destructive actions).
 	Run func(ctx context.Context, r Request, plan Plan) (Result, error)
+	// Authority, or AuthorityFor per request, says whether running it can
+	// ask for a password; unset falls back to DefaultAuthority (S15d).
+	Authority    Authority
+	AuthorityFor func(r Request) Authority
 }
 
 // Auditor records actions (store.DB in production).

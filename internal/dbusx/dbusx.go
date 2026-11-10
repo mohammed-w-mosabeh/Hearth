@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/godbus/dbus/v5"
+
+	"github.com/mohammed-w-mosabeh/hearth/internal/unattended"
 )
 
 // CallTimeout bounds every D-Bus method call.
@@ -101,6 +103,9 @@ const InteractiveTimeout = 2 * time.Minute
 // privileged method, polkit asks the user to authenticate (through the
 // desktop's agent) instead of refusing at once.
 func (c *Conn) CallInteractive(ctx context.Context, dest string, path dbus.ObjectPath, method string, out []any, args ...any) error {
+	if unattended.Is(ctx) {
+		return unattended.ErrWouldPrompt
+	}
 	ctx, cancel := context.WithTimeout(ctx, InteractiveTimeout)
 	defer cancel()
 	call := c.c.Object(dest, path).CallWithContext(ctx, method, dbus.FlagAllowInteractiveAuthorization, args...)

@@ -90,18 +90,26 @@ func (b *fakeBus) Watch(context.Context, ...dbus.MatchOption) (<-chan *dbus.Sign
 	return b.sigs, nil
 }
 func (b *fakeBus) Close() error { return nil }
-func (b *fakeBus) Call(_ context.Context, _ string, _ dbus.ObjectPath, method string, _ []any, _ ...any) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.calls = append(b.calls, strings.TrimPrefix(method, manager+"."))
-	return nil
+func (b *fakeBus) Call(_ context.Context, _ string, _ dbus.ObjectPath, method string, out []any, args ...any) error {
+	return b.call(method, out, args, false)
 }
 func (b *fakeBus) CallInteractive(_ context.Context, _ string, _ dbus.ObjectPath, method string, out []any, args ...any) error {
+	return b.call(method, out, args, true)
+}
+
+// call plays systemd; inter records the calls made with interactive
+// authorization.
+func (b *fakeBus) call(method string, out []any, args []any, interactive bool) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	m := strings.TrimPrefix(method, manager+".")
 	b.calls = append(b.calls, m)
-	b.inter = append(b.inter, m)
+	if interactive {
+		b.inter = append(b.inter, m)
+	}
+	if m == "Subscribe" {
+		return nil
+	}
 	if b.err != nil && m != "Reload" {
 		return b.err
 	}
@@ -241,8 +249,9 @@ func TestOverride(t *testing.T) {
 	if res, err := c.run(context.Background(), opOf("override"), r, p); err != nil || res.Done != 1 {
 		t.Fatalf("%+v %v", res, err)
 	}
-	if got, _ := dropin.Read(dir, "a.service"); got["MemoryMax"] != "1G" || !slices.Equal(b.inter, []string{"Reload"}) {
-		t.Fatalf("%v %v", got, b.inter)
+	// The user's own manager: no interactive authorization (S15d).
+	if got, _ := dropin.Read(dir, "a.service"); got["MemoryMax"] != "1G" || !slices.Equal(b.calls, []string{"Reload"}) || len(b.inter) != 0 {
+		t.Fatalf("%v %v %v", got, b.calls, b.inter)
 	}
 	if fb.method != "" {
 		t.Fatal("a user unit went to the broker")
@@ -321,8 +330,8 @@ func TestCap(t *testing.T) {
 	if res, err := a.Run(context.Background(), r, p); err != nil || res.Done != 1 {
 		t.Fatalf("%+v %v", res, err)
 	}
-	if !slices.Equal(b.inter, []string{"SetUnitProperties"}) {
-		t.Fatalf("%v", b.inter)
+	if !slices.Equal(b.calls, []string{"SetUnitProperties"}) || len(b.inter) != 0 {
+		t.Fatalf("%v %v", b.calls, b.inter)
 	}
 	for _, target := range []string{"user/hearthd.service", "user/dbus.service"} {
 		if p, _ := a.Plan(context.Background(), actions.Request{Target: target}); len(p.Items) != 0 || p.Blocked[0].Reason != ReasonCritical {

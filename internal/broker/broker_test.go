@@ -18,6 +18,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/mohammed-w-mosabeh/hearth/internal/unattended"
 )
 
 type memAudit struct {
@@ -600,5 +602,30 @@ func TestSession(t *testing.T) {
 	_ = s.Close()
 	if err := s.Send(strings.Repeat("x", MaxLine)); err == nil {
 		t.Fatal("oversized line sent")
+	}
+}
+
+// Unattended work (an automation, S15d) never reaches polkit: a privileged
+// method is refused before it is asked, even when polkit would allow it.
+func TestUnattendedNeverAsksPolkit(t *testing.T) {
+	h := start(t, true, nil)
+	h.auth.allow = true
+	ctx := unattended.With(context.Background())
+	if err := h.client().Call(ctx, "test.change", nil, nil); !errors.Is(err, ErrUnauthorized) || *h.ran != 0 {
+		t.Fatalf("an unattended privileged call ran: %v", err)
+	}
+	if len(h.auth.asked) != 0 {
+		t.Fatalf("polkit asked: %v", h.auth.asked)
+	}
+	// Unprivileged methods still answer.
+	if err := h.client().Call(ctx, "broker.ping", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if audit := strings.Join(h.audit.results(), "\n"); !strings.Contains(audit, "refused: unattended") {
+		t.Errorf("audit:\n%s", audit)
+	}
+	// The same call, attended, reaches polkit.
+	if err := h.client().Call(context.Background(), "test.change", nil, nil); err != nil || len(h.auth.asked) != 1 {
+		t.Fatalf("%v %v", err, h.auth.asked)
 	}
 }

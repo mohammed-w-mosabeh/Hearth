@@ -44,6 +44,13 @@ func TestModeStepsAreRegistered(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
+	// Every action the unattended table names is registered (S15d): a
+	// renamed action would otherwise fall back to "may ask" unnoticed.
+	for _, key := range actions.Classified() {
+		if _, ok := reg.Lookup(key); !ok {
+			t.Errorf("the authority table names %s, which is not registered", key)
+		}
+	}
 	m, err := modes.Parse("all", []byte(`name = "All"
 [session]
 wallpaper = "~/Pictures/a.jpg"

@@ -38,6 +38,10 @@ type Request struct {
 	ID     int64           `json:"id"`
 	Method string          `json:"method"`
 	Params json.RawMessage `json:"params,omitempty"`
+	// Unattended is set by hearthd for work nobody started at the screen
+	// (an automation's run, SECURITY S15d): a privileged method then runs
+	// only if its Authorized hook allows it, and polkit is never asked.
+	Unattended bool `json:"unattended,omitempty"`
 }
 
 // Response answers a Request with the same ID.

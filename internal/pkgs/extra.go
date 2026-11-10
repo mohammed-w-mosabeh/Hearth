@@ -11,6 +11,7 @@ import (
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/actions"
 	"github.com/mohammed-w-mosabeh/hearth/internal/discovery"
+	"github.com/mohammed-w-mosabeh/hearth/internal/unattended"
 )
 
 // Removal of packages from managers other than dpkg (ROADMAP 3.2). Each
@@ -98,6 +99,9 @@ func RegisterExtra(reg *actions.Registry, cfg ExtraConfig) {
 // does, from a fresh listing: refused unless it is listed and removable
 // now (Uninstall completely, SECURITY S16a, S16k).
 func RemoveExtra(ctx context.Context, cfg ExtraConfig, kind, id string) error {
+	if unattended.Is(ctx) && kind == "flatpak" && strings.HasPrefix(id, "system/") {
+		return unattended.ErrWouldPrompt // the system installation's helper asks polkit (S15d)
+	}
 	for _, k := range extraKinds {
 		if k.kind != kind {
 			continue
@@ -212,6 +216,9 @@ func command(c discovery.ExtraConfig, kind string, x discovery.ExtraPackage) (pa
 func removeSnap(ctx context.Context, cfg ExtraConfig, name string) error {
 	var r struct {
 		Change string `json:"change"`
+	}
+	if unattended.Is(ctx) {
+		return unattended.ErrWouldPrompt // snapd asks polkit to remove a snap (S15d)
 	}
 	if err := discovery.SnapdJSON(ctx, cfg.Find.SnapSocket, http.MethodPost, "/v2/snaps/"+name,
 		strings.NewReader(`{"action":"remove"}`), &r, "X-Allow-Interaction", "true"); err != nil {

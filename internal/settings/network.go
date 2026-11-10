@@ -13,6 +13,7 @@ import (
 	"github.com/godbus/dbus/v5"
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/actions"
+	"github.com/mohammed-w-mosabeh/hearth/internal/unattended"
 )
 
 const (
@@ -443,7 +444,15 @@ func (s *Settings) nmCallOut(ctx context.Context, p actions.Plan, out []any, pat
 		return res, actions.Errorf(http.StatusServiceUnavailable, "cannot reach the system bus: %v", err)
 	}
 	defer func() { _ = bus.Close() }()
-	if err := bus.CallInteractive(ctx, nm, path, method, out, args...); err != nil {
+	call := bus.CallInteractive
+	if unattended.Is(ctx) {
+		// The one exception to the unattended guard (SECURITY S15d):
+		// NetworkManager's network-control allows the active session
+		// outright, so its connection switches are made without
+		// interaction: polkit allows them, or refuses, and never asks.
+		call = bus.Call
+	}
+	if err := call(ctx, nm, path, method, out, args...); err != nil {
 		res.Failed = append(res.Failed, Failure(p.Items[0], err))
 		return res, nil
 	}
