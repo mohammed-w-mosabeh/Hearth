@@ -246,3 +246,73 @@ func TestTestNow(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Test now on an automation turned off, end to end: the unattended step
+// runs, the approval screen runs the rest attended, and the run ends done
+// by "test". A test of one that was on expires when it is turned off.
+func TestTestNowApprovedEndToEnd(t *testing.T) {
+	g, _ := approvalRig(t)
+	id := g.add("t", `{"trigger":{"kind":"login"},"then":[{"step":"action","action":"power/profile","target":"a"},
+		{"step":"action","action":"container/restart","target":"web"}]}`)
+	g.st.autos[0].Enabled = false
+	if err := g.e.Load(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.e.Test(context.Background(), id, nil); err != nil {
+		t.Fatal(err)
+	}
+	g.e.Wait()
+	if res, err := approve(t, g, "automation/approve", "1"); err != nil || res.Done != 1 {
+		t.Fatalf("%v %+v", err, res)
+	}
+	if g.ranList() != "power/profile a,container/restart web (attended)" {
+		t.Fatalf("%q", g.ranList())
+	}
+	state, rec := runRecord(t, g, 0)
+	if state != RunDone || rec.By != "test" {
+		t.Fatalf("%s %+v", state, rec)
+	}
+
+	h, _ := approvalRig(t)
+	h.add("on", `{"trigger":{"kind":"login"},"then":[{"step":"action","action":"container/restart","target":"web"}]}`)
+	if err := h.e.Test(context.Background(), 1, nil); err != nil {
+		t.Fatal(err)
+	}
+	h.e.Wait()
+	h.st.autos[0].Enabled = false
+	if _, err := approve(t, h, "automation/approve", "1"); err == nil || !strings.Contains(err.Error(), "expired") {
+		t.Fatalf("a test of an automation that was on outlived turning it off: %v", err)
+	}
+}
+
+// A step that waits in one branch does not make the other branch wait,
+// but whatever follows the check waits.
+func TestDryStepsBranches(t *testing.T) {
+	g := dryRig(t)
+	s := parsed(t, `{"trigger":{"kind":"login"},"then":[
+		{"step":"check","what":"unit_state","target":"user/x.service","expect":"active",
+		 "then":[{"step":"action","action":"container/restart","target":"web"}],
+		 "else":[{"step":"action","action":"power/profile","target":"a"}]},
+		{"step":"notify","channels":["desktop"],"text":"done"}]}`)
+	out, err := g.e.DryRun(context.Background(), 0, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := []string{}
+	for _, st := range out.Steps {
+		got = append(got, st.Outcome)
+	}
+	if strings.Join(got, ",") != "unattended,approval,unattended,approval" {
+		t.Fatalf("%v", got)
+	}
+}
+
+// A metric with nothing recorded is "none", never "replayed, no firings".
+func TestDryRunEmptyMetric(t *testing.T) {
+	g := dryRig(t)
+	g.e.cfg.History.Series = func(context.Context, string, time.Time, time.Time) ([]store.Agg, error) { return nil, nil }
+	out, err := g.e.DryRun(context.Background(), 0, parsed(t, `{"trigger":{"kind":"metric","metric":"cpu.usage","op":">","threshold":90},"then":[{"step":"wait","seconds":1}]}`))
+	if err != nil || out.Trigger.State != CoverNone {
+		t.Fatalf("%+v %v", out.Trigger, err)
+	}
+}

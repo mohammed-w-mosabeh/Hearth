@@ -62,6 +62,9 @@ type Parked struct {
 	// Test marks a run the user started with Test now (ROADMAP 12.8): it
 	// may be of an automation turned off.
 	Test bool `json:"test,omitempty"`
+	// Enabled is whether the automation was on when it ran: a test of one
+	// that was on expires when it is turned off, as any approval does.
+	Enabled bool `json:"enabled,omitempty"`
 }
 
 // park stores the parked steps of a waiting run and tells the user. A
@@ -71,7 +74,7 @@ func (e *Engine) park(ctx context.Context, a loaded, runID int64, rec RunRecord)
 		return
 	}
 	test := rec.By == "test"
-	raw, err := json.Marshal(Parked{Steps: rec.parked, Trigger: rec.Trigger, Updated: a.Updated, Test: test})
+	raw, err := json.Marshal(Parked{Steps: rec.parked, Trigger: rec.Trigger, Updated: a.Updated, Test: test, Enabled: a.Enabled})
 	if err == nil {
 		now := e.cfg.Clock()
 		_, err = e.cfg.Store.AddAutomationApproval(ctx, store.AutomationApproval{RunID: runID, Created: now.UnixMilli(),
@@ -135,7 +138,7 @@ func (e *Engine) stale(ctx context.Context, ap store.AutomationApproval, p Parke
 		return "", a
 	case e.cfg.Clock().UnixMilli() >= ap.Expires:
 		return "it waited too long", a
-	case !a.Enabled && !p.Test:
+	case !a.Enabled && (!p.Test || p.Enabled):
 		return "the automation was turned off", a
 	case a.Updated != p.Updated:
 		return "the automation was edited", a

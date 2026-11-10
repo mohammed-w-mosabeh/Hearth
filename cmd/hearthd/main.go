@@ -1100,13 +1100,14 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 			return out, err
 		},
 		Resumes: func(ctx context.Context) ([]time.Time, error) {
+			list, err := sleepAPI.Sleeps(ctx, time.Now().Add(-(automations.DryRunDays+1)*24*time.Hour))
 			var out []time.Time
-			for _, sl := range sleepAPI.Read(ctx).Sleeps {
+			for _, sl := range list {
 				if sl.To > 0 {
 					out = append(out, time.UnixMilli(sl.To))
 				}
 			}
-			return out, nil
+			return out, err
 		},
 	}
 	autoEngine := automations.NewEngine(automations.Config{Store: db, Registry: reg, Sources: trigSources, Log: log, History: autoHistory,

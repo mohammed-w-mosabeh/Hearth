@@ -172,7 +172,12 @@ func (e *Engine) DryRun(ctx context.Context, id int64, s spec.Spec) (DryRun, err
 			out.Conditions = append(out.Conditions, dc)
 		}
 	}
-	sort.SliceStable(fires, func(i, j int) bool { return fires[i].at.Before(fires[j].at) })
+	sort.SliceStable(fires, func(i, j int) bool {
+		if !fires[i].at.Equal(fires[j].at) {
+			return fires[i].at.Before(fires[j].at)
+		}
+		return fires[i].instance < fires[j].instance
+	})
 	var runs []time.Time
 	alert := s.Trigger.Kind == "alert"
 	for _, f := range fires {
@@ -243,31 +248,40 @@ func dryConditions(c *spec.Conditions, t time.Time) (held bool, unknown string) 
 // step that would wait, every later one waits too.
 func (e *Engine) drySteps(ctx context.Context, s spec.Spec) []DryStep {
 	out := []DryStep{}
-	waiting := false
-	var visit func(st spec.Step, branch string)
-	visit = func(st spec.Step, branch string) {
-		ds := DryStep{Step: st.Step, Action: st.Action, Target: Mask(clean(st.Target)), Label: Mask(clean(st.Label)), Outcome: DryUnattended}
-		if branch != "" {
-			ds.Detail = branch
-		}
-		if st.Step == "action" {
+	// one previews a plain step; waiting says whether an earlier step of
+	// its path waits, and it returns whether this one does.
+	one := func(st spec.Step, branch string, waiting bool) bool {
+		ds := DryStep{Step: st.Step, Action: st.Action, Target: Mask(clean(st.Target)), Label: Mask(clean(st.Label)), Outcome: DryUnattended, Detail: branch}
+		switch {
+		case st.Step == "action":
 			ds.Outcome, ds.Detail = e.dryAction(ctx, st, waiting, branch)
-			if ds.Outcome == DryApproval {
-				waiting = true
-			}
-		} else if waiting {
+		case waiting:
 			ds.Outcome = DryApproval
 		}
 		out = append(out, ds)
-		for _, b := range st.ThenDo {
-			visit(b, "if the check passes")
-		}
-		for _, b := range st.ElseDo {
-			visit(b, "if the check fails")
-		}
+		return ds.Outcome == DryApproval
 	}
+	waiting := false
 	for _, st := range s.Then {
-		visit(st, "")
+		if st.Step != "check" {
+			waiting = one(st, "", waiting) || waiting
+			continue
+		}
+		one(st, "", waiting)
+		// Each branch starts from what came before; whichever is taken, a
+		// step that waits there makes the rest of the run wait too.
+		branchWaits := false
+		for _, list := range []struct {
+			steps []spec.Step
+			label string
+		}{{st.ThenDo, "if the check passes"}, {st.ElseDo, "if the check fails"}} {
+			w := waiting
+			for _, b := range list.steps {
+				w = one(b, list.label, w) || w
+			}
+			branchWaits = branchWaits || (w && !waiting)
+		}
+		waiting = waiting || branchWaits
 	}
 	return out
 }
@@ -509,9 +523,21 @@ func (e *Engine) replayMetric(ctx context.Context, t spec.Trigger, from, to time
 		notes = append(notes, note)
 	}
 	var out []firing
-	for in, aggs := range series {
+	var first time.Time
+	buckets := 0
+	ins := make([]string, 0, len(series))
+	for in := range series {
+		ins = append(ins, in)
+	}
+	sort.Strings(ins)
+	for _, in := range ins {
+		aggs := series[in]
 		if !matches(t, in) {
 			continue
+		}
+		buckets += len(aggs)
+		if len(aggs) > 0 && (first.IsZero() || aggs[0].Time.Before(first)) {
+			first = aggs[0].Time
 		}
 		tr := &alerts.Tracker{}
 		var last time.Time
@@ -527,9 +553,16 @@ func (e *Engine) replayMetric(ctx context.Context, t spec.Trigger, from, to time
 			}
 		}
 	}
+	if buckets == 0 {
+		return nil, Coverage{State: CoverNone, Note: "no data was recorded for this metric in these 7 days"}, false, nil
+	}
 	state := CoverReplayed
 	if note != "" {
 		state = CoverPartial
+	}
+	if first.After(from.Add(time.Hour)) {
+		state = CoverPartial
+		notes = append(notes, "recorded only since "+first.UTC().Format(time.RFC3339))
 	}
 	return out, Coverage{State: state, Note: strings.Join(notes, "; ")}, trunc, nil
 }

@@ -894,7 +894,11 @@ func (e *Engine) Test(ctx context.Context, id int64, check func(context.Context,
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrNotTestable, err)
 	}
-	if why := e.Fire(ctx, loaded{Automation: a, spec: s}, Event{Kind: s.Trigger.Kind, Detail: "Test now", Time: e.cfg.Clock()}, "test"); why != "" {
+	ev := Event{Kind: s.Trigger.Kind, Detail: "Test now", Time: e.cfg.Clock()}
+	if s.Trigger.Kind == "alert" {
+		ev.Alert = "This is a test of this alert rule; nothing is wrong."
+	}
+	if why := e.Fire(ctx, loaded{Automation: a, spec: s}, ev, "test"); why != "" {
 		return fmt.Errorf("%w: %s", ErrNotTestable, why)
 	}
 	return nil
