@@ -59,6 +59,7 @@ hearth/
       spec/       # the stack spec: strict JSON decoding and the S12b rules, no I/O (imported by the broker)
     modes/        # v1.6: mode files, triggers, snapshots, approvals (extends profiles/)
     session/      # v1.6: session settings a mode sets: GNOME wallpaper and Do Not Disturb (gsettings), desktop detection, backlight choice
+    uninstall/    # v1.7: Uninstall completely: resolver, leftover path rules and matching, plan, run and undo (SECURITY S16k, S16l)
     dbusx/        # small helpers over godbus
     safeexec/     # the ONLY place allowed to call os/exec; validates args
     secret/       # S19: which env names and values are masked, for hearthd and the broker
