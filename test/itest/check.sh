@@ -218,7 +218,8 @@ check "audit holds params hashes, never raw params" not grep -Eq 'hearth-pentest
 stack_audit=$(grep '"method":"stack\.' /var/lib/hearth/audit.jsonl || true)
 check "stack audit lines carry a params hash, not the params" not grep -q '"spec"\|"secrets":{\|"version":1' <<<"$stack_audit"
 echo "  stack refusals in the audit: $(grep -c '"method":"stack\.' /var/lib/hearth/audit.jsonl); quoting a probe path or name: $(grep '"method":"stack\.' /var/lib/hearth/audit.jsonl | grep -cE 'hearth-pentest|\.\./')"
-grep '"method":"stack\.' /var/lib/hearth/audit.jsonl | grep -E 'hearth-pentest|\.\./' | head -n 3 | sed 's/^/    e.g. /'
+# head closes the pipe early: under pipefail that SIGPIPE must not end the run.
+grep '"method":"stack\.' /var/lib/hearth/audit.jsonl | grep -E 'hearth-pentest|\.\./' | head -n 3 | sed 's/^/    e.g. /' || true
 check "audit recorded the privileged refusals" grep -q 'docker.containers.exec.*error: bad params' /var/lib/hearth/audit.jsonl
 check "the test user cannot read the audit log" not asuser cat /var/lib/hearth/audit.jsonl
 check "engine got nothing but lookups of the probe name" not grep -vE '^GET /v1.44/(containers|images|volumes|networks)/hearth-pentest-nx(/json|/logs\?[a-z=&0-9-]*)?$' /run/fakedocker.log
