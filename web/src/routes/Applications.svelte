@@ -7,6 +7,8 @@
   import { CATEGORIES, SOURCES, filterApps, iconQuery, initials, rank, type App, type SourceFilter } from '../lib/apps';
   import { t } from '../lib/i18n';
   import { toast } from '../lib/toast.svelte';
+  import { uninstallHref } from '../lib/uninstall';
+  import Icon from '../components/Icon.svelte';
   import type { Live } from '../lib/ws';
 
   let { live }: { live: Live } = $props();
@@ -205,6 +207,9 @@
       aria-pressed={favSet.has(a.id)}
       aria-label={t(favSet.has(a.id) ? 'apps2.unfavorite' : 'apps2.favorite', { name: a.name })}
       onclick={() => toggleFavorite(a)}>{favSet.has(a.id) ? '★' : '☆'}</button
+    >
+    <a class="remove" href={uninstallHref(`app:${a.id}`)} aria-label={t('uninstall.menuFor', { name: a.name })} title={t('uninstall.menuFor', { name: a.name })}
+      ><Icon name="trash" size={14} /></a
     >
   </li>
 {/snippet}
@@ -434,5 +439,19 @@
   }
   .star.on {
     color: var(--accent);
+  }
+  .remove {
+    position: absolute;
+    top: var(--space-1);
+    inset-inline-start: var(--space-1);
+    color: var(--text-muted);
+    padding: var(--space-1);
+    line-height: 0;
+    opacity: 0;
+    transition: opacity var(--motion);
+  }
+  .tile:hover .remove,
+  .remove:focus-visible {
+    opacity: 1;
   }
 </style>

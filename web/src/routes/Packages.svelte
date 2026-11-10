@@ -27,6 +27,7 @@
   } from '../lib/packages';
   import { openInspect, router } from '../lib/router.svelte';
   import { toast } from '../lib/toast.svelte';
+  import { itemFor, uninstallHref } from '../lib/uninstall';
   import type { Live } from '../lib/ws';
 
   // Every package manager in one list (SPEC 4). dpkg's list is fetched
@@ -382,6 +383,8 @@
       <hr />
       {#if r.removable}
         <button type="button" class="danger" onclick={() => act('remove', r)}>{t('pkg.op.remove')}</button>
+        {@const item = itemFor(r.manager, r.id)}
+        {#if item}<a class="danger" href={uninstallHref(item)} onclick={() => menu.hidePopover()}>{t('uninstall.menu')}</a>{/if}
       {:else}
         <p class="why">{t('pkg.cannotRemove', { reason: reasonText(r.why ?? 'error', r.usedBy?.join(', ')) })}</p>
       {/if}

@@ -21,6 +21,7 @@ export const routes: Route[] = [
   { id: 'packages', label: 'nav.packages', icon: 'package' },
   { id: 'tools', label: 'nav.tools', icon: 'wrench' },
   { id: 'space', label: 'nav.space', icon: 'broom' },
+  { id: 'removed', label: 'nav.removed', icon: 'trash' },
   { id: 'hardware', label: 'nav.hardware', icon: 'grid' },
   { id: 'network', label: 'nav.network', icon: 'network' },
   { id: 'terminal', label: 'nav.terminal', icon: 'terminal' },
@@ -89,13 +90,14 @@ function currentHash(): string {
 }
 
 const initial = currentHash();
-export const router = $state({ id: routeId(initial), q: routeQuery(initial), inspect: routeParam(initial, 'inspect') });
+export const router = $state({ id: routeId(initial), q: routeQuery(initial), inspect: routeParam(initial, 'inspect'), item: routeParam(initial, 'item') });
 
 window.addEventListener('hashchange', () => {
   const hash = currentHash();
   router.id = routeId(hash);
   router.q = routeQuery(hash);
   router.inspect = routeParam(hash, 'inspect');
+  router.item = routeParam(hash, 'item');
 });
 
 export function href(id: string, q = ''): string {

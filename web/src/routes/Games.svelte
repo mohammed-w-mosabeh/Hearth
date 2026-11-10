@@ -4,6 +4,7 @@
   import { failure } from '../lib/errors';
   import { run } from '../lib/actions';
   import { api } from '../lib/api';
+  import { uninstallHref } from '../lib/uninstall';
   import { bytes, duration } from '../lib/format';
   import {
     GAME_SORTS,
@@ -143,6 +144,7 @@
           {:else}
             <span class="meta hint">{t('games.noLauncher', { launcher: LAUNCHERS[g.source] ?? g.source })}</span>
           {/if}
+          <a class="meta uninstall" href={uninstallHref(`game:${g.id}`)} aria-label={t('uninstall.menuFor', { name: g.name })}>{t('uninstall.menu')}</a>
         </div>
       </li>
     {/each}
@@ -287,6 +289,10 @@
     border-radius: var(--radius-s);
     padding: var(--space-1) var(--space-4);
     cursor: pointer;
+  }
+  .uninstall {
+    margin-top: var(--space-1);
+    color: var(--text-muted);
   }
   .play[aria-busy='true'] {
     cursor: progress;

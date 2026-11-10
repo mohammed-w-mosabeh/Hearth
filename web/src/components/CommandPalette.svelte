@@ -4,7 +4,8 @@
   import { api } from '../lib/api';
   import type { App } from '../lib/apps';
   import { t, type MessageKey } from '../lib/i18n';
-  import { appEntries, pageEntries, search, unitEntries, type Entry } from '../lib/palette';
+  import { appEntries, pageEntries, search, uninstallEntries, unitEntries, type Entry } from '../lib/palette';
+  import { uninstallHref } from '../lib/uninstall';
   import { href, routes } from '../lib/router.svelte';
   import type { ServicesMsg, Unit } from '../lib/services';
   import { toast } from '../lib/toast.svelte';
@@ -22,7 +23,7 @@
   let units = $state.raw<Unit[]>([]);
 
   const pages = $derived(pageEntries(routes.map((r) => ({ id: r.id, title: t(r.label) }))));
-  const entries = $derived([...pages, ...appEntries(apps), ...unitEntries(units)]);
+  const entries = $derived([...pages, ...appEntries(apps), ...unitEntries(units), ...uninstallEntries(apps, (name) => t('palette.uninstall', { name }))]);
   const results = $derived(search(entries, query));
 
   $effect(() => {
@@ -48,7 +49,12 @@
     if (active >= results.length) active = Math.max(0, results.length - 1);
   });
 
-  const kindLabel: Record<Entry['kind'], MessageKey> = { page: 'palette.kind.page', app: 'palette.kind.app', unit: 'palette.kind.unit' };
+  const kindLabel: Record<Entry['kind'], MessageKey> = {
+    page: 'palette.kind.page',
+    app: 'palette.kind.app',
+    unit: 'palette.kind.unit',
+    uninstall: 'palette.kind.uninstall',
+  };
 
   async function choose(e: Entry | undefined): Promise<void> {
     if (!e) return;
@@ -59,6 +65,9 @@
         break;
       case 'unit':
         location.hash = href('services', e.title);
+        break;
+      case 'uninstall':
+        location.hash = uninstallHref(`app:${e.id}`);
         break;
       case 'app':
         try {

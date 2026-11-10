@@ -16,6 +16,7 @@
   import Journal from './routes/Journal.svelte';
   import Reports from './routes/Reports.svelte';
   import Space from './routes/Space.svelte';
+  import Uninstall from './routes/Uninstall.svelte';
   import Security from './routes/Security.svelte';
   import Tokens from './routes/Tokens.svelte';
   import Settings from './routes/Settings.svelte';
@@ -134,6 +135,8 @@
         <Hardware />
       {:else if route?.id === 'space'}
         <Space />
+      {:else if route?.id === 'removed'}
+        <Uninstall />
       {:else if route?.id === 'insight'}
         <Insight />
       {:else if route?.id === 'journal'}
