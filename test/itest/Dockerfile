@@ -59,6 +59,13 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends jq sqlite3 \
  && rm -rf /var/lib/apt/lists/*
 
+# PackageKit (apt backend) and apt-ftparchive, for Uninstall completely:
+# real removals, orphans and reinstalls from a local repository the check
+# builds (ROADMAP 11.10; their own layer).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends packagekit apt-utils \
+ && rm -rf /var/lib/apt/lists/*
+
 COPY itest/check.sh /usr/local/bin/hearth-itest-check
 COPY itest/entrypoint.sh /usr/local/bin/hearth-itest-init
 RUN chmod 0755 /usr/local/bin/hearth-itest-check /usr/local/bin/hearth-itest-init
