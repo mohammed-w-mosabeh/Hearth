@@ -117,6 +117,14 @@ func (db *DB) DeleteAutomation(ctx context.Context, id int64) error {
 		return fmt.Errorf("store: delete automation: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := deleteAutomationTx(ctx, tx, id); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// deleteAutomationTx deletes automation id with its runs and approvals.
+func deleteAutomationTx(ctx context.Context, tx *sql.Tx, id int64) error {
 	res, err := tx.ExecContext(ctx, `DELETE FROM automations WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("store: delete automation: %w", err)
@@ -130,7 +138,7 @@ func (db *DB) DeleteAutomation(ctx context.Context, id int64) error {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM automation_runs WHERE automation_id = ?`, id); err != nil {
 		return fmt.Errorf("store: delete automation: %w", err)
 	}
-	return tx.Commit()
+	return nil
 }
 
 // AutomationRun is one automation_runs row.
@@ -400,24 +408,26 @@ func (db *DB) SyncModeAutomations(ctx context.Context, desired []Automation) (cr
 		return 0, 0, fmt.Errorf("store: sync mode automations: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	rows, err := tx.QueryContext(ctx, `SELECT id, origin FROM automations WHERE origin LIKE 'mode:%'`)
+	rows, err := tx.QueryContext(ctx, `SELECT id, origin, name, enabled, spec FROM automations WHERE origin LIKE 'mode:%'`)
 	if err != nil {
 		return 0, 0, fmt.Errorf("store: sync mode automations: %w", err)
 	}
 	have := map[string]int64{}
+	held := map[string]Automation{}
 	var stale []int64
 	for rows.Next() {
-		var id int64
-		var origin string
-		if err := rows.Scan(&id, &origin); err != nil {
+		var a Automation
+		var spec string
+		if err := rows.Scan(&a.ID, &a.Origin, &a.Name, &a.Enabled, &spec); err != nil {
 			_ = rows.Close()
 			return 0, 0, fmt.Errorf("store: sync mode automations: %w", err)
 		}
-		if _, dup := have[origin]; dup {
-			stale = append(stale, id)
+		a.Spec = json.RawMessage(spec)
+		if _, dup := have[a.Origin]; dup {
+			stale = append(stale, a.ID)
 			continue
 		}
-		have[origin] = id
+		have[a.Origin], held[a.Origin] = a.ID, a
 	}
 	_ = rows.Close()
 	if err := rows.Err(); err != nil {
@@ -426,8 +436,17 @@ func (db *DB) SyncModeAutomations(ctx context.Context, desired []Automation) (cr
 	want := map[string]bool{}
 	for _, a := range desired {
 		want[a.Origin] = true
-		if _, ok := have[a.Origin]; ok {
-			continue
+		if cur, ok := held[a.Origin]; ok {
+			// Made by an older hearthd: replaced, as a new one would be made.
+			if cur.Name != a.Name || cur.Enabled != a.Enabled || string(cur.Spec) != string(a.Spec) {
+				if err := deleteAutomationTx(ctx, tx, cur.ID); err != nil {
+					return 0, 0, err
+				}
+				deleted++
+				delete(have, a.Origin)
+			} else {
+				continue
+			}
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO automations (name, enabled, spec, origin, created, updated) VALUES (?, ?, ?, ?, ?, ?)`,
 			a.Name, a.Enabled, string(a.Spec), a.Origin, a.Created, a.Updated); err != nil {
@@ -442,8 +461,8 @@ func (db *DB) SyncModeAutomations(ctx context.Context, desired []Automation) (cr
 		}
 	}
 	for _, id := range stale {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM automations WHERE id = ?`, id); err != nil {
-			return 0, 0, fmt.Errorf("store: sync mode automations: %w", err)
+		if err := deleteAutomationTx(ctx, tx, id); err != nil {
+			return 0, 0, err
 		}
 		deleted++
 	}

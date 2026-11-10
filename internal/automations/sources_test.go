@@ -69,6 +69,7 @@ func TestSources(t *testing.T) {
 	ws.set(func() { ws.idle, ws.games, ws.apps = 10, nil, map[string]bool{}; ws.ssh = 0 })
 	g.now = g.now.Add(SSHEvery)
 	g.tick()
+	g.tick() // a game ends after GameGone looks without one
 	ws.set(func() {
 		ws.idle, ws.games, ws.ssh, ws.sec, ws.images = 1900, []string{"steam.2"}, 12, 4, map[string]bool{"other": true, "web": true}
 	})
@@ -166,5 +167,32 @@ func TestContainerAndGameConditions(t *testing.T) {
 	g.observe("usb.new_device", map[string]float64{"1": 1})
 	if g.ranList() != "power/profile cond" {
 		t.Fatalf("%q", g.ranList())
+	}
+}
+
+// A launcher restarting its helpers between a game's stages is not a new
+// game: one look without a game does not end it (profiles.gameGone).
+func TestGameBlinkIsNotANewGame(t *testing.T) {
+	g, ws := sourcesRig(t)
+	g.add("game", `{"trigger":{"kind":"app","state":"started","game":true},"then":[{"step":"action","action":"power/profile","target":"game"}],"options":{"cooldown_s":60,"max_per_hour":60}}`)
+	g.tick()
+	ws.set(func() { ws.games = []string{"steam.1"} })
+	g.tick()
+	ws.set(func() { ws.games = nil })
+	g.now = g.now.Add(5 * time.Minute)
+	g.tick()
+	ws.set(func() { ws.games = []string{"steam.1"} })
+	g.tick()
+	if n := strings.Count(g.ranList(), "game"); n != 1 {
+		t.Fatalf("a blink started the game again: %q", g.ranList())
+	}
+	ws.set(func() { ws.games = nil })
+	g.tick()
+	g.tick()
+	ws.set(func() { ws.games = []string{"steam.2"} })
+	g.now = g.now.Add(5 * time.Minute)
+	g.tick()
+	if n := strings.Count(g.ranList(), "game"); n != 2 {
+		t.Fatalf("a new game after the last one ended: %q", g.ranList())
 	}
 }

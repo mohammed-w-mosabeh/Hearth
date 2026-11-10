@@ -25,7 +25,10 @@ import (
 // FireAlert runs the automation of an alert rule whose incident opened
 // (the alert engine's Opened): its quiet hours, cooldown and every other
 // gate apply as for any trigger.
-func (e *Engine) FireAlert(ctx context.Context, id int64, instance string, value float64, body string) {
+//
+// It reports whether the rule's automation is loaded; when it is not (the
+// engine is starting, or a load failed), the caller notifies as before.
+func (e *Engine) FireAlert(ctx context.Context, id int64, instance string, value float64, body string) bool {
 	e.mu.Lock()
 	var found *loaded
 	for i := range e.autos {
@@ -36,11 +39,12 @@ func (e *Engine) FireAlert(ctx context.Context, id int64, instance string, value
 	}
 	e.mu.Unlock()
 	if found == nil {
-		return
+		return false
 	}
 	// The instance and the description come from the machine (unit and
 	// container names): cleaned and masked before a run record keeps them.
 	e.Fire(ctx, *found, Event{Kind: "alert", Instance: Mask(clean(instance)), Value: value, Alert: Mask(clean(body)), Time: e.cfg.Clock()}, "trigger")
+	return true
 }
 
 // Bounds of an approval.

@@ -209,11 +209,10 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		}
 	}})
 	engine.Opened = func(ctx context.Context, ev store.AlertEvent, summary, body string) {
-		if a := autoRef.Load(); a != nil {
-			a.FireAlert(ctx, ev.RuleID, ev.Instance, ev.Value, body)
+		if a := autoRef.Load(); a != nil && a.FireAlert(ctx, ev.RuleID, ev.Instance, ev.Value, body) {
 			return
 		}
-		if ev.Notified { // before the automations engine is up: as before
+		if ev.Notified { // the automations engine has not loaded the rule yet: as before
 			_ = alerts.Fanout{notifier, channels}.Notify(ctx, summary, body, ev.Severity)
 		}
 	}

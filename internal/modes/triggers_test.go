@@ -157,6 +157,20 @@ func TestSyncFollowsArming(t *testing.T) {
 	if r.syncs != 1 || len(r.modeAutos(t)) != 2 {
 		t.Fatal("idempotent")
 	}
+	// One made by an older hearthd, with other options, is made again.
+	old := a
+	old.Spec = json.RawMessage(strings.Replace(string(a.Spec), `"cooldown_s":60`, `"cooldown_s":300`, 1))
+	if string(old.Spec) == string(a.Spec) {
+		t.Fatal("test spec unchanged")
+	}
+	if err := r.db.UpdateAutomation(ctx, old); err != nil {
+		t.Fatal(err)
+	}
+	r.sync.Now(ctx)
+	if got := r.modeAutos(t)[Origin("away", 5, m.Hash)]; string(got.Spec) != string(a.Spec) || r.syncs != 2 {
+		t.Fatalf("%d syncs: %s", r.syncs, got.Spec)
+	}
+	r.syncs = 1
 	if err := r.db.DisarmModeTrigger(ctx, "away", 0); err != nil {
 		t.Fatal(err)
 	}

@@ -48,6 +48,7 @@ type sourceState struct {
 	seen    bool
 	idle    bool
 	running bool
+	missed  int // app (a game): looks without one while running
 	count   int
 	at      time.Time
 	stacks  map[string]bool
@@ -99,6 +100,15 @@ func (e *Engine) tickSources(ctx context.Context, autos []loaded, now time.Time)
 			on := false
 			if t.Game {
 				on = len(games) > 0
+				// Launchers restart their helpers between a game's stages:
+				// a game ends only after GameGone looks without one, as the
+				// profile engine's restore counts (no new start in between).
+				if !on && st.running && st.missed+1 < GameGone {
+					st.missed++
+					on = true
+				} else {
+					st.missed = 0
+				}
 			} else if apps != nil {
 				on = apps[t.App]
 			}

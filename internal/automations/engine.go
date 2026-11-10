@@ -30,6 +30,8 @@ const PausedKey = "automations.paused"
 const (
 	DefaultGlobalLimit = 30 // actions a minute across all automations
 	TickEvery          = 15 * time.Second
+	// GameGone is how many looks without a game end it (profiles.gameGone).
+	GameGone = 2
 )
 
 // Run states.
@@ -154,6 +156,7 @@ type Engine struct {
 	mu      sync.Mutex
 	autos   []loaded
 	running map[int64]bool
+	looked  map[int64]bool                 // metric triggers observed once (mode triggers)
 	runs    map[int64][]time.Time          // run starts in the last hour
 	tags    map[int64]map[string]time.Time // instances the automation's own actions touched, until
 	poll    map[int64]*pollState
@@ -186,7 +189,7 @@ func NewEngine(c Config) *Engine {
 			}
 		}
 	}
-	return &Engine{cfg: c, running: map[int64]bool{}, runs: map[int64][]time.Time{}, tags: map[int64]map[string]time.Time{},
+	return &Engine{cfg: c, running: map[int64]bool{}, looked: map[int64]bool{}, runs: map[int64][]time.Time{}, tags: map[int64]map[string]time.Time{},
 		poll: map[int64]*pollState{}}
 }
 
@@ -222,6 +225,7 @@ func (e *Engine) Load(ctx context.Context) error {
 			if old.ID == a.ID && string(old.Spec) != string(a.Spec) {
 				e.tracker.Forget(a.ID)
 				delete(e.poll, a.ID)
+				delete(e.looked, a.ID)
 			}
 		}
 	}
@@ -229,6 +233,7 @@ func (e *Engine) Load(ctx context.Context) error {
 		if !keep[old.ID] {
 			e.tracker.Forget(old.ID)
 			delete(e.poll, old.ID)
+			delete(e.looked, old.ID)
 		}
 	}
 	e.autos = list
@@ -317,6 +322,12 @@ func (e *Engine) Observe(ctx context.Context, now time.Time, metric string, valu
 		if !ok || m != metric {
 			continue
 		}
+		// A mode's trigger fires on a change, never on what it finds when
+		// armed or at start (ROADMAP 10.6): the first look only records.
+		e.mu.Lock()
+		first := strings.HasPrefix(a.Origin, "mode:") && !e.looked[a.ID]
+		e.looked[a.ID] = true
+		e.mu.Unlock()
 		for in, v := range values {
 			if !matches(a.spec.Trigger, in) {
 				continue
@@ -329,7 +340,7 @@ func (e *Engine) Observe(ctx context.Context, now time.Time, metric string, valu
 					ev.Outage = int64(dur / time.Second)
 					e.Fire(ctx, a, ev, "trigger")
 				}
-			case ch == alerts.Opened:
+			case ch == alerts.Opened && !first:
 				e.Fire(ctx, a, ev, "trigger")
 			}
 		}

@@ -85,7 +85,10 @@ func TriggerSpec(m Mode, idx int) (spec.Spec, error) {
 		Trigger: tr,
 		Then: []spec.Step{{Step: "action", Action: "mode/activate", Target: m.ID,
 			Params: map[string]string{"trigger": strconv.Itoa(idx), "hash": m.Hash}}},
-		Options: spec.Options{CooldownS: spec.DefaultCool, MaxPerHour: spec.DefaultPerHour},
+		// 10.6 had no cooldown: switching on a mode already on does nothing,
+		// so the narrowest options are allowed (a dock reconnected, a game
+		// started again soon after).
+		Options: spec.Options{CooldownS: 60, MaxPerHour: 60},
 	}, nil
 }
 
