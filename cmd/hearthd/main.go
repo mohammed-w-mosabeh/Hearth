@@ -955,6 +955,13 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	modesDone := make(chan struct{})
 	go func() { modeSet.Run(modesCtx); close(modesDone) }()
 	defer func() { stopModes(); <-modesDone }()
+	// Uninstall completely (ROADMAP 11.7, SECURITY S16k).
+	uninstallSvc := setupUninstall(srv.API, reg, uninstallDeps{DB: db, Apps: apps, Tools: tools, Games: games, Dpkg: dpkgDB,
+		Extra: extraFind, UserRun: userRun, PK: pkgCfg.PK, Broker: brokerClient, Modes: modeSet, Home: appsCfg.Home, Log: log})
+	uninstallCtx, stopUninstall := context.WithCancel(ctx)
+	uninstallDone := make(chan struct{})
+	go func() { uninstallSvc.Run(uninstallCtx); close(uninstallDone) }()
+	defer func() { stopUninstall(); <-uninstallDone }()
 	profilesCtx, stopProfiles := context.WithCancel(ctx)
 	profilesDone := make(chan struct{})
 	go func() { profileManager.Run(profilesCtx, 15*time.Second); close(profilesDone) }()

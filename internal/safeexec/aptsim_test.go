@@ -19,7 +19,8 @@ func TestAptSimulateArgs(t *testing.T) {
 	}
 	for _, bad := range [][]string{
 		{}, {"-s"}, {"install", "vlc"}, {"-s", "-q", "-o", "Debug::NoLocking=true", "install", "vlc"},
-		{"-q", "-s", "-o", "Debug::NoLocking=true", "autoremove"}, AptSimulate("-y"), AptSimulate("--purge"),
+		{"-q", "-s", "-o", "Debug::NoLocking=true", "autoremove"}, {"-s", "-q", "-o", "Debug::NoLocking=true", "autoremove"},
+		AptSimulate("-y"), AptSimulate("--purge"),
 		AptSimulate("vlc", "vlc"), AptSimulate("a/b"), AptSimulate("../x"), AptSimulate("-o", "APT::Get::Assume-Yes=1"),
 		AptSimulate("Vlc"), AptSimulate(many...),
 	} {
@@ -40,7 +41,7 @@ func FuzzAptSimulateArgs(f *testing.F) {
 		if v(args) != nil {
 			return
 		}
-		if !slices.Equal(args[:5], []string{"-s", "-q", "-o", "Debug::NoLocking=true", "autoremove"}) {
+		if !slices.Equal(args[:len(args)-2], aptSimulatePrefix) || !slices.Contains(args, "-s") {
 			t.Fatal("prefix changed")
 		}
 		for _, n := range []string{a, b} {

@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+
+	"github.com/mohammed-w-mosabeh/hearth/internal/uninstall/archive"
 )
 
 // Groups of a plan, in the order the preview shows them.
@@ -86,6 +88,6 @@ func owner(p string) (uid uint32, safeParent bool, err error) {
 		return st.Uid, false, nil
 	}
 	pst, ok := pfi.Sys().(*syscall.Stat_t)
-	safe := ok && pfi.IsDir() && pst.Uid == 0 && pfi.Mode().Perm()&0o022 == 0
+	safe := ok && pfi.IsDir() && pst.Uid == archive.RootUID && pfi.Mode().Perm()&0o022 == 0
 	return st.Uid, safe, nil
 }

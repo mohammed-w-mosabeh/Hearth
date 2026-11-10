@@ -124,7 +124,8 @@ var allowlist = map[string]Spec{
 	},
 	// apt-get simulating autoremove, alone or with the packages to remove,
 	// as the user (Uninstall completely, SECURITY S16k): -s changes
-	// nothing and needs no root, Debug::NoLocking takes no lock. The C
+	// nothing and needs no root, Debug::NoLocking takes no lock, and no
+	// package cache is written. The C
 	// locale keeps the "Remv" lines parseable. Names are validated and
 	// can never start with "-".
 	"apt-get-simulate": {
@@ -687,7 +688,8 @@ func exactly(vs ...Validator) func([]string) error {
 }
 
 // aptSimulatePrefix is the fixed start of every apt-get-simulate argv.
-var aptSimulatePrefix = []string{"-s", "-q", "-o", "Debug::NoLocking=true", "autoremove"}
+// No cache is written: hearthd's sandbox keeps /var read-only.
+var aptSimulatePrefix = []string{"-s", "-q", "-o", "Debug::NoLocking=true", "-o", "Dir::Cache::pkgcache=", "-o", "Dir::Cache::srcpkgcache=", "autoremove"}
 
 // MaxAptSimulate bounds the packages one simulation names.
 const MaxAptSimulate = 64

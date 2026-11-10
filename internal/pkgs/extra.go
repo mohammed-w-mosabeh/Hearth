@@ -94,6 +94,36 @@ func RegisterExtra(reg *actions.Registry, cfg ExtraConfig) {
 	}
 }
 
+// RemoveExtra removes the package id of manager kind exactly as kind/remove
+// does, from a fresh listing: refused unless it is listed and removable
+// now (Uninstall completely, SECURITY S16a, S16k).
+func RemoveExtra(ctx context.Context, cfg ExtraConfig, kind, id string) error {
+	for _, k := range extraKinds {
+		if k.kind != kind {
+			continue
+		}
+		if err := k.valid(id); err != nil {
+			return err
+		}
+		p, err := extraPlan(ctx, cfg, k, id)
+		if err != nil {
+			return err
+		}
+		if len(p.Blocked) > 0 {
+			return fmt.Errorf("%s cannot be removed (%s)", id, p.Blocked[0].Reason)
+		}
+		res, err := extraRun(ctx, cfg, kind, p)
+		if err != nil {
+			return err
+		}
+		if len(res.Failed) > 0 {
+			return errors.New(res.Failed[0].Detail)
+		}
+		return nil
+	}
+	return fmt.Errorf("no package manager %q", kind)
+}
+
 func extraPlan(ctx context.Context, cfg ExtraConfig, k extraKind, target string) (actions.Plan, error) {
 	l := k.list(ctx, cfg.Find)
 	p := actions.Plan{Summary: "remove " + target, Items: []actions.Item{}, Blocked: []actions.Blocked{}}
