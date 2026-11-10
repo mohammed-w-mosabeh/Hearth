@@ -191,7 +191,10 @@ func (u *uninstaller) sys(p string) string {
 }
 
 // checkAuthorize validates an authorize call fully, reading only: shapes,
-// then what is on disk now. Nothing that would be refused reaches polkit.
+// then what is on disk now. Every refusal is bad params, the one answer
+// the server gives before polkit, so nothing that would be refused raises
+// a password dialog; and no refusal repeats the caller's strings, which
+// the audit records.
 func (u *uninstaller) checkAuthorize(p json.RawMessage) (UninstallAuthorizeParams, error) {
 	var v UninstallAuthorizeParams
 	if err := decodeParams(p, &v); err != nil {
@@ -212,9 +215,9 @@ func (u *uninstaller) checkAuthorize(p json.RawMessage) (UninstallAuthorizeParam
 	if !distinct(v.Units) || !distinct(v.Purge) || !distinct(v.Archive) || !distinct(v.Conffiles) {
 		return v, badParam("an entry is named twice")
 	}
-	for _, n := range v.Purge {
+	for i, n := range v.Purge {
 		if !rules.ValidPackage(n) {
-			return v, badParam("%q is not a package name", n)
+			return v, badParam("purge entry %d is not a package name", i)
 		}
 	}
 	for _, n := range v.Conffiles {
@@ -223,60 +226,60 @@ func (u *uninstaller) checkAuthorize(p json.RawMessage) (UninstallAuthorizeParam
 		}
 	}
 	paths := make([]string, 0, len(v.Archive))
-	for _, a := range v.Archive {
+	for i, a := range v.Archive {
 		if _, _, err := rules.CheckSystem(a.Path); err != nil {
-			return v, badParam("%s", err.Error())
+			return v, badParam("archive entry %d is not a leftover an uninstall may archive", i)
 		}
 		paths = append(paths, a.Path)
 	}
-	for _, n := range v.Units {
+	for i, n := range v.Units {
 		if safeexec.UnitName(n) != nil || strings.Contains(n, "@.") || criticalUnit(n) || !stoppableKind(n) {
-			return v, badParam("%q is not a unit an uninstall may stop", n)
+			return v, badParam("unit entry %d is not a unit an uninstall may stop", i)
 		}
 	}
 	// What is on disk now.
 	if len(v.Purge) > 0 {
 		pkgs, err := archive.ReadStatus(u.c.Roots)
 		if err != nil {
-			return v, Errorf(CodeFailed, "dpkg's status could not be read")
+			return v, badParam("dpkg's status could not be read")
 		}
-		for _, n := range v.Purge {
+		for i, n := range v.Purge {
 			found := archive.Find(pkgs, n)
 			if len(found) == 0 {
-				return v, badParam("%s is not known to dpkg", n)
+				return v, badParam("purge entry %d is not known to dpkg", i)
 			}
 			for _, p := range found {
 				if why := p.Undeletable(); why != "" {
-					return v, Errorf(CodeRefused, "%s can never be removed (%s)", n, why)
+					return v, badParam("purge entry %d can never be removed (%s)", i, why)
 				}
 			}
 		}
 	}
-	for _, a := range v.Archive {
+	for i, a := range v.Archive {
 		fi, err := os.Lstat(u.sys(a.Path))
 		if err != nil {
-			return v, badParam("%s is not there", a.Path)
+			return v, badParam("archive entry %d is not there", i)
 		}
 		st, ok := fi.Sys().(*syscall.Stat_t)
 		if !ok || st.Dev != a.Dev || st.Ino != a.Ino {
-			return v, badParam("%s changed since the preview", a.Path)
+			return v, badParam("archive entry %d changed since the preview", i)
 		}
-		if err := archive.SafeParent(u.sys(filepath.Dir(a.Path))); err != nil {
-			return v, badParam("%s", err.Error())
+		if archive.SafeParent(u.sys(filepath.Dir(a.Path))) != nil {
+			return v, badParam("archive entry %d is in a folder someone other than root can write", i)
 		}
 	}
 	owned, err := archive.OwnedUnder(u.c.Roots, paths)
 	if err != nil {
-		return v, Errorf(CodeFailed, "dpkg's file lists could not be read")
+		return v, badParam("dpkg's file lists could not be read")
 	}
-	for _, p := range paths {
-		if pkg := owned[p]; pkg != "" {
-			return v, Errorf(CodeRefused, "%s belongs to the package %s", p, pkg)
+	for i, p := range paths {
+		if owned[p] != "" {
+			return v, badParam("archive entry %d belongs to an installed package", i)
 		}
 	}
-	for _, n := range v.Units {
+	for i, n := range v.Units {
 		if !u.unitBelongs(n, v.Purge, paths) {
-			return v, Errorf(CodeRefused, "%s is not a unit of what is being removed", n)
+			return v, badParam("unit entry %d is not a unit of what is being removed", i)
 		}
 	}
 	return v, nil
@@ -594,9 +597,9 @@ func (u *uninstaller) checkRestore(p json.RawMessage) (RestoreLeftoversParams, r
 	if err != nil || !ok {
 		return v, rules.Manifest{}, badParam("no archive of that operation can be restored")
 	}
-	for _, path := range v.Paths {
+	for i, path := range v.Paths {
 		if !slices.ContainsFunc(m.Entries, func(e rules.Entry) bool { return e.Path == path }) {
-			return v, m, badParam("%s is not in that archive", path)
+			return v, m, badParam("path %d is not in that archive", i)
 		}
 	}
 	return v, m, nil

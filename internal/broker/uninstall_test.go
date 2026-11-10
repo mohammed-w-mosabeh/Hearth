@@ -181,8 +181,9 @@ func (g *uninstallRig) move(p string) archive.Move {
 	return archive.Move{Path: p, Dev: st.Dev, Ino: st.Ino}
 }
 
-// call runs a method as the server does: Check, then Authorized or
-// polkit (always granted here, and counted), then Handle.
+// call runs a method as the server does: Check, which refuses before
+// polkit only with bad params (any other answer goes on), then Authorized
+// or polkit (always granted here, and counted), then Handle.
 func (g *uninstallRig) call(uid uint32, name string, params any) (any, error) {
 	g.t.Helper()
 	m := g.methods[name]
@@ -192,7 +193,7 @@ func (g *uninstallRig) call(uid uint32, name string, params any) (any, error) {
 	}
 	c := Caller{UID: uid}
 	if m.Check != nil {
-		if err := m.Check(context.Background(), raw); err != nil {
+		if err := m.Check(context.Background(), raw); code(err) == CodeBadParams {
 			return nil, err
 		}
 	}
