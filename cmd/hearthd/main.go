@@ -100,6 +100,14 @@ func main() {
 	if os.Getenv("GOMEMLIMIT") == "" {
 		debug.SetMemoryLimit(40 << 20)
 	}
+	// Idle, the live heap is a few MB and the periodic work makes short
+	// bursts of garbage; at GOGC 100 the heap may grow to twice the live
+	// size before a collection, so RSS peaks sat at the idle budget. At 50
+	// the peaks fell by about 4 MB (median 40.8 to 36 MB over four paired
+	// runs, Gate 11) for no measurable CPU (0.2-0.4 %). GOGC overrides it.
+	if os.Getenv("GOGC") == "" {
+		debug.SetGCPercent(50)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
