@@ -3,6 +3,7 @@ package automations
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -101,7 +102,7 @@ func TestDryRunSchedule(t *testing.T) {
 	}
 	skipped := 0
 	for _, f := range out.Firings {
-		if f.Outcome == "skipped" && f.Reason == "the hourly maximum was reached" {
+		if f.Outcome == "skipped" && f.Reason == "hourly" {
 			skipped++
 		}
 	}
@@ -129,7 +130,7 @@ func TestDryRunMetric(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.Total != 2 || out.Runs != 2 || !strings.Contains(out.Trigger.Note, "1-minute") {
+	if out.Total != 2 || out.Runs != 2 || !slices.Contains(out.Trigger.Notes, NoteMinute) {
 		t.Fatalf("%+v", out)
 	}
 	if got := out.Firings[0].Time.Sub(g.now.Add(-DryRunDays * 24 * time.Hour)); got != 5*time.Minute {
@@ -138,7 +139,7 @@ func TestDryRunMetric(t *testing.T) {
 	// A duration under a minute is rounded up and said.
 	s.Trigger.ForS = 30
 	out, _ = g.e.DryRun(context.Background(), 0, s)
-	if !strings.Contains(out.Trigger.Note, "rounded up") {
+	if !slices.Contains(out.Trigger.Notes, NoteRounded) || out.Trigger.ForS != 30 {
 		t.Fatalf("%+v", out.Trigger)
 	}
 
@@ -168,7 +169,7 @@ func TestDryRunConditions(t *testing.T) {
 	}
 	for _, f := range out.Firings {
 		monday := f.Time.Weekday() == time.Monday
-		if (monday && (f.Outcome != "unknown" || !strings.Contains(f.Reason, "game"))) || (!monday && f.Reason != "conditions") {
+		if (monday && (f.Outcome != "unknown" || !slices.Equal(f.Missing, []string{"game"}))) || (!monday && f.Reason != "conditions") {
 			t.Fatalf("%v %s %s", f.Time.Weekday(), f.Outcome, f.Reason)
 		}
 	}
@@ -186,7 +187,7 @@ func TestDryRunNoHistory(t *testing.T) {
 		`{"trigger":{"kind":"login"},"then":[{"step":"wait","seconds":1}]}`,
 	} {
 		out, err := g.e.DryRun(context.Background(), 0, parsed(t, raw))
-		if err != nil || out.Trigger.State != CoverNone || out.Trigger.Note == "" || out.Total != 0 {
+		if err != nil || out.Trigger.State != CoverNone || len(out.Trigger.Notes) == 0 || out.Total != 0 {
 			t.Fatalf("%s: %+v %v", raw, out, err)
 		}
 	}

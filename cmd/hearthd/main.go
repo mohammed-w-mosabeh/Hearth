@@ -1143,6 +1143,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	go func() { autoEngine.Run(autoCtx); close(autoDone) }()
 	defer func() { stopAuto(); <-autoDone }()
 	(&automations.API{Store: db, Engine: autoEngine, Approvals: autoEngine, Tester: autoEngine, DryRun: autoEngine.DryRun,
+		Steps: autoEngine.CheckSteps, Next: autoEngine.NextRuns, Actions: func() []automations.ActionInfo { return automations.Offered(reg) },
 		ModeApprovals: func(ctx context.Context) (any, error) { return approvals.Pending(ctx) },
 		// An alert automation edited here changes the alert engine's rules too.
 		Changed: func() { _ = autoEngine.Load(context.Background()); _ = engine.Reload(context.Background()) }, Check: automations.NewChecker(automations.CheckDeps{

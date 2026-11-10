@@ -479,3 +479,25 @@ func (db *DB) SyncModeAutomations(ctx context.Context, desired []Automation) (cr
 	}
 	return created, deleted, tx.Commit()
 }
+
+// LastAutomationRuns returns each automation's latest run, by automation
+// (the Automations list), in one query.
+func (db *DB) LastAutomationRuns(ctx context.Context) (map[int64]AutomationRun, error) {
+	rows, err := db.QueryContext(ctx, `SELECT r.id, r.automation_id, r.started, r.finished, r.state, r.record FROM automation_runs r
+		JOIN (SELECT automation_id, MAX(id) AS id FROM automation_runs GROUP BY automation_id) last ON last.id = r.id`)
+	if err != nil {
+		return nil, fmt.Errorf("store: last runs: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[int64]AutomationRun{}
+	for rows.Next() {
+		var r AutomationRun
+		var rec string
+		if err := rows.Scan(&r.ID, &r.AutomationID, &r.Started, &r.Finished, &r.State, &rec); err != nil {
+			return nil, fmt.Errorf("store: last runs: %w", err)
+		}
+		r.Record = json.RawMessage(rec)
+		out[r.AutomationID] = r
+	}
+	return out, rows.Err()
+}

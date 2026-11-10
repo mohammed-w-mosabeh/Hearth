@@ -180,7 +180,9 @@ var Placeholders = []string{"automation", "trigger", "instance", "value", "top",
 // Denied are actions an automation may never hold: their reach is too
 // wide for a run confirmed later (docs/plan/automations.md §4).
 var Denied = []string{"hearth/import", "uninstall/remove", "uninstall/restore", "package/update-all", "space/empty-trash", "job/delete",
-	"automation/approve", "automation/dismiss", "mode/approve", "mode/dismiss", "stack/grant"}
+	"automation/approve", "automation/dismiss", "mode/approve", "mode/dismiss", "stack/grant",
+	// A mode's trigger is armed only by the user's click (SECURITY S15b).
+	"mode/arm", "mode/disarm"}
 
 var (
 	clockRe    = regexp.MustCompile(`^([01][0-9]|2[0-3]):[0-5][0-9]$`)

@@ -3,7 +3,6 @@ package automations
 import (
 	"context"
 	"errors"
-	"fmt"
 	"slices"
 	"sort"
 	"strings"
@@ -40,8 +39,32 @@ const (
 // Coverage says how much of a trigger or condition the history covers.
 type Coverage struct {
 	State string `json:"state"`
-	Note  string `json:"note,omitempty"`
+	// Notes are codes the UI words: see the Note* constants.
+	Notes []string `json:"notes"`
+	// Since is when a metric's history starts, when it starts late.
+	Since *time.Time `json:"since,omitempty"`
+	// ForS is a duration under a minute that was rounded up to one.
+	ForS int `json:"for_s,omitempty"`
 }
+
+// Coverage notes, as codes.
+const (
+	NoteExact        = "exact"         // a schedule, computed exactly
+	NoteBoots        = "boots"         // each boot counts as a login
+	NoteOutages      = "outages"       // from the recorded outages
+	NoteAlertOwn     = "alert-own"     // this rule's own incidents
+	NoteAlertWatched = "alert-watched" // only while an alert rule watched it
+	NoteMinute       = "minute"        // from 1-minute averages
+	NoteRounded      = "rounded"       // a duration rounded up to 60 s (ForS)
+	NoteDiskSize     = "disk-size"     // against each disk's size today
+	NoteSince        = "since"         // recorded only since Since
+	NoteNoData       = "no-data"       // nothing recorded in these days
+	NoteUnreadable   = "unreadable"    // the source could not be read
+	NoteNotRecorded  = "not-recorded"  // nothing records it
+	NoteNotYet       = "not-yet"       // kept, but not replayed yet
+)
+
+func cover(state string, notes ...string) Coverage { return Coverage{State: state, Notes: notes} }
 
 // DryCondition is one condition's coverage.
 type DryCondition struct {
@@ -56,8 +79,12 @@ type DryStep struct {
 	Target string `json:"target,omitempty"`
 	Label  string `json:"label,omitempty"`
 	// Outcome: unattended, approval (would wait for approval), refused or
-	// fail; Detail says why.
+	// fail. Branch is then or else for a check's step; Reason a code
+	// (earlier-waits, no-actions); Detail the server's own words of a
+	// refusal or failure.
 	Outcome string `json:"outcome"`
+	Branch  string `json:"branch,omitempty"`
+	Reason  string `json:"reason,omitempty"`
 	Detail  string `json:"detail,omitempty"`
 }
 
@@ -74,10 +101,11 @@ type DryFiring struct {
 	Time     time.Time `json:"time"`
 	Instance string    `json:"instance,omitempty"`
 	Value    float64   `json:"value,omitempty"`
-	// Outcome: run, skipped (Reason: quiet hours, cooldown, the hourly
-	// maximum, conditions) or unknown (a condition was not recorded).
-	Outcome string `json:"outcome"`
-	Reason  string `json:"reason,omitempty"`
+	// Outcome: run, skipped (Reason: quiet, cooldown, hourly, conditions)
+	// or unknown (Missing lists the conditions nothing recorded).
+	Outcome string   `json:"outcome"`
+	Reason  string   `json:"reason,omitempty"`
+	Missing []string `json:"missing,omitempty"`
 }
 
 // DryRun is the result.
@@ -119,18 +147,11 @@ type History struct {
 	Resumes func(ctx context.Context) ([]time.Time, error)
 }
 
-// noHistory are the triggers nothing records, each with what to say.
+// noHistory are the triggers the dry run does not replay, with why.
 var noHistory = map[string]string{
-	"wifi":             "Wi-Fi connections are not recorded",
-	"vpn":              "VPN connections are not recorded",
-	"idle":             "idle time is not recorded",
-	"display":          "displays are not recorded",
-	"files":            "file changes are not recorded",
-	"security_updates": "security updates are not recorded over time",
-	"power":            "whether the machine was plugged in is not recorded",
-	"ssh_failed":       "not replayed yet: the journal is read per hour only while such an automation runs",
-	"app":              "not replayed yet: app use is kept only as coarse hours",
-	"image_update":     "not replayed yet: update notes are not kept by time",
+	"wifi": NoteNotRecorded, "vpn": NoteNotRecorded, "idle": NoteNotRecorded, "display": NoteNotRecorded,
+	"files": NoteNotRecorded, "security_updates": NoteNotRecorded, "power": NoteNotRecorded,
+	"ssh_failed": NoteNotYet, "app": NoteNotYet, "image_update": NoteNotYet,
 }
 
 // eventMetric are the event triggers replayed from alert incidents.
@@ -158,16 +179,16 @@ func (e *Engine) DryRun(ctx context.Context, id int64, s spec.Spec) (DryRun, err
 	to := e.cfg.Clock()
 	from := to.Add(-DryRunDays * 24 * time.Hour)
 	out := DryRun{From: from, To: to, Conditions: []DryCondition{}, Firings: []DryFiring{}, Steps: e.drySteps(ctx, s)}
-	fires, cover, trunc, err := e.replay(ctx, id, s.Trigger, from, to)
+	fires, cov, trunc, err := e.replay(ctx, id, s.Trigger, from, to)
 	if err != nil {
 		return DryRun{}, err
 	}
-	out.Trigger, out.Truncated = cover, trunc
+	out.Trigger, out.Truncated = cov, trunc
 	if s.If != nil {
 		for _, c := range s.If.Conditions {
-			dc := DryCondition{Kind: c.Kind, Coverage: Coverage{State: CoverReplayed}}
+			dc := DryCondition{Kind: c.Kind, Coverage: cover(CoverReplayed)}
 			if c.Kind != "time" && c.Kind != "weekday" {
-				dc.Coverage = Coverage{State: CoverNone, Note: "not recorded: each firing says it depends on it"}
+				dc.Coverage = cover(CoverNone, NoteNotRecorded)
 			}
 			out.Conditions = append(out.Conditions, dc)
 		}
@@ -185,7 +206,7 @@ func (e *Engine) DryRun(ctx context.Context, id int64, s spec.Spec) (DryRun, err
 		var why string
 		runs, why = timeGate(s.Options, alert, runs, f.at)
 		if why != "" {
-			df.Outcome, df.Reason = "skipped", why
+			df.Outcome, df.Reason = "skipped", gateCode[why]
 		} else {
 			// The gate comes first, as in a live run: a firing whose
 			// conditions fail still starts the cooldown.
@@ -193,8 +214,8 @@ func (e *Engine) DryRun(ctx context.Context, id int64, s spec.Spec) (DryRun, err
 			switch held, unknown := dryConditions(s.If, f.at); {
 			case held:
 				out.Runs++
-			case unknown != "":
-				df.Outcome, df.Reason = "unknown", "would run if "+unknown+" held"
+			case len(unknown) > 0:
+				df.Outcome, df.Missing = "unknown", unknown
 			default:
 				df.Outcome, df.Reason = "skipped", "conditions"
 			}
@@ -208,11 +229,12 @@ func (e *Engine) DryRun(ctx context.Context, id int64, s spec.Spec) (DryRun, err
 }
 
 // dryConditions evaluates c at t: time and weekday from t, the others not
-// recorded. held is true when they hold for sure; otherwise unknown names
-// what was not recorded and could make them hold ("" when they fail).
-func dryConditions(c *spec.Conditions, t time.Time) (held bool, unknown string) {
+// recorded. held is true when they hold for sure; otherwise unknown lists
+// the conditions nothing recorded that could make them hold (none when
+// they fail).
+func dryConditions(c *spec.Conditions, t time.Time) (held bool, unknown []string) {
 	if c == nil {
-		return true, ""
+		return true, nil
 	}
 	var known []bool
 	var missing []string
@@ -228,21 +250,20 @@ func dryConditions(c *spec.Conditions, t time.Time) (held bool, unknown string) 
 			}
 		}
 	}
-	what := strings.Join(missing, " and ")
 	if c.Match == "any" {
 		if slices.Contains(known, true) {
-			return true, ""
+			return true, nil
 		}
-		return false, strings.Join(missing, " or ")
+		return false, missing
 	}
 	if slices.Contains(known, false) {
-		return false, ""
+		return false, nil
 	}
-	if len(missing) > 0 {
-		return false, what
-	}
-	return true, ""
+	return len(missing) == 0, missing
 }
+
+// gateCode are timeGate's reasons as codes.
+var gateCode = map[string]string{"quiet hours": "quiet", "cooldown": "cooldown", "the hourly maximum was reached": "hourly"}
 
 // drySteps previews each step as an unattended run would: after the first
 // step that would wait, every later one waits too.
@@ -251,10 +272,10 @@ func (e *Engine) drySteps(ctx context.Context, s spec.Spec) []DryStep {
 	// one previews a plain step; waiting says whether an earlier step of
 	// its path waits, and it returns whether this one does.
 	one := func(st spec.Step, branch string, waiting bool) bool {
-		ds := DryStep{Step: st.Step, Action: st.Action, Target: Mask(clean(st.Target)), Label: Mask(clean(st.Label)), Outcome: DryUnattended, Detail: branch}
+		ds := DryStep{Step: st.Step, Action: st.Action, Target: Mask(clean(st.Target)), Label: Mask(clean(st.Label)), Outcome: DryUnattended, Branch: branch}
 		switch {
 		case st.Step == "action":
-			ds.Outcome, ds.Detail = e.dryAction(ctx, st, waiting, branch)
+			ds.Outcome, ds.Reason, ds.Detail = e.dryAction(ctx, st, waiting)
 		case waiting:
 			ds.Outcome = DryApproval
 		}
@@ -274,7 +295,7 @@ func (e *Engine) drySteps(ctx context.Context, s spec.Spec) []DryStep {
 		for _, list := range []struct {
 			steps []spec.Step
 			label string
-		}{{st.ThenDo, "if the check passes"}, {st.ElseDo, "if the check fails"}} {
+		}{{st.ThenDo, "then"}, {st.ElseDo, "else"}} {
 			w := waiting
 			for _, b := range list.steps {
 				w = one(b, list.label, w) || w
@@ -286,43 +307,34 @@ func (e *Engine) drySteps(ctx context.Context, s spec.Spec) []DryStep {
 	return out
 }
 
-func (e *Engine) dryAction(ctx context.Context, st spec.Step, waiting bool, branch string) (string, string) {
-	join := func(why string) string {
-		if branch == "" {
-			return why
-		}
-		if why == "" {
-			return branch
-		}
-		return branch + "; " + why
-	}
+func (e *Engine) dryAction(ctx context.Context, st spec.Step, waiting bool) (outcome, reason, detail string) {
 	if e.cfg.Protect != nil {
 		if why := e.cfg.Protect(st.Action, st.Target); why != "" {
-			return DryRefused, join(clean(why))
+			return DryRefused, "", clean(why)
 		}
 	}
 	if e.cfg.Registry == nil {
-		return DryFail, join("no actions are available")
+		return DryFail, "no-actions", ""
 	}
 	plan, ok, err := e.cfg.Registry.PlanUnattended(ctx, st.Action, actions.Request{Target: st.Target, Params: st.Params})
 	switch {
 	case err != nil:
-		return DryFail, join(Mask(clean(err.Error())))
+		return DryFail, "", Mask(clean(err.Error()))
 	case actions.Refusal(plan) != "":
-		return DryRefused, join(clean(actions.Refusal(plan)))
+		return DryRefused, "", clean(actions.Refusal(plan))
 	case waiting:
-		return DryApproval, join("an earlier step waits")
+		return DryApproval, "earlier-waits", ""
 	case !ok:
-		return DryApproval, join("")
+		return DryApproval, "", ""
 	}
-	return DryUnattended, join("")
+	return DryUnattended, "", ""
 }
 
 // replay lists the trigger's firings in [from, to) from history.
 func (e *Engine) replay(ctx context.Context, id int64, t spec.Trigger, from, to time.Time) ([]firing, Coverage, bool, error) {
 	h := e.cfg.History
 	none := func(note string) ([]firing, Coverage, bool, error) {
-		return nil, Coverage{State: CoverNone, Note: note}, false, nil
+		return nil, cover(CoverNone, note), false, nil
 	}
 	if note, ok := noHistory[t.Kind]; ok {
 		return none(note)
@@ -330,11 +342,11 @@ func (e *Engine) replay(ctx context.Context, id int64, t spec.Trigger, from, to 
 	switch t.Kind {
 	case "schedule":
 		if h.Elapses == nil {
-			return none("schedules cannot be computed here")
+			return none(NoteUnreadable)
 		}
 		times, trunc, err := h.Elapses(ctx, t.Calendar, from, to)
 		if err != nil {
-			return none("the schedule could not be computed")
+			return none(NoteUnreadable)
 		}
 		var out []firing
 		for _, at := range times {
@@ -342,11 +354,11 @@ func (e *Engine) replay(ctx context.Context, id int64, t spec.Trigger, from, to 
 				out = append(out, firing{at: at})
 			}
 		}
-		return out, Coverage{State: CoverReplayed, Note: "computed exactly; a time hearthd was not running would not have fired"}, trunc, nil
+		return out, cover(CoverReplayed, NoteExact), trunc, nil
 	case "login":
-		return timesFrom(ctx, h.Boots, from, to, "each boot counts as a login", "boots are not readable here")
+		return timesFrom(ctx, h.Boots, from, to, NoteBoots)
 	case "resume":
-		return timesFrom(ctx, h.Resumes, from, to, "", "sleeps are not readable here")
+		return timesFrom(ctx, h.Resumes, from, to, "")
 	case "internet":
 		return e.replayOutages(ctx, t, from, to)
 	case "metric":
@@ -365,16 +377,16 @@ func (e *Engine) replay(ctx context.Context, id int64, t spec.Trigger, from, to 
 			return ev.Metric == m && matches(t, ev.Instance)
 		}, false)
 	}
-	return none("not recorded")
+	return none(NoteNotRecorded)
 }
 
-func timesFrom(ctx context.Context, read func(context.Context) ([]time.Time, error), from, to time.Time, note, missing string) ([]firing, Coverage, bool, error) {
+func timesFrom(ctx context.Context, read func(context.Context) ([]time.Time, error), from, to time.Time, note string) ([]firing, Coverage, bool, error) {
 	if read == nil {
-		return nil, Coverage{State: CoverNone, Note: missing}, false, nil
+		return nil, cover(CoverNone, NoteUnreadable), false, nil
 	}
 	times, err := read(ctx)
 	if err != nil {
-		return nil, Coverage{State: CoverNone, Note: missing}, false, nil
+		return nil, cover(CoverNone, NoteUnreadable), false, nil
 	}
 	var out []firing
 	for _, at := range times {
@@ -382,16 +394,20 @@ func timesFrom(ctx context.Context, read func(context.Context) ([]time.Time, err
 			out = append(out, firing{at: at})
 		}
 	}
-	return out, Coverage{State: CoverReplayed, Note: note}, false, nil
+	c := cover(CoverReplayed)
+	if note != "" {
+		c.Notes = []string{note}
+	}
+	return out, c, false, nil
 }
 
 func (e *Engine) replayOutages(ctx context.Context, t spec.Trigger, from, to time.Time) ([]firing, Coverage, bool, error) {
 	if e.cfg.History.Outages == nil {
-		return nil, Coverage{State: CoverNone, Note: "outages are not readable here"}, false, nil
+		return nil, cover(CoverNone, NoteUnreadable), false, nil
 	}
 	list, err := e.cfg.History.Outages(ctx, dryRunEvents)
 	if err != nil {
-		return nil, Coverage{State: CoverNone, Note: "outages could not be read"}, false, nil
+		return nil, cover(CoverNone, NoteUnreadable), false, nil
 	}
 	var out []firing
 	in := func(ms int64) bool { at := time.UnixMilli(ms); return !at.Before(from) && at.Before(to) }
@@ -403,16 +419,16 @@ func (e *Engine) replayOutages(ctx context.Context, t spec.Trigger, from, to tim
 			out = append(out, firing{at: time.UnixMilli(*o.EndedAt), value: float64((*o.EndedAt - o.StartedAt) / 1000)})
 		}
 	}
-	return out, Coverage{State: CoverReplayed, Note: "from the recorded outages"}, len(list) >= dryRunEvents, nil
+	return out, cover(CoverReplayed, NoteOutages), len(list) >= dryRunEvents, nil
 }
 
 func (e *Engine) replayEvents(ctx context.Context, t spec.Trigger, from, to time.Time, keep func(store.AlertEvent) bool, exact bool) ([]firing, Coverage, bool, error) {
 	if e.cfg.History.Events == nil {
-		return nil, Coverage{State: CoverNone, Note: "alert history is not readable here"}, false, nil
+		return nil, cover(CoverNone, NoteUnreadable), false, nil
 	}
 	list, err := e.cfg.History.Events(ctx, from, to, dryRunEvents)
 	if err != nil {
-		return nil, Coverage{State: CoverNone, Note: "alert history could not be read"}, false, nil
+		return nil, cover(CoverNone, NoteUnreadable), false, nil
 	}
 	var out []firing
 	for _, ev := range list {
@@ -420,11 +436,11 @@ func (e *Engine) replayEvents(ctx context.Context, t spec.Trigger, from, to time
 			out = append(out, firing{at: time.UnixMilli(ev.StartedAt), instance: ev.Instance, value: ev.Value})
 		}
 	}
-	cover := Coverage{State: CoverPartial, Note: "from alert history: only while an alert rule watched it"}
+	c := cover(CoverPartial, NoteAlertWatched)
 	if exact {
-		cover = Coverage{State: CoverReplayed, Note: "this rule's own incidents"}
+		c = cover(CoverReplayed, NoteAlertOwn)
 	}
-	return out, cover, len(list) >= dryRunEvents, nil
+	return out, c, len(list) >= dryRunEvents, nil
 }
 
 // metricSeries are the stored series of each trigger metric: one series,
@@ -485,7 +501,7 @@ func (e *Engine) metricSeries(ctx context.Context, metric string, from, to time.
 				out[mount] = scaled(aggs, 100/size)
 			}
 		}
-		return out, "against each disk's size today", n >= dryRunBuckets, nil
+		return out, NoteDiskSize, n >= dryRunBuckets, nil
 	}
 	return nil, "", false, errors.New("not recorded")
 }
@@ -504,23 +520,23 @@ func scaled(aggs []store.Agg, k float64) []store.Agg {
 // minutes starts it afresh, as a restart would.
 func (e *Engine) replayMetric(ctx context.Context, t spec.Trigger, from, to time.Time) ([]firing, Coverage, bool, error) {
 	if t.Metric == "battery.discharging" {
-		return nil, Coverage{State: CoverNone, Note: "whether the battery was discharging is not recorded"}, false, nil
+		return nil, cover(CoverNone, NoteNotRecorded), false, nil
 	}
 	series, note, trunc, err := e.metricSeries(ctx, t.Metric, from, to)
 	if err != nil {
-		return nil, Coverage{State: CoverNone, Note: "this metric's history could not be read"}, false, nil
+		return nil, cover(CoverNone, NoteUnreadable), false, nil
 	}
 	forS := t.ForS
 	if forS > 0 && forS < 60 {
 		forS = 60
 	}
 	rule := store.AlertRule{Metric: t.Metric, Op: t.Op, Threshold: t.Threshold, ForSec: forS}
-	notes := []string{"from 1-minute averages"}
+	c := cover(CoverReplayed, NoteMinute)
 	if t.ForS > 0 && t.ForS < 60 {
-		notes = append(notes, fmt.Sprintf("the duration %d s is rounded up to 60 s", t.ForS))
+		c.Notes, c.ForS = append(c.Notes, NoteRounded), t.ForS
 	}
 	if note != "" {
-		notes = append(notes, note)
+		c.State, c.Notes = CoverPartial, append(c.Notes, note)
 	}
 	var out []firing
 	var first time.Time
@@ -554,15 +570,10 @@ func (e *Engine) replayMetric(ctx context.Context, t spec.Trigger, from, to time
 		}
 	}
 	if buckets == 0 {
-		return nil, Coverage{State: CoverNone, Note: "no data was recorded for this metric in these 7 days"}, false, nil
-	}
-	state := CoverReplayed
-	if note != "" {
-		state = CoverPartial
+		return nil, cover(CoverNone, NoteNoData), false, nil
 	}
 	if first.After(from.Add(time.Hour)) {
-		state = CoverPartial
-		notes = append(notes, "recorded only since "+first.UTC().Format(time.RFC3339))
+		c.State, c.Notes, c.Since = CoverPartial, append(c.Notes, NoteSince), &first
 	}
-	return out, Coverage{State: state, Note: strings.Join(notes, "; ")}, trunc, nil
+	return out, c, trunc, nil
 }

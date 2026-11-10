@@ -13,9 +13,13 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/mohammed-w-mosabeh/hearth/internal/actions"
 	"github.com/mohammed-w-mosabeh/hearth/internal/automations/spec"
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
 )
@@ -29,6 +33,7 @@ type Store interface {
 	SetAutomationEnabled(ctx context.Context, id int64, on bool) error
 	DeleteAutomation(ctx context.Context, id int64) error
 	AutomationRuns(ctx context.Context, automation int64, limit int) ([]store.AutomationRun, error)
+	LastAutomationRuns(ctx context.Context) (map[int64]store.AutomationRun, error)
 	Audit(ctx context.Context, e store.AuditEntry) error
 }
 
@@ -60,6 +65,41 @@ type API struct {
 	// DryRun replays a spec over the last 7 days (the engine); nil serves
 	// no dry-run route.
 	DryRun func(ctx context.Context, id int64, s spec.Spec) (DryRun, error)
+	// Steps previews each step as a run would go now (the editor's
+	// labels); Next are the schedules' next runs; Actions the registered
+	// actions. Each may be nil.
+	Steps   func(ctx context.Context, s spec.Spec) []DryStep
+	Next    func() map[int64]time.Time
+	Actions func() []ActionInfo
+}
+
+// ActionInfo is an action an automation may hold, for the editor.
+type ActionInfo struct {
+	Key  string `json:"key"`
+	Risk string `json:"risk"`
+}
+
+// Offered are the registry's actions an automation may hold: never the
+// deny list, nor mode/activate (only arming makes it).
+func Offered(reg *actions.Registry) []ActionInfo {
+	out := []ActionInfo{}
+	for _, k := range reg.Keys() {
+		if slices.Contains(spec.Denied, k) || k == ModeActivate {
+			continue
+		}
+		a, _ := reg.Lookup(k)
+		out = append(out, ActionInfo{Key: k, Risk: string(a.Risk)})
+	}
+	return out
+}
+
+// RunSummary is an automation's last run, for the list.
+type RunSummary struct {
+	ID      int64  `json:"id"`
+	State   string `json:"state"`
+	Started int64  `json:"started"`
+	By      string `json:"by"`
+	Reason  string `json:"reason,omitempty"`
 }
 
 // View is an automation as the API shows it.
@@ -74,14 +114,23 @@ type View struct {
 	Invalid string `json:"invalid,omitempty"`
 	Created int64  `json:"created"`
 	Updated int64  `json:"updated"`
+	// The list adds the last run, a schedule's next run (unix ms) and how
+	// many approvals wait.
+	Last    *RunSummary `json:"last,omitempty"`
+	Next    int64       `json:"next,omitempty"`
+	Waiting int         `json:"waiting,omitempty"`
 }
 
-// Body is what create and update take.
+// Body is what create and update take. Origin, on create only, names the
+// gallery template the draft came from ("template:<id>").
 type Body struct {
 	Name    string          `json:"name"`
 	Enabled bool            `json:"enabled"`
 	Spec    json.RawMessage `json:"spec"`
+	Origin  string          `json:"origin,omitempty"`
 }
+
+var templateOrigin = regexp.MustCompile(`^template:[a-z0-9-]{1,40}$`)
 
 const maxBody = 32 << 10
 
@@ -100,6 +149,14 @@ func (a *API) Register(mux interface {
 	mux.HandleFunc("GET /api/v1/automations/approvals", a.approvals)
 	if a.Tester != nil {
 		mux.HandleFunc("POST /api/v1/automations/{id}/test", a.test)
+	}
+	if a.Steps != nil {
+		mux.HandleFunc("POST /api/v1/automations/check", a.check)
+	}
+	if a.Actions != nil {
+		mux.HandleFunc("GET /api/v1/automations/actions", func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, http.StatusOK, map[string]any{"actions": a.Actions()})
+		})
 	}
 	if a.DryRun != nil {
 		mux.HandleFunc("POST /api/v1/automations/dry-run", a.dryRun)
@@ -188,9 +245,32 @@ func (a *API) list(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusInternalServerError, "automations could not be read")
 		return
 	}
+	last, _ := a.Store.LastAutomationRuns(r.Context())
+	var next map[int64]time.Time
+	if a.Next != nil {
+		next = a.Next()
+	}
+	waiting := map[int64]int{}
+	if a.Approvals != nil {
+		if aps, err := a.Approvals.Approvals(r.Context()); err == nil {
+			for _, ap := range aps {
+				waiting[ap.AutomationID]++
+			}
+		}
+	}
 	out := []View{}
 	for _, x := range list {
-		out = append(out, view(x))
+		v := view(x)
+		if run, ok := last[x.ID]; ok {
+			var rec RunRecord
+			_ = json.Unmarshal(run.Record, &rec)
+			v.Last = &RunSummary{ID: run.ID, State: run.State, Started: run.Started, By: rec.By, Reason: rec.Reason}
+		}
+		if t, ok := next[x.ID]; ok {
+			v.Next = t.UnixMilli()
+		}
+		v.Waiting = waiting[x.ID]
+		out = append(out, v)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"automations": out})
 }
@@ -235,7 +315,10 @@ func (a *API) decode(r *http.Request) (store.Automation, error) {
 	if err != nil {
 		return store.Automation{}, err
 	}
-	return store.Automation{Name: b.Name, Enabled: b.Enabled, Spec: canon}, nil
+	if b.Origin != "" && !templateOrigin.MatchString(b.Origin) {
+		return store.Automation{}, errors.New(`origin must be "template:<id>"`)
+	}
+	return store.Automation{Name: b.Name, Enabled: b.Enabled, Spec: canon, Origin: b.Origin}, nil
 }
 
 func (a *API) id(w http.ResponseWriter, r *http.Request) (int64, bool) {
@@ -253,7 +336,9 @@ func (a *API) create(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	x.Origin = "ui"
+	if x.Origin == "" {
+		x.Origin = "ui"
+	}
 	ids, err := a.Store.CreateAutomations(r.Context(), []store.Automation{x})
 	if err != nil {
 		httpError(w, http.StatusInternalServerError, "the automation could not be saved")
@@ -284,7 +369,8 @@ func (a *API) update(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if _, code, err := a.owned(r, id); err != nil {
+	cur, code, err := a.owned(r, id)
+	if err != nil {
 		httpError(w, code, err.Error())
 		return
 	}
@@ -293,7 +379,7 @@ func (a *API) update(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	x.ID = id
+	x.ID, x.Origin = id, cur.Origin // the origin never changes
 	if err := a.Store.UpdateAutomation(r.Context(), x); err != nil {
 		httpError(w, http.StatusInternalServerError, "the automation could not be saved")
 		return
@@ -535,4 +621,36 @@ func (a *API) dryRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// check serves the editor's live validation: {spec} as a save checks it,
+// and each step as a run would go now. A spec that does not pass is
+// answered with its reason, not an error status: the editor is typing.
+func (a *API) check(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		Spec json.RawMessage `json:"spec"`
+	}
+	raw, err := io.ReadAll(io.LimitReader(r.Body, maxBody+1))
+	if err != nil || len(raw) > maxBody {
+		httpError(w, http.StatusBadRequest, "body too large")
+		return
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&b); err != nil {
+		httpError(w, http.StatusBadRequest, "body must be {spec}")
+		return
+	}
+	s, err := spec.Parse(b.Spec)
+	if err == nil {
+		err = userMade(s)
+	}
+	if err == nil && a.Check != nil {
+		err = a.Check(r.Context(), s)
+	}
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"error": err.Error(), "steps": []DryStep{}})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"steps": a.Steps(r.Context(), s)})
 }

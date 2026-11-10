@@ -903,3 +903,25 @@ func (e *Engine) Test(ctx context.Context, id int64, check func(context.Context,
 	}
 	return nil
 }
+
+// NextRuns are when each enabled schedule fires next, as its trigger last
+// computed it (the Automations list; no new systemd-analyze call).
+func (e *Engine) NextRuns() map[int64]time.Time {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	out := map[int64]time.Time{}
+	for _, a := range e.autos {
+		if st := e.poll[a.ID]; a.spec.Trigger.Kind == "schedule" && st != nil && st.seen && !st.next.IsZero() {
+			out[a.ID] = st.next
+		}
+	}
+	return out
+}
+
+// CheckSteps previews each step of s as a run would go now: unattended,
+// waiting for approval, refused or failing (the editor, ROADMAP 12.9).
+func (e *Engine) CheckSteps(ctx context.Context, s spec.Spec) []DryStep {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return e.drySteps(ctx, s)
+}

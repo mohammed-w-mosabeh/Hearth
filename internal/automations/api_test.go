@@ -9,7 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/mohammed-w-mosabeh/hearth/internal/actions"
 	"github.com/mohammed-w-mosabeh/hearth/internal/automations/spec"
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
 )
@@ -287,5 +289,64 @@ func TestTestAndDryRunRoutes(t *testing.T) {
 	}
 	if list, _ := db.Automations(ctx); len(list) != 2 {
 		t.Fatal("a dry run stored something")
+	}
+}
+
+// The editor's routes: the actions it may offer, live checks with each
+// step's outcome, the list's last run and waiting approvals, and a
+// template's origin kept from creation on.
+func TestEditorRoutes(t *testing.T) {
+	db, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "h.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	reg := actions.NewRegistry(db)
+	for _, k := range []string{"power/profile", "mode/activate", "mode/arm", "hearth/import"} {
+		kind, name, _ := strings.Cut(k, "/")
+		reg.Register(actions.Action{Kind: kind, Name: name, Risk: actions.Safe, Validate: func(actions.Request) error { return nil },
+			Plan: func(context.Context, actions.Request) (actions.Plan, error) { return actions.Plan{}, nil },
+			Run: func(context.Context, actions.Request, actions.Plan) (actions.Result, error) {
+				return actions.Result{}, nil
+			}})
+	}
+	a := &API{Store: db, Actions: func() []ActionInfo { return Offered(reg) },
+		Check: NewChecker(CheckDeps{Known: func(action string) bool { return action == "power/profile" }}),
+		Steps: func(context.Context, spec.Spec) []DryStep { return []DryStep{{Step: "action", Outcome: DryUnattended}} },
+		Next:  func() map[int64]time.Time { return map[int64]time.Time{1: time.UnixMilli(5000)} }}
+	m := mux{http.NewServeMux()}
+	a.Register(m)
+	srv := httptest.NewServer(m)
+	t.Cleanup(srv.Close)
+
+	code, out := do(t, srv, "GET", "/api/v1/automations/actions", "")
+	if code != 200 || len(out["actions"].([]any)) != 1 || out["actions"].([]any)[0].(map[string]any)["key"] != "power/profile" {
+		t.Fatalf("%d %v", code, out)
+	}
+	good := `{"trigger":{"kind":"login"},"then":[{"step":"action","action":"power/profile","target":"a"}]}`
+	if code, out := do(t, srv, "POST", "/api/v1/automations/check", `{"spec":`+good+`}`); code != 200 || out["error"] != nil || len(out["steps"].([]any)) != 1 {
+		t.Fatalf("%d %v", code, out)
+	}
+	if code, out := do(t, srv, "POST", "/api/v1/automations/check", `{"spec":{"trigger":{"kind":"login"},"then":[]}}`); code != 200 || out["error"] == "" {
+		t.Fatalf("%d %v", code, out)
+	}
+	code, out = do(t, srv, "POST", "/api/v1/automations", `{"name":"Heat","enabled":true,"origin":"template:heat","spec":`+good+`}`)
+	if code != 200 || out["origin"] != "template:heat" {
+		t.Fatalf("%d %v", code, out)
+	}
+	id := int64(out["id"].(float64))
+	if code, out := do(t, srv, "PUT", "/api/v1/automations/"+itoa(id), `{"name":"Heat 2","enabled":true,"origin":"template:other","spec":`+good+`}`); code != 200 || out["origin"] != "template:heat" {
+		t.Fatalf("the origin changed: %d %v", code, out)
+	}
+	if code, _ := do(t, srv, "POST", "/api/v1/automations", `{"name":"x","enabled":true,"origin":"mode:x#0@abc","spec":`+good+`}`); code != 400 {
+		t.Fatal("a mode origin was accepted from the editor", code)
+	}
+	if _, err := db.SaveAutomationRun(context.Background(), store.AutomationRun{AutomationID: id, Started: 7, State: RunDone, Record: json.RawMessage(`{"by":"test","steps":[]}`)}); err != nil {
+		t.Fatal(err)
+	}
+	_, out = do(t, srv, "GET", "/api/v1/automations", "")
+	v := out["automations"].([]any)[0].(map[string]any)
+	if last := v["last"].(map[string]any); last["state"] != RunDone || last["by"] != "test" || v["next"] != float64(5000) {
+		t.Fatalf("%v", v)
 	}
 }

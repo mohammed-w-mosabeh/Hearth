@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -169,6 +170,18 @@ func (r *Registry) Lookup(key string) (Action, bool) {
 	defer r.mu.Unlock()
 	a, ok := r.actions[key]
 	return a, ok
+}
+
+// Keys lists every registered action as "kind/name", sorted.
+func (r *Registry) Keys() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]string, 0, len(r.actions))
+	for k := range r.actions {
+		out = append(out, k)
+	}
+	slices.Sort(out)
+	return out
 }
 
 // body is the request body.
