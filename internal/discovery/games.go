@@ -45,6 +45,7 @@ type Game struct {
 	cover string // file, from paths the scan resolved itself
 	appID string // desktop app the game starts through
 	url   string // passed to that app for %u/%U; "" for desktop games
+	dir   string // install folder, as Lutris or Heroic records it (untrusted)
 }
 
 // gameIDRe matches the IDs the scan produces.
@@ -249,6 +250,13 @@ func (g *Games) LaunchTarget(id string) (name, appID, url string, ok bool) {
 		return gm.Name, "", "", found
 	}
 	return gm.Name, gm.appID, gm.url, true
+}
+
+// InstallDir is the folder Lutris or Heroic records for game id, as the
+// launcher wrote it: untrusted, checked by whoever uses it.
+func (g *Games) InstallDir(id string) (string, bool) {
+	gm, found := g.Game(id)
+	return gm.dir, found && gm.dir != ""
 }
 
 // Track adds the time desktop games run to the store, sampling the

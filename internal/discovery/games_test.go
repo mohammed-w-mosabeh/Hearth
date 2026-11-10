@@ -408,3 +408,36 @@ func FuzzSetDesktopKeys(f *testing.F) {
 		}
 	})
 }
+
+func TestGameInstallDir(t *testing.T) {
+	_, x, home := gamesTree(t)
+	g := NewGames(GamesConfig{Home: home, Apps: x, Store: &playStore{secs: map[string]int64{}}, Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	if d, ok := g.InstallDir("heroic.gog.1207658924"); !ok || d != "/g/Witcher" {
+		t.Errorf("witcher %q %v", d, ok)
+	}
+	if d, ok := g.InstallDir("lutris.3"); ok {
+		t.Errorf("an old Lutris database has no directory, got %q", d)
+	}
+	if _, ok := g.InstallDir("steam.220"); ok {
+		t.Error("Steam games have no recorded folder")
+	}
+	// A newer database records each game's folder.
+	p := filepath.Join(t.TempDir(), "pga.db")
+	db, err := sql.Open("sqlite", (&url.URL{Scheme: "file", Path: p}).String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`CREATE TABLE games (id INTEGER PRIMARY KEY, name TEXT, slug TEXT, runner TEXT, playtime REAL, lastplayed INTEGER, installed INTEGER, hidden INTEGER, directory TEXT)`,
+		`INSERT INTO games VALUES (7, 'Celeste', 'celeste', 'linux', 0, 0, 1, 0, '/home/u/Games/celeste'), (8, 'N', 'n', 'wine', 0, 0, 1, 0, NULL)`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = db.Close()
+	rows, err := lutrisRows(p)
+	if err != nil || len(rows) != 2 || rows[0].dir != "/home/u/Games/celeste" || rows[1].dir != "" {
+		t.Fatalf("%+v %v", rows, err)
+	}
+}
