@@ -1,12 +1,16 @@
 <script lang="ts">
   import AutoPause from '../components/AutoPause.svelte';
+  import AutomationEditor from '../components/AutomationEditor.svelte';
   import AutomationRuns from '../components/AutomationRuns.svelte';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import Skeleton from '../components/Skeleton.svelte';
   import { preview, reasonKey as actionReason, run, type Plan, type Result } from '../lib/actions';
-  import { metricLabel } from '../lib/alerts';
+  import { conditionText, metricLabel, type Metric } from '../lib/alerts';
   import { api } from '../lib/api';
   import {
+    TEMPLATES,
+    blankDraft,
+    draftOf,
     reasonKey,
     rowKind,
     runStateKey,
@@ -16,6 +20,8 @@
     type Approval,
     type ApprovalList,
     type Automation,
+    type Draft,
+    type Template,
   } from '../lib/automations';
   import { failure } from '../lib/errors';
   import { locale, t, type MessageKey } from '../lib/i18n';
@@ -33,11 +39,16 @@
   let approvals = $state.raw<Approval[]>([]);
   let paused = $state(false);
   let connections = $state.raw<{ uuid: string; name: string }[]>([]);
+  let metrics = $state.raw<Metric[]>([]);
   let failed = $state('');
   let busy = $state<string | null>(null);
   let history = $state<Automation | null>(null);
   let approving = $state<{ approval: Approval; plan: Plan } | null>(null);
   let removing = $state<{ automation: Automation; plan: Plan } | null>(null);
+  let draft = $state<Draft | null>(null);
+  let hasDocker = $state(false);
+  let hasBattery = $state(false);
+  let gallery = $state(false);
 
   async function load(): Promise<void> {
     try {
@@ -53,6 +64,9 @@
   $effect(() => {
     void load();
     api<{ connections: { uuid: string; name: string }[] }>('/system/network').then((r) => (connections = r.connections ?? []), () => {});
+    api<{ metrics: Metric[] }>('/alerts/metrics').then((r) => (metrics = r.metrics), () => {});
+    api<{ containers?: unknown[] }>('/docker').then((r) => (hasDocker = (r.containers?.length ?? 0) > 0), () => {});
+    api<{ batteries?: unknown[] }>('/power').then((r) => (hasBattery = (r.batteries?.length ?? 0) > 0), () => {});
     const timer = setInterval(() => void load(), REFRESH);
     return () => clearInterval(timer);
   });
@@ -132,11 +146,32 @@
     });
 
   const when = (ms: number) => new Date(ms).toLocaleString(locale());
+
+  /** Templates shown only when what they act on exists here. */
+  const shownTemplates = $derived(TEMPLATES.filter((tp) => !tp.needs || (tp.needs === 'docker' ? hasDocker : hasBattery)));
+  const fromTemplate = (tp: Template) => {
+    draft = tp.make((k) => t(k));
+    gallery = false;
+  };
+
+  function edit(a: Automation): void {
+    draft = draftOf(a);
+  }
+
+  async function saved(): Promise<void> {
+    draft = null;
+    await load();
+  }
   const connectionName = (uuid: string) => connections.find((c) => c.uuid === uuid)?.name ?? uuid;
 
   function triggerText(a: Automation): string {
     if (!a.spec) return '';
-    const w = triggerWords(a.spec.trigger, { connection: connectionName, metric: (m) => metricLabel(undefined, m) });
+    const metricOf = (id: string) => metrics.find((m) => m.id === id);
+    const w = triggerWords(a.spec.trigger, {
+      connection: connectionName,
+      metric: (m) => metricLabel(metricOf(m), m),
+      alert: (tr) => conditionText({ metric: tr.metric ?? '', target: tr.target ?? '', op: tr.op === '<' ? '<' : '>', threshold: tr.threshold ?? 0, for_s: tr.for_s ?? 0 }, metricOf(tr.metric ?? '')),
+    });
     return t(w.key, w.values);
   }
 
@@ -162,7 +197,26 @@
     <h1>{t('auto.title')}</h1>
     <p>{t('auto.intro')}</p>
   </div>
+  <div class="row top">
+    <button type="button" class="btn" aria-expanded={gallery} onclick={() => (gallery = !gallery)}>{t('auto.gallery')}</button>
+    <button type="button" class="btn primary" onclick={() => (draft = blankDraft())}>{t('auto.new')}</button>
+  </div>
 </header>
+
+{#if gallery}
+  <section class="card" aria-labelledby="gallery-title">
+    <h2 id="gallery-title">{t('auto.gallery')}</h2>
+    <p class="note">{t('auto.gallery.note')}</p>
+    <ul class="tpls">
+      {#each shownTemplates as tp (tp.id)}
+        <li>
+          <button type="button" class="btn" onclick={() => fromTemplate(tp)}>{t(`auto.tpl.${tp.id}` as MessageKey)}</button>
+          <span class="sub">{t(`auto.tpl.${tp.id}.about` as MessageKey)}</span>
+        </li>
+      {/each}
+    </ul>
+  </section>
+{/if}
 
 <AutoPause bind:paused />
 
@@ -244,7 +298,7 @@
                 {:else if kind === 'invalid'}
                   <button type="button" class="btn" onclick={() => askRemove(a)} disabled={busy === `row-${a.id}`}>{t('auto.delete')}</button>
                 {:else}
-                  {#if kind === 'alert'}<a class="btn" href={href('alerts')}>{t('auto.openAlerts')}</a>{/if}
+                  <button type="button" class="btn" onclick={() => edit(a)} disabled={busy === `row-${a.id}`}>{t('auto.edit')}</button>
                   <button type="button" class="btn" onclick={() => testNow(a)} disabled={busy === `row-${a.id}` || paused}>{t('auto.test')}</button>
                   <button type="button" class="btn" onclick={() => askRemove(a)} disabled={busy === `row-${a.id}`}>{t('auto.delete')}</button>
                 {/if}
@@ -258,6 +312,8 @@
 {/if}
 
 <AutomationRuns automation={history} onclose={() => (history = null)} />
+
+<AutomationEditor {draft} onclose={() => (draft = null)} onsaved={saved} />
 
 <ConfirmDialog
   plan={approving?.plan ?? null}
@@ -393,6 +449,23 @@
     align-items: center;
     gap: var(--space-2);
     font-size: 13px;
+    white-space: nowrap;
+  }
+  .top {
+    margin-top: 0;
+  }
+  .tpls {
+    list-style: none;
+    padding: 0;
+    margin: var(--space-2) 0 0;
+    display: grid;
+    gap: var(--space-2);
+  }
+  .tpls li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-2);
   }
   .actions {
     white-space: nowrap;

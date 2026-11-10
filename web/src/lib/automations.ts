@@ -7,41 +7,41 @@ import type { MessageKey } from './i18n';
 
 export interface Trigger {
   kind: string;
-  calendar?: string;
-  metric?: string;
-  op?: string;
-  threshold?: number;
-  for_s?: number;
-  target?: string;
-  scope?: string;
-  event?: string;
-  state?: string;
-  uuid?: string;
-  count?: number;
-  minutes?: number;
-  game?: boolean;
-  app?: string;
-  folder?: string;
-  days?: number;
-  depth?: number;
-  pattern?: string;
-  severity?: string;
+  calendar?: string | undefined;
+  metric?: string | undefined;
+  op?: string | undefined;
+  threshold?: number | undefined;
+  for_s?: number | undefined;
+  target?: string | undefined;
+  scope?: string | undefined;
+  event?: string | undefined;
+  state?: string | undefined;
+  uuid?: string | undefined;
+  count?: number | undefined;
+  minutes?: number | undefined;
+  game?: boolean | undefined;
+  app?: string | undefined;
+  folder?: string | undefined;
+  days?: number | undefined;
+  depth?: number | undefined;
+  pattern?: string | undefined;
+  severity?: string | undefined;
 }
 
 export interface Condition {
   kind: string;
-  from?: string;
-  to?: string;
-  days?: string[];
-  on?: string;
-  op?: string;
-  percent?: number;
-  uuid?: string;
-  mode?: string;
-  is?: boolean;
-  target?: string;
-  scope?: string;
-  state?: string;
+  from?: string | undefined;
+  to?: string | undefined;
+  days?: string[] | undefined;
+  on?: string | undefined;
+  op?: string | undefined;
+  percent?: number | undefined;
+  uuid?: string | undefined;
+  mode?: string | undefined;
+  is?: boolean | undefined;
+  target?: string | undefined;
+  scope?: string | undefined;
+  state?: string | undefined;
 }
 
 export interface Conditions {
@@ -51,27 +51,27 @@ export interface Conditions {
 
 export interface Step {
   step: 'action' | 'notify' | 'wait' | 'check';
-  action?: string;
-  target?: string;
-  params?: Record<string, string>;
-  continue?: boolean;
-  label?: string;
-  channels?: string[];
-  text?: string;
-  severity?: string;
-  seconds?: number;
-  what?: string;
-  expect?: string;
-  then?: Step[];
-  else?: Step[];
+  action?: string | undefined;
+  target?: string | undefined;
+  params?: Record<string, string> | undefined;
+  continue?: boolean | undefined;
+  label?: string | undefined;
+  channels?: string[] | undefined;
+  text?: string | undefined;
+  severity?: string | undefined;
+  seconds?: number | undefined;
+  what?: string | undefined;
+  expect?: string | undefined;
+  then?: Step[] | undefined;
+  else?: Step[] | undefined;
 }
 
 export interface Options {
   cooldown_s: number;
   max_per_hour: number;
-  quiet_from?: string;
-  quiet_to?: string;
-  run_if_missed?: boolean;
+  quiet_from?: string | undefined;
+  quiet_to?: string | undefined;
+  run_if_missed?: boolean | undefined;
 }
 
 export interface Spec {
@@ -206,6 +206,8 @@ export interface Names {
   connection?: (uuid: string) => string;
   /** A metric's name in the UI language (alerts.metricLabel). */
   metric?: (id: string) => string;
+  /** An alert rule's condition, as the Alerts page words it. */
+  alert?: (tr: Trigger) => string;
 }
 
 export function triggerWords(tr: Trigger, names: Names = {}): { key: MessageKey; values: Record<string, string | number> } {
@@ -215,13 +217,13 @@ export function triggerWords(tr: Trigger, names: Names = {}): { key: MessageKey;
   switch (tr.kind) {
     case 'schedule':
       return { key: 'auto.trig.schedule', values: { s: tr.calendar ?? '' } };
-    case 'metric':
-    case 'alert': {
-      const m = tr.metric ?? '';
-      return {
-        key: tr.kind === 'alert' ? 'auto.trig.alert' : 'auto.trig.metric',
-        values: { metric: metric(m), op: tr.op ?? '', n: tr.threshold ?? 0, target: target ? ` (${target})` : '', s: tr.for_s ?? 0 },
-      };
+    case 'alert':
+      return { key: 'auto.trig.alert', values: { s: names.alert ? names.alert(tr) : metric(tr.metric ?? '') } };
+    case 'metric': {
+      // The comparison in words: a ">" sign reads backwards in Arabic.
+      const values = { metric: metric(tr.metric ?? ''), n: tr.threshold ?? 0, target: target ? ` (${target})` : '', s: tr.for_s ?? 0 };
+      const op = tr.op === '<' ? 'below' : 'above';
+      return { key: `auto.trig.metric.${op}${(tr.for_s ?? 0) > 0 ? 'For' : ''}`, values };
     }
     case 'container':
       return { key: `auto.trig.container.${tr.event === 'unhealthy' ? 'unhealthy' : tr.event === 'oom' ? 'oom' : 'died'}`, values: { s: target || '*' } };
@@ -322,3 +324,213 @@ export function stepWords(s: StepLike): { key: MessageKey; values: Record<string
 export interface ApprovalList {
   automations: Approval[];
 }
+
+// ---- The editor (ROADMAP 12.9): pickers only; free text only for the
+// name, labels and notification text. The spec being edited is the object
+// itself, so fields the editor does not show are kept as they were.
+
+/** An action the server offers (GET /automations/actions). */
+export interface ActionInfo {
+  key: string;
+  risk: string;
+}
+
+/** Where an action's target is picked from. */
+export type Picker = 'fixed' | 'unit' | 'container' | 'stack' | 'connection' | 'app';
+
+export interface CatalogEntry {
+  key: string;
+  picker: Picker;
+  /** The fixed targets, for a fixed picker. */
+  options?: readonly string[];
+}
+
+/** The actions the editor offers, each with its target picker. One the
+ *  server has but is not listed here is not offered for a new step; a
+ *  step that holds it is shown and saved as it is. */
+export const CATALOG: readonly CatalogEntry[] = [
+  { key: 'power/profile', picker: 'fixed', options: ['power-saver', 'balanced', 'performance'] },
+  { key: 'session/dnd', picker: 'fixed', options: ['on', 'off'] },
+  { key: 'unit/start', picker: 'unit' },
+  { key: 'unit/stop', picker: 'unit' },
+  { key: 'unit/restart', picker: 'unit' },
+  { key: 'container/start', picker: 'container' },
+  { key: 'container/stop', picker: 'container' },
+  { key: 'container/restart', picker: 'container' },
+  { key: 'stack/start', picker: 'stack' },
+  { key: 'stack/stop', picker: 'stack' },
+  { key: 'stack/restart', picker: 'stack' },
+  { key: 'network/connect', picker: 'connection' },
+  { key: 'network/disconnect', picker: 'connection' },
+  { key: 'app/launch', picker: 'app' },
+  { key: 'space/preview', picker: 'fixed', options: ['space'] },
+  { key: 'report/generate', picker: 'fixed', options: ['day', 'week', 'month'] },
+  { key: 'hearth/backup', picker: 'fixed', options: ['database'] },
+  { key: 'debsecan/check', picker: 'fixed', options: ['debsecan'] },
+];
+
+/** The catalog's actions the server offers. */
+export function offered(server: readonly ActionInfo[]): CatalogEntry[] {
+  const keys = new Set(server.map((a) => a.key));
+  return CATALOG.filter((c) => keys.has(c.key));
+}
+
+export const catalogEntry = (key: string): CatalogEntry | undefined => CATALOG.find((c) => c.key === key);
+
+export function actionKey(key: string): MessageKey {
+  return catalogEntry(key) ? (`auto.act.${key.replace('/', '.')}` as MessageKey) : ('auto.act.other' as MessageKey);
+}
+
+/** The triggers a new automation may pick: an alert rule is made on the
+ *  Alerts page, and a folder has no picker yet. */
+export const NEW_TRIGGERS: readonly TriggerKind[] = TRIGGERS.filter((k) => k !== 'alert' && k !== 'files');
+
+/** A trigger of kind with values the validator accepts, or that wait for
+ *  one pick (a connection). */
+export function blankTrigger(kind: TriggerKind): Trigger {
+  switch (kind) {
+    case 'schedule':
+      return { kind, calendar: '*-*-* 09:00:00' };
+    case 'metric':
+      return { kind, metric: 'cpu.temp', op: '>', threshold: 90, for_s: 60 };
+    case 'container':
+      return { kind, event: 'unhealthy' };
+    case 'unit_failed':
+      return { kind, scope: 'user' };
+    case 'ssh_failed':
+      return { kind, count: 10 };
+    case 'power':
+      return { kind, event: 'unplugged' };
+    case 'wifi':
+    case 'vpn':
+      return { kind, uuid: '', state: 'up' };
+    case 'internet':
+      return { kind, state: 'down' };
+    case 'idle':
+      return { kind, minutes: 30 };
+    case 'display':
+      return { kind, event: 'connected' };
+    case 'app':
+      return { kind, state: 'started', game: true };
+    default:
+      return { kind };
+  }
+}
+
+export const CONDITIONS = ['time', 'weekday', 'power', 'battery', 'wifi', 'mode', 'game', 'container', 'unit'] as const;
+export type ConditionKind = (typeof CONDITIONS)[number];
+export const WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
+
+export function blankCondition(kind: ConditionKind): Condition {
+  switch (kind) {
+    case 'time':
+      return { kind, from: '22:00', to: '07:00' };
+    case 'weekday':
+      return { kind, days: ['mon', 'tue', 'wed', 'thu', 'fri'] };
+    case 'power':
+      return { kind, on: 'ac' };
+    case 'battery':
+      return { kind, op: 'below', percent: 30 };
+    case 'wifi':
+      return { kind, uuid: '', is: true };
+    case 'mode':
+      return { kind, mode: '', is: true };
+    case 'game':
+      return { kind, is: false };
+    case 'container':
+      return { kind, target: '', state: 'running' };
+    case 'unit':
+      return { kind, scope: 'user', target: '', state: 'active' };
+  }
+}
+
+export const STEP_KINDS = ['action', 'notify', 'wait', 'check'] as const;
+export const CHANNELS = ['desktop', 'ntfy', 'mail'] as const;
+export const PLACEHOLDERS = ['automation', 'trigger', 'instance', 'value', 'top', 'journal', 'outage', 'sources', 'alert'] as const;
+export const CHECKS = { container_health: ['healthy', 'unhealthy'], container_state: ['running', 'stopped'], unit_state: ['active', 'inactive', 'failed'] } as const;
+export type CheckWhat = keyof typeof CHECKS;
+
+export function blankStep(kind: Step['step'], first?: CatalogEntry): Step {
+  switch (kind) {
+    case 'action':
+      return { step: 'action', action: first?.key ?? '', target: first?.options?.[0] ?? '' };
+    case 'notify':
+      return { step: 'notify', channels: ['desktop'], text: '{automation}: {trigger}' };
+    case 'wait':
+      return { step: 'wait', seconds: 60 };
+    case 'check':
+      return { step: 'check', what: 'unit_state', target: '', expect: 'active', then: [], else: [] };
+  }
+}
+
+export const DEFAULT_OPTIONS: Options = { cooldown_s: 300, max_per_hour: 6 };
+
+/** What the editor edits: the automation's fields, and its spec. */
+export interface Draft {
+  id?: number;
+  name: string;
+  enabled: boolean;
+  spec: Spec;
+  /** "template:<id>" for a draft from the gallery (on creation only). */
+  origin?: string;
+}
+
+export function blankDraft(): Draft {
+  return { name: '', enabled: true, spec: { trigger: blankTrigger('schedule'), then: [], options: { ...DEFAULT_OPTIONS } } };
+}
+
+/** A deep copy: the editor never changes the list's own object. */
+export function draftOf(a: Automation): Draft | null {
+  if (!a.spec) return null;
+  return { id: a.id, name: a.name, enabled: a.enabled, spec: structuredClone(a.spec) };
+}
+
+/** A check moves one step at a time up or down; out of range is a no-op. */
+export function moved<T>(list: readonly T[], i: number, by: -1 | 1): T[] {
+  const j = i + by;
+  if (j < 0 || j >= list.length) return [...list];
+  const out = [...list];
+  [out[i], out[j]] = [out[j] as T, out[i] as T];
+  return out;
+}
+
+/** The body create and update take. */
+export function body(d: Draft): string {
+  return JSON.stringify({ name: d.name, enabled: d.enabled, spec: d.spec, ...(d.id === undefined && d.origin ? { origin: d.origin } : {}) });
+}
+
+// ---- Gallery: templates the current validator and actions can express
+// (docs/plan/automations.md §8). Each makes a draft; nothing is saved
+// until the user saves it. A step that cannot run unattended waits for
+// approval, as the editor shows.
+
+export interface Template {
+  id: string;
+  /** What it needs to make sense here: Docker, a battery. */
+  needs?: 'docker' | 'battery';
+  make: (text: (key: MessageKey) => string) => Draft;
+}
+
+const tpl = (id: string, trigger: Trigger, then: Step[], options: Partial<Options> = {}): ((text: (key: MessageKey) => string) => Draft) => (text) => ({
+  name: text(`auto.tpl.${id}` as MessageKey),
+  enabled: true,
+  origin: `template:${id}`,
+  spec: { trigger, then: then.map((s) => (s.step === 'notify' ? { ...s, text: text(`auto.tpl.${id}.text` as MessageKey) } : s)), options: { ...DEFAULT_OPTIONS, ...options } },
+});
+
+const notify = (): Step => ({ step: 'notify', channels: ['desktop'], text: '' });
+
+export const TEMPLATES: readonly Template[] = [
+  { id: 'heat', make: tpl('heat', { kind: 'metric', metric: 'cpu.temp', op: '>', threshold: 90, for_s: 60 }, [{ step: 'action', action: 'power/profile', target: 'power-saver' }, notify()]) },
+  { id: 'unit-failed', make: tpl('unit-failed', { kind: 'unit_failed', scope: 'user' }, [notify()]) },
+  { id: 'container-unhealthy', needs: 'docker', make: tpl('container-unhealthy', { kind: 'container', event: 'unhealthy' }, [notify()], { max_per_hour: 3 }) },
+  { id: 'exposure', make: tpl('exposure', { kind: 'new_listener' }, [notify()]) },
+  { id: 'ssh', make: tpl('ssh', { kind: 'ssh_failed', count: 10 }, [notify()]) },
+  { id: 'integrity', make: tpl('integrity', { kind: 'integrity_changed' }, [notify()]) },
+  { id: 'usb', make: tpl('usb', { kind: 'usb_device' }, [notify()]) },
+  { id: 'security-updates', make: tpl('security-updates', { kind: 'security_updates' }, [notify()]) },
+  { id: 'unplugged', needs: 'battery', make: tpl('unplugged', { kind: 'power', event: 'unplugged' }, [{ step: 'action', action: 'power/profile', target: 'power-saver' }]) },
+  { id: 'plugged', needs: 'battery', make: tpl('plugged', { kind: 'power', event: 'plugged' }, [{ step: 'action', action: 'power/profile', target: 'balanced' }]) },
+  { id: 'disk-full', make: tpl('disk-full', { kind: 'metric', metric: 'disk.used_pct', op: '>', threshold: 90, for_s: 300 }, [{ step: 'action', action: 'space/preview', target: 'space' }, notify()]) },
+  { id: 'internet-back', make: tpl('internet-back', { kind: 'internet', state: 'back' }, [notify()]) },
+];
