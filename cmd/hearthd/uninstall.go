@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -137,6 +139,24 @@ func setupUninstall(api mux, reg *actions.Registry, d uninstallDeps) *uninstall.
 		},
 	}
 	svc.Register(reg)
+	restorer := &uninstall.Restorer{DB: d.DB, PK: d.PK, Broker: d.Broker, Run: d.UserRun.Run, Home: d.Home,
+		Refs: uninstall.DBRefs{DB: d.DB, Modes: d.Modes}, Audit: svc.Engine.Audit,
+		Madison: func(ctx context.Context, names ...string) (string, error) {
+			res, err := safeexec.Run(ctx, "apt-cache-madison", safeexec.AptMadison(names...)...)
+			return string(res.Stdout), err
+		},
+		Snapd: func(ctx context.Context, method, path string, body, out any) error {
+			var r io.Reader
+			if body != nil {
+				b, err := json.Marshal(body)
+				if err != nil {
+					return err
+				}
+				r = bytes.NewReader(b)
+			}
+			return discovery.SnapdJSON(ctx, d.Extra.SnapSocket, method, path, r, out, "X-Allow-Interaction", "true")
+		}}
+	restorer.Register(reg)
 	api.HandleFunc("GET /api/v1/uninstall/plan", svc.HandlePlan)
 	api.HandleFunc("GET /api/v1/uninstall/ops", svc.HandleOps)
 	return svc

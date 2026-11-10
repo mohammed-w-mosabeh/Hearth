@@ -51,3 +51,16 @@ func FuzzAptSimulateArgs(f *testing.F) {
 		}
 	})
 }
+
+func TestAptMadisonArgs(t *testing.T) {
+	v := allowlist["apt-cache-madison"].Validate
+	if err := v(AptMadison("vlc", "libvlc5")); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range [][]string{AptMadison(), AptMadison("vlc:amd64"), AptMadison("-o"), AptMadison("vlc", "vlc"),
+		{"madison", "vlc"}, {"-q", "-o", "Dir::Cache::pkgcache=", "-o", "Dir::Cache::srcpkgcache=", "policy", "vlc"}} {
+		if v(bad) == nil {
+			t.Errorf("accepted %v", bad)
+		}
+	}
+}
