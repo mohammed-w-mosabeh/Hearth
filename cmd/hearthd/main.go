@@ -191,7 +191,32 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	if err := channels.Load(); err != nil {
 		log.Warn("alerts: remote channels are off", "err", err)
 	}
+	// Alert rules are automations (ROADMAP 12.7): alert_rules rows move
+	// once, and from then on every reader and writer of rules goes through
+	// the automations. The alert engine keeps the incidents; an incident
+	// that opens runs its rule's automation.
+	if n, err := automations.MigrateAlertRules(ctx, db); err != nil {
+		return err
+	} else if n > 0 {
+		log.Info("automations: alert rules moved", "rules", n)
+	}
+	var autoRef atomic.Pointer[automations.Engine]
 	engine := alerts.NewEngine(db, alerts.Fanout{notifier, channels}, srv.Hub, log)
+	db.SetAlertRuleStore(automations.AlertRules{DB: db, Changed: func() {
+		_ = engine.Reload(context.Background())
+		if a := autoRef.Load(); a != nil {
+			_ = a.Load(context.Background())
+		}
+	}})
+	engine.Opened = func(ctx context.Context, ev store.AlertEvent, summary, body string) {
+		if a := autoRef.Load(); a != nil {
+			a.FireAlert(ctx, ev.RuleID, ev.Instance, ev.Value, body)
+			return
+		}
+		if ev.Notified { // before the automations engine is up: as before
+			_ = alerts.Fanout{notifier, channels}.Notify(ctx, summary, body, ev.Severity)
+		}
+	}
 	if err := engine.Load(ctx); err != nil {
 		return err
 	}
@@ -801,7 +826,15 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	// disarms its triggers (SECURITY S15b). Profiles are kept as modes
 	// (ROADMAP 10.2): the profile engine below reads and writes mode files.
 	var profileManager *profiles.Manager
+	// Armed triggers are automations (ROADMAP 12.7): modeSync keeps them
+	// matching what is armed for the current files.
+	var modeSync *modes.Syncer
 	modeSet := modes.NewSet(modes.Config{Dir: filepath.Join(paths.ConfigDir, "modes"), Store: db, Log: log,
+		Changed: func() {
+			if modeSync != nil {
+				modeSync.Now(ctx)
+			}
+		},
 		Check: func(items []modes.Item, game bool) error {
 			list := make([]profiles.Item, len(items))
 			for i, it := range items {
@@ -925,10 +958,27 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	approvalsDone := make(chan struct{})
 	go func() { approvals.Run(approvalsCtx, time.Minute); close(approvalsDone) }()
 	defer func() { stopApprovals(); <-approvalsDone }()
-	// Triggers (ROADMAP 10.6): armed only by a click (mode/arm) for the file
-	// shown, they switch a mode on when what they wait for changes:
-	// unattended items only, never a dialog.
-	modes.RegisterArming(reg, modeSet, db, nil)
+	// Triggers (ROADMAP 10.6, 12.7): armed only by a click (mode/arm) for
+	// the file shown, each is an automation running mode/activate, which
+	// switches the mode on as 10.6 did: unattended items only, never a
+	// dialog. Arming, disarming, a changed file and a 15 s tick sync them.
+	modeSync = &modes.Syncer{DB: db, Set: modeSet, Log: log, Changed: func() {
+		if a := autoRef.Load(); a != nil {
+			_ = a.Load(context.Background())
+		}
+	}}
+	modes.RegisterArming(reg, modeSet, modeSync.Arming(db), nil)
+	modes.RegisterActivate(reg, modeSet, func(ctx context.Context, modeID, by, why string) error {
+		nums, err := db.ModeNumbers(ctx, []string{modeID})
+		if err != nil {
+			return err
+		}
+		return profileManager.AutoActivate(ctx, nums[modeID], by, why)
+	})
+	// Triggers armed before 12.7 become automations here, once: the set is
+	// read first, so a sync never sees an empty one.
+	modeSet.Load(ctx)
+	modeSync.Now(ctx)
 	// What mode triggers and automations watch (ROADMAP 10.6, 12.3).
 	trigSources := modes.Sources{
 		Next: func(ctx context.Context, cal string) (time.Time, error) {
@@ -951,19 +1001,10 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		},
 		Displays: func() (int, error) { return session.ConnectedDisplays("/sys") },
 	}
-	triggers := modes.NewTriggers(modes.TriggerConfig{Set: modeSet, DB: db, Log: log,
-		Sources: trigSources,
-		Activate: func(ctx context.Context, modeID, by, why string) error {
-			nums, err := db.ModeNumbers(ctx, []string{modeID})
-			if err != nil {
-				return err
-			}
-			return profileManager.AutoActivate(ctx, nums[modeID], by, why)
-		}})
-	triggersCtx, stopTriggers := context.WithCancel(ctx)
-	triggersDone := make(chan struct{})
-	go func() { triggers.Run(triggersCtx, 15*time.Second); close(triggersDone) }()
-	defer func() { stopTriggers(); <-triggersDone }()
+	syncCtx, stopSync := context.WithCancel(ctx)
+	syncDone := make(chan struct{})
+	go func() { modeSync.Run(syncCtx, 15*time.Second); close(syncDone) }()
+	defer func() { stopSync(); <-syncDone }()
 	modesCtx, stopModes := context.WithCancel(ctx)
 	modesDone := make(chan struct{})
 	go func() { modeSet.Run(modesCtx); close(modesDone) }()
@@ -996,11 +1037,14 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	// Notify and check steps (ROADMAP 12.5): the alert channels, the
 	// busiest processes and the triggering unit's journal.
 	autoSteps := automations.Steps{
-		Desktop: func(ctx context.Context, summary, body string) error {
-			return notifier.Notify(ctx, summary, body, "info")
+		Desktop: func(ctx context.Context, summary, body, severity string) error {
+			return notifier.Notify(ctx, summary, body, severity)
 		},
-		Send: func(ctx context.Context, channel, summary, body string) error {
-			return channels.Send(ctx, channel, summary, body, "info")
+		Send: func(ctx context.Context, channel, summary, body, severity string) error {
+			return channels.Send(ctx, channel, summary, body, severity)
+		},
+		All: func(ctx context.Context, summary, body, severity string) error {
+			return alerts.Fanout{notifier, channels}.Notify(ctx, summary, body, severity)
 		},
 		Top:     topProcesses(apps.Name),
 		Journal: unitJournal,
@@ -1055,6 +1099,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 			_ = channels.Send(ctx, "ntfy", summary, body, "warning")
 		}})
 	autoEngine.RegisterApprovals(reg)
+	autoRef.Store(autoEngine)
 	engine.Tap = autoEngine.Observe
 	autoCtx, stopAuto := context.WithCancel(ctx)
 	autoDone := make(chan struct{})
@@ -1062,7 +1107,8 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	defer func() { stopAuto(); <-autoDone }()
 	(&automations.API{Store: db, Engine: autoEngine, Approvals: autoEngine,
 		ModeApprovals: func(ctx context.Context) (any, error) { return approvals.Pending(ctx) },
-		Changed:       func() { _ = autoEngine.Load(context.Background()) }, Check: automations.NewChecker(automations.CheckDeps{
+		// An alert automation edited here changes the alert engine's rules too.
+		Changed: func() { _ = autoEngine.Load(context.Background()); _ = engine.Reload(context.Background()) }, Check: automations.NewChecker(automations.CheckDeps{
 			Registry: reg, Protect: kernelProtect,
 			Calendar: func(ctx context.Context, expr string) error {
 				if c := scheduler.CheckSchedule(ctx, safeexec.Run, scheduler.Schedule{Kind: scheduler.KindCalendar, Value: expr}); !c.Valid {

@@ -44,12 +44,15 @@ const (
 
 // Event is what fired a trigger.
 type Event struct {
-	Kind     string    `json:"kind"`     // the trigger kind
-	Instance string    `json:"instance"` // unit, container, mount, connection...
-	Value    float64   `json:"value,omitempty"`
-	Outage   int64     `json:"outage_s,omitempty"` // internet back: how long it was down
-	Detail   string    `json:"detail,omitempty"`
-	Time     time.Time `json:"time"`
+	Kind     string  `json:"kind"`     // the trigger kind
+	Instance string  `json:"instance"` // unit, container, mount, connection...
+	Value    float64 `json:"value,omitempty"`
+	Outage   int64   `json:"outage_s,omitempty"` // internet back: how long it was down
+	Detail   string  `json:"detail,omitempty"`
+	// Alert is an alert incident's description ({alert}), from the alert
+	// engine's own words.
+	Alert string    `json:"alert,omitempty"`
+	Time  time.Time `json:"time"`
 }
 
 // StepResult is one step of a run.
@@ -202,6 +205,10 @@ func (e *Engine) Load(ctx context.Context) error {
 		s, err := spec.Parse(a.Spec)
 		if err != nil {
 			e.cfg.Log.Warn("automations: invalid spec left out", "id", a.ID, "err", err)
+			continue
+		}
+		if !strings.HasPrefix(a.Origin, "mode:") && userMade(s) != nil {
+			e.cfg.Log.Warn("automations: mode/activate outside a mode trigger left out", "id", a.ID)
 			continue
 		}
 		list = append(list, loaded{Automation: a, spec: s})
@@ -518,19 +525,25 @@ func (e *Engine) gate(ctx context.Context, a loaded, now time.Time) (state, reas
 	if o.QuietFrom != "" && within(now, o.QuietFrom, o.QuietTo) {
 		return RunSkipped, "quiet hours"
 	}
-	if e.running[a.ID] {
+	// An alert rule's incident is already debounced, per instance, by its
+	// duration and hysteresis: two disks filling within a minute are two
+	// notifications, as alerts have always been (ROADMAP 12.7).
+	alert := a.spec.Trigger.Kind == "alert"
+	if !alert && e.running[a.ID] {
 		return RunSkipped, "a run is still going"
 	}
 	hour := now.Add(-time.Hour)
 	e.runs[a.ID] = slices.DeleteFunc(e.runs[a.ID], func(t time.Time) bool { return t.Before(hour) })
-	if r := e.runs[a.ID]; len(r) > 0 && now.Sub(r[len(r)-1]) < time.Duration(o.CooldownS)*time.Second {
+	if r := e.runs[a.ID]; !alert && len(r) > 0 && now.Sub(r[len(r)-1]) < time.Duration(o.CooldownS)*time.Second {
 		return RunSkipped, "cooldown"
 	}
 	if len(e.runs[a.ID]) >= o.MaxPerHour {
 		return RunSkipped, "the hourly maximum was reached"
 	}
 	e.runs[a.ID] = append(e.runs[a.ID], now)
-	e.running[a.ID] = true
+	if !alert {
+		e.running[a.ID] = true
+	}
 	return "", ""
 }
 

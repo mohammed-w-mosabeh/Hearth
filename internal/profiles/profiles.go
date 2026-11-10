@@ -151,8 +151,7 @@ type Manager struct {
 	cfg Config
 	mu  sync.Mutex // one activation at a time
 
-	playing bool // only Run
-	missed  int
+	missed int // polls without a game, only Run
 }
 
 // New returns a Manager.
@@ -648,8 +647,9 @@ func (m *Manager) Register(reg *actions.Registry) {
 		}})
 }
 
-// Run follows games until ctx ends: profiles set to do so are activated
-// when a game starts, and restored when none has run for gameGone polls.
+// Run follows games until ctx ends: a mode the game trigger switched on is
+// restored when no game has run for gameGone polls. Switching it on is the
+// game trigger's automation (ROADMAP 12.7: mode/activate, by "game").
 // This also restores what a game left behind if hearthd was not running
 // when it ended.
 func (m *Manager) Run(ctx context.Context, interval time.Duration) {
@@ -671,17 +671,14 @@ func (m *Manager) poll(ctx context.Context) {
 		m.cfg.Log.Warn("profiles: cannot read", "err", err)
 		return
 	}
-	var auto, byGame []store.Profile
+	var byGame []store.Profile
 	for _, p := range list {
-		if p.AutoGame && p.ActivatedAt.IsZero() {
-			auto = append(auto, p)
-		}
 		if p.ActivatedBy == ByGame {
 			byGame = append(byGame, p)
 		}
 	}
-	if len(auto) == 0 && len(byGame) == 0 {
-		m.playing, m.missed = false, 0
+	if len(byGame) == 0 {
+		m.missed = 0
 		return
 	}
 	games, err := m.cfg.Playing()
@@ -691,19 +688,13 @@ func (m *Manager) poll(ctx context.Context) {
 	}
 	if len(games) > 0 {
 		m.missed = 0
-		if !m.playing { // once per game: the user may deactivate during it
-			m.playing = true
-			for _, p := range auto {
-				m.autoActivate(ctx, p, ByGame, "a game started")
-			}
-		}
 		return
 	}
 	m.missed++
 	if m.missed < gameGone {
 		return
 	}
-	m.playing = false
+	m.missed = 0
 	for _, p := range byGame {
 		m.autoDeactivate(ctx, p)
 	}

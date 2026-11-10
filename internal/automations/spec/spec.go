@@ -14,6 +14,9 @@ import (
 	"slices"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/mohammed-w-mosabeh/hearth/internal/alerts"
+	"github.com/mohammed-w-mosabeh/hearth/internal/store"
 )
 
 // Bounds.
@@ -62,6 +65,7 @@ type Trigger struct {
 	Days      int     `json:"days,omitempty"`      // files older_than
 	Depth     int     `json:"depth,omitempty"`     // files
 	Pattern   string  `json:"pattern,omitempty"`   // files
+	Severity  string  `json:"severity,omitempty"`  // alert
 }
 
 // Conditions combine with all or any, one level deep.
@@ -97,6 +101,7 @@ type Step struct {
 	Label    string            `json:"label,omitempty"`
 	Channels []string          `json:"channels,omitempty"` // notify
 	Text     string            `json:"text,omitempty"`     // notify
+	Severity string            `json:"severity,omitempty"` // notify: info (default), warning, critical
 	Seconds  int               `json:"seconds,omitempty"`  // wait
 	What     string            `json:"what,omitempty"`     // check
 	Expect   string            `json:"expect,omitempty"`   // check
@@ -118,6 +123,7 @@ var triggerFields = map[string][]string{
 	"schedule":          {"calendar"},
 	"login":             nil,
 	"metric":            {"metric", "op", "threshold", "for_s", "target"},
+	"alert":             {"metric", "op", "threshold", "for_s", "target", "severity"},
 	"container":         {"event", "target"},
 	"unit_failed":       {"scope", "target"},
 	"new_listener":      nil,
@@ -151,7 +157,7 @@ var conditionFields = map[string][]string{
 
 var stepFields = map[string][]string{
 	"action": {"action", "target", "params", "continue", "label"},
-	"notify": {"channels", "text", "label"},
+	"notify": {"channels", "text", "label", "severity"},
 	"wait":   {"seconds", "label"},
 	"check":  {"what", "target", "expect", "then", "else", "label"},
 }
@@ -169,7 +175,7 @@ var Metrics = map[string][2]float64{
 }
 
 // Placeholders a notification's text may hold.
-var Placeholders = []string{"automation", "trigger", "instance", "value", "top", "journal", "outage", "sources"}
+var Placeholders = []string{"automation", "trigger", "instance", "value", "top", "journal", "outage", "sources", "alert"}
 
 // Denied are actions an automation may never hold: their reach is too
 // wide for a run confirmed later (docs/plan/automations.md §4).
@@ -387,6 +393,13 @@ func (t Trigger) check() error {
 		if !calRe.MatchString(t.Calendar) {
 			return bad("calendar must be an OnCalendar expression")
 		}
+	case "alert":
+		// An incident of an alert rule opens (ROADMAP 12.7): the alert
+		// engine evaluates it, with the Alerts page's own checks.
+		if err := alerts.Validate(store.AlertRule{Name: "rule", Metric: t.Metric, Target: t.Target, Op: t.Op,
+			Threshold: t.Threshold, ForSec: t.ForS, Severity: t.Severity}); err != nil {
+			return bad("%s", err.Error())
+		}
 	case "metric":
 		r, ok := Metrics[t.Metric]
 		if !ok {
@@ -578,10 +591,18 @@ func CheckNotify(st Step) error {
 	if len(st.Channels) == 0 || len(st.Channels) > 3 {
 		return errors.New("1 to 3 channels")
 	}
+	// "all" is the desktop and every remote channel that is turned on, as
+	// alerts have always been sent; it stands alone.
+	if slices.Contains(st.Channels, "all") && len(st.Channels) != 1 {
+		return errors.New(`"all" stands alone`)
+	}
 	for i, c := range st.Channels {
-		if !oneOf(c, "desktop", "ntfy", "mail") || slices.Contains(st.Channels[:i], c) {
-			return errors.New("channels are desktop, ntfy and mail, each once")
+		if !oneOf(c, "desktop", "ntfy", "mail", "all") || slices.Contains(st.Channels[:i], c) {
+			return errors.New("channels are desktop, ntfy and mail, each once, or all")
 		}
+	}
+	if !oneOf(st.Severity, "", "info", "warning", "critical") {
+		return errors.New("severity must be info, warning or critical")
 	}
 	if strings.TrimSpace(st.Text) == "" || utf8.RuneCountInString(st.Text) > MaxText || !clean(st.Text) {
 		return fmt.Errorf("text must be 1 to %d characters", MaxText)

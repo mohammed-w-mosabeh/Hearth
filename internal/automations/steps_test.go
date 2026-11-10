@@ -32,8 +32,9 @@ func (s *sent) steps() Steps {
 		return nil
 	}
 	return Steps{
-		Desktop: func(_ context.Context, summary, body string) error { return rec("desktop", summary, body) },
-		Send:    func(_ context.Context, ch, summary, body string) error { return rec(ch, summary, body) },
+		Desktop: func(_ context.Context, summary, body, sev string) error { return rec("desktop", summary, body) },
+		Send:    func(_ context.Context, ch, summary, body, sev string) error { return rec(ch, summary, body) },
+		All:     func(_ context.Context, summary, body, sev string) error { return rec("all:"+sev, summary, body) },
 		Top: func(context.Context) ([]string, error) {
 			return []string{"firefox 40%", "code 20%", "gnome-shell 5%", "four 1%"}, nil
 		},
@@ -328,5 +329,16 @@ func TestTopTimesOutWithContext(t *testing.T) {
 	defer cancel()
 	if got := s.fill(ctx, "{top}", Event{}, "n"); got != "unknown" {
 		t.Fatalf("%q", got)
+	}
+}
+
+func TestNotifyAllWithSeverityAndAlert(t *testing.T) {
+	s := &sent{}
+	st := spec.Step{Step: "notify", Channels: []string{"all"}, Severity: "critical", Text: "{alert}"}
+	if err := s.steps().Notify(context.Background(), st, Event{Kind: "alert", Alert: "Disk /home is 95%\x1b, above 90%."}, "Disk almost full"); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.list) != 1 || s.list[0] != "all:critical|Disk almost full|Disk /home is 95% , above 90%." {
+		t.Fatalf("%q", s.list)
 	}
 }

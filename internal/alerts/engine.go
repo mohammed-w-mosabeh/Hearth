@@ -58,6 +58,10 @@ type Engine struct {
 	// Tap, if set, sees every observation too (the automations engine,
 	// ROADMAP 12.3). Called without the engine's lock held.
 	Tap func(ctx context.Context, now time.Time, metric string, values map[string]float64)
+	// Opened, if set, is told of each incident that opens, with its
+	// description, instead of the engine notifying: the rule's automation
+	// runs its steps (ROADMAP 12.7). Called in the background.
+	Opened func(ctx context.Context, ev store.AlertEvent, summary, body string)
 
 	mu     sync.Mutex
 	rules  []store.AlertRule // enabled only
@@ -212,6 +216,16 @@ func (e *Engine) step(ctx context.Context, r *store.AlertRule, instance string, 
 	ev.ID = id
 	st.event = &ev
 	e.publish("open", ev)
+	if e.Opened != nil {
+		summary, body := Describe(ev)
+		opened := e.Opened
+		e.wg.Add(1)
+		go func() {
+			defer e.wg.Done()
+			opened(context.WithoutCancel(ctx), ev, summary, body)
+		}()
+		return
+	}
 	if ev.Notified {
 		summary, body := Describe(ev)
 		e.send(ctx, summary, body, ev.Severity)

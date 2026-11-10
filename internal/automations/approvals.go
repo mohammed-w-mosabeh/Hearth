@@ -22,6 +22,27 @@ import (
 // user there, so polkit may ask. Each action step is previewed again
 // right before it runs and runs only if it would affect what was approved.
 
+// FireAlert runs the automation of an alert rule whose incident opened
+// (the alert engine's Opened): its quiet hours, cooldown and every other
+// gate apply as for any trigger.
+func (e *Engine) FireAlert(ctx context.Context, id int64, instance string, value float64, body string) {
+	e.mu.Lock()
+	var found *loaded
+	for i := range e.autos {
+		if e.autos[i].ID == id && e.autos[i].spec.Trigger.Kind == "alert" {
+			a := e.autos[i]
+			found = &a
+		}
+	}
+	e.mu.Unlock()
+	if found == nil {
+		return
+	}
+	// The instance and the description come from the machine (unit and
+	// container names): cleaned and masked before a run record keeps them.
+	e.Fire(ctx, *found, Event{Kind: "alert", Instance: Mask(clean(instance)), Value: value, Alert: Mask(clean(body)), Time: e.cfg.Clock()}, "trigger")
+}
+
 // Bounds of an approval.
 const (
 	ApprovalTTL  = 12 * time.Hour

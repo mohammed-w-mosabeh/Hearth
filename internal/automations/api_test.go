@@ -204,3 +204,22 @@ func TestApprovalsRoute(t *testing.T) {
 		t.Fatal(code)
 	}
 }
+
+// Only arming a mode's trigger makes an automation that switches a mode
+// on: the editor and an import refuse mode/activate, even in a branch.
+func TestModeActivateOnlyFromArming(t *testing.T) {
+	srv, _, _ := rig(t)
+	step := `{"step":"action","action":"mode/activate","target":"away","params":{"trigger":"0","hash":"` + strings.Repeat("a", 64) + `"}}`
+	direct := `{"name":"Sneaky","enabled":true,"spec":{"trigger":{"kind":"login"},"then":[` + step + `]}}`
+	branch := `{"name":"Sneaky","enabled":true,"spec":{"trigger":{"kind":"login"},"then":[{"step":"check","what":"unit_state","target":"user/x.service","expect":"active","then":[` + step + `]}]}}`
+	for _, body := range []string{direct, branch} {
+		code, out := do(t, srv, "POST", "/api/v1/automations", body)
+		if code != http.StatusBadRequest || !strings.Contains(out["error"].(string), "Modes page") {
+			t.Fatalf("%d %v", code, out)
+		}
+	}
+	imp := `{"version":1,"automations":[{"name":"Sneaky","enabled":false,"spec":{"trigger":{"kind":"login"},"then":[` + step + `]}}]}`
+	if code, out := do(t, srv, "POST", "/api/v1/automations/import", imp); code != http.StatusBadRequest || !strings.Contains(out["error"].(string), "Modes page") {
+		t.Fatalf("%d %v", code, out)
+	}
+}

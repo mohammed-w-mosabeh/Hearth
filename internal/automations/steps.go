@@ -21,8 +21,11 @@ import (
 type Steps struct {
 	// Desktop shows a desktop notification; Send sends through a remote
 	// channel ("ntfy" or "smtp"). Either may be nil (that channel fails).
-	Desktop func(ctx context.Context, summary, body string) error
-	Send    func(ctx context.Context, channel, summary, body string) error
+	Desktop func(ctx context.Context, summary, body, severity string) error
+	Send    func(ctx context.Context, channel, summary, body, severity string) error
+	// All sends to the desktop and every remote channel that is turned on
+	// (channel "all", as alerts are sent).
+	All func(ctx context.Context, summary, body, severity string) error
 	// Top are the busiest processes by CPU, as "name 12%" (the {top}
 	// placeholder); Journal the last lines of a unit, "scope/unit" ({journal}).
 	Top     func(ctx context.Context) ([]string, error)
@@ -44,16 +47,23 @@ const (
 // that fails does not stop the others; the first error is returned.
 func (s Steps) Notify(ctx context.Context, st spec.Step, ev Event, name string) error {
 	body := Mask(s.fill(ctx, st.Text, ev, name))
-	return s.send(ctx, st.Channels, Mask(oneLine(name)), body)
+	return s.send(ctx, st.Channels, Mask(oneLine(name)), body, severity(st.Severity))
+}
+
+func severity(s string) string {
+	if s == "" {
+		return "info"
+	}
+	return s
 }
 
 // SendText sends text as given (cleaned and masked) to channels: the
 // notify/send action.
 func (s Steps) SendText(ctx context.Context, channels []string, summary, text string) error {
-	return s.send(ctx, channels, Mask(oneLine(summary)), Mask(text))
+	return s.send(ctx, channels, Mask(oneLine(summary)), Mask(text), "info")
 }
 
-func (s Steps) send(ctx context.Context, channels []string, summary, body string) error {
+func (s Steps) send(ctx context.Context, channels []string, summary, body, sev string) error {
 	var first error
 	for _, c := range channels {
 		var err error
@@ -62,14 +72,20 @@ func (s Steps) send(ctx context.Context, channels []string, summary, body string
 			if s.Desktop == nil {
 				err = errors.New("desktop notifications are not available")
 			} else {
-				err = s.Desktop(ctx, summary, body)
+				err = s.Desktop(ctx, summary, body, sev)
 			}
 		case "ntfy", "mail":
 			ch := map[string]string{"ntfy": "ntfy", "mail": "smtp"}[c]
 			if s.Send == nil {
 				err = fmt.Errorf("%s is not available", c)
 			} else {
-				err = s.Send(ctx, ch, summary, body)
+				err = s.Send(ctx, ch, summary, body, sev)
+			}
+		case "all":
+			if s.All == nil {
+				err = errors.New("notifications are not available")
+			} else {
+				err = s.All(ctx, summary, body, sev)
 			}
 		default:
 			err = fmt.Errorf("unknown channel %q", c)
@@ -100,6 +116,7 @@ func (s Steps) fill(ctx context.Context, text string, ev Event, name string) str
 			}
 			return (time.Duration(ev.Outage) * time.Second).String()
 		},
+		"alert": func() string { return oneLine(ev.Alert) },
 		"sources": func() string {
 			if ev.Kind != "ssh_failed" {
 				return ""

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 )
 
@@ -309,4 +310,153 @@ func (db *DB) PruneAutomationApprovals(ctx context.Context, before time.Time) er
 		return fmt.Errorf("store: prune approvals: %w", err)
 	}
 	return nil
+}
+
+// MigrateAlertRules moves every alert_rules row into automations (origin
+// "alert", ROADMAP 12.7) in one transaction: convert builds each rule's
+// spec (an error that wraps a spec is stored turned off; any other error
+// stops the migration), incidents are moved to the new IDs, the rows are
+// deleted, and the move is audited. It returns how many moved.
+func (db *DB) MigrateAlertRules(ctx context.Context, convert func(AlertRule) (json.RawMessage, error)) (int, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("store: migrate alert rules: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	rows, err := tx.QueryContext(ctx, `SELECT `+ruleCols+` FROM alert_rules ORDER BY id`)
+	if err != nil {
+		return 0, fmt.Errorf("store: migrate alert rules: %w", err)
+	}
+	var rules []AlertRule
+	for rows.Next() {
+		var r AlertRule
+		if err := rows.Scan(&r.ID, &r.Name, &r.Metric, &r.Target, &r.Op, &r.Threshold, &r.ForSec, &r.Severity, &r.Enabled, &r.QuietFrom, &r.QuietTo); err != nil {
+			_ = rows.Close()
+			return 0, fmt.Errorf("store: migrate alert rules: %w", err)
+		}
+		rules = append(rules, r)
+	}
+	_ = rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("store: migrate alert rules: %w", err)
+	}
+	if len(rules) == 0 {
+		return 0, nil
+	}
+	// Incidents of rules deleted earlier would point at whatever automation
+	// takes their old ID: they point at none.
+	if _, err := tx.ExecContext(ctx, `UPDATE alert_events SET rule_id = 0 WHERE rule_id NOT IN (SELECT id FROM alert_rules)`); err != nil {
+		return 0, fmt.Errorf("store: migrate alert rules: %w", err)
+	}
+	now := time.Now().UnixMilli()
+	for _, r := range rules {
+		raw, cerr := convert(r)
+		enabled := r.Enabled
+		if cerr != nil {
+			if raw == nil || !json.Valid(raw) {
+				return 0, fmt.Errorf("store: migrate alert rule %d: %w", r.ID, cerr)
+			}
+			enabled = false
+		}
+		res, err := tx.ExecContext(ctx, `INSERT INTO automations (name, enabled, spec, origin, created, updated) VALUES (?, ?, ?, 'alert', ?, ?)`,
+			r.Name, enabled, string(raw), now, now)
+		if err != nil {
+			return 0, fmt.Errorf("store: migrate alert rule %d: %w", r.ID, err)
+		}
+		id, err := res.LastInsertId()
+		if err != nil {
+			return 0, err
+		}
+		// Negative while moving, so a new ID equal to an old one is not
+		// moved twice.
+		if _, err := tx.ExecContext(ctx, `UPDATE alert_events SET rule_id = ? WHERE rule_id = ?`, -id, r.ID); err != nil {
+			return 0, fmt.Errorf("store: migrate alert rule %d: %w", r.ID, err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM alert_rules WHERE id = ?`, r.ID); err != nil {
+			return 0, fmt.Errorf("store: migrate alert rule %d: %w", r.ID, err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE alert_events SET rule_id = -rule_id WHERE rule_id < 0`); err != nil {
+		return 0, fmt.Errorf("store: migrate alert rules: %w", err)
+	}
+	hash, err := ParamsHash(nil)
+	if err != nil {
+		return 0, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log (ts, origin, uid, action, target, params_hash, result) VALUES (?, 'local', ?, 'automations.migrate', 'alert-rules', ?, ?)`,
+		now, os.Getuid(), hash, fmt.Sprintf("ok: %d rules", len(rules))); err != nil {
+		return 0, fmt.Errorf("store: migrate alert rules: %w", err)
+	}
+	return len(rules), tx.Commit()
+}
+
+// SyncModeAutomations makes the automations of mode triggers (origin
+// "mode:…", ROADMAP 12.7) be exactly desired, matched by origin, in one
+// transaction: the others are deleted, the missing ones added, and a
+// change is audited. It returns how many were added and deleted.
+func (db *DB) SyncModeAutomations(ctx context.Context, desired []Automation) (created, deleted int, err error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, 0, fmt.Errorf("store: sync mode automations: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	rows, err := tx.QueryContext(ctx, `SELECT id, origin FROM automations WHERE origin LIKE 'mode:%'`)
+	if err != nil {
+		return 0, 0, fmt.Errorf("store: sync mode automations: %w", err)
+	}
+	have := map[string]int64{}
+	var stale []int64
+	for rows.Next() {
+		var id int64
+		var origin string
+		if err := rows.Scan(&id, &origin); err != nil {
+			_ = rows.Close()
+			return 0, 0, fmt.Errorf("store: sync mode automations: %w", err)
+		}
+		if _, dup := have[origin]; dup {
+			stale = append(stale, id)
+			continue
+		}
+		have[origin] = id
+	}
+	_ = rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, 0, fmt.Errorf("store: sync mode automations: %w", err)
+	}
+	want := map[string]bool{}
+	for _, a := range desired {
+		want[a.Origin] = true
+		if _, ok := have[a.Origin]; ok {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO automations (name, enabled, spec, origin, created, updated) VALUES (?, ?, ?, ?, ?, ?)`,
+			a.Name, a.Enabled, string(a.Spec), a.Origin, a.Created, a.Updated); err != nil {
+			return 0, 0, fmt.Errorf("store: sync mode automations: %w", err)
+		}
+		have[a.Origin] = 0
+		created++
+	}
+	for origin, id := range have {
+		if !want[origin] && id != 0 {
+			stale = append(stale, id)
+		}
+	}
+	for _, id := range stale {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM automations WHERE id = ?`, id); err != nil {
+			return 0, 0, fmt.Errorf("store: sync mode automations: %w", err)
+		}
+		deleted++
+	}
+	if created+deleted == 0 {
+		return 0, 0, nil
+	}
+	hash, err := ParamsHash(nil)
+	if err != nil {
+		return 0, 0, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log (ts, origin, uid, action, target, params_hash, result) VALUES (?, 'local', ?, 'automations.sync', 'mode-triggers', ?, ?)`,
+		time.Now().UnixMilli(), os.Getuid(), hash, fmt.Sprintf("ok: %d added, %d deleted", created, deleted)); err != nil {
+		return 0, 0, fmt.Errorf("store: sync mode automations: %w", err)
+	}
+	return created, deleted, tx.Commit()
 }

@@ -210,6 +210,9 @@ func (a *API) decode(r *http.Request) (store.Automation, error) {
 	if err != nil {
 		return store.Automation{}, err
 	}
+	if err := userMade(s); err != nil {
+		return store.Automation{}, err
+	}
 	if a.Check != nil {
 		if err := a.Check(r.Context(), s); err != nil {
 			return store.Automation{}, err
@@ -373,6 +376,10 @@ func (a *API) importFile(w http.ResponseWriter, r *http.Request) {
 	}
 	list := make([]store.Automation, 0, len(items))
 	for i, it := range items {
+		if err := userMade(it.Spec); err != nil {
+			httpError(w, http.StatusBadRequest, fmt.Sprintf("automation %d: %v", i+1, err))
+			return
+		}
 		if a.Check != nil {
 			if err := a.Check(r.Context(), it.Spec); err != nil {
 				httpError(w, http.StatusBadRequest, fmt.Sprintf("automation %d: %v", i+1, err))
@@ -420,4 +427,19 @@ func (a *API) export(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", `attachment; filename="hearth-automations.json"`)
 	_, _ = w.Write(b)
+}
+
+// ModeActivate is the action only a mode trigger's automation holds: one
+// made by arming that trigger with a click, for that file (SECURITY S15b).
+const ModeActivate = "mode/activate"
+
+// userMade refuses what an automation made in the editor or imported may
+// not hold.
+func userMade(s spec.Spec) error {
+	held := false
+	s.Steps(func(st spec.Step) { held = held || st.Action == ModeActivate })
+	if held {
+		return errors.New("a mode switches on by itself only through a trigger armed on the Modes page")
+	}
+	return nil
 }

@@ -45,8 +45,32 @@ type AlertEvent struct {
 
 const ruleCols = `id, name, metric, target, op, threshold, for_s, severity, enabled, quiet_from, quiet_to`
 
+// AlertRuleStore holds alert rules somewhere else than alert_rules.
+type AlertRuleStore interface {
+	AlertRules(ctx context.Context) ([]AlertRule, error)
+	CreateAlertRule(ctx context.Context, r AlertRule) (int64, error)
+	UpdateAlertRule(ctx context.Context, r AlertRule) error
+	DeleteAlertRule(ctx context.Context, id int64) error
+}
+
+// SetAlertRuleStore makes s hold the alert rules from now on: every reader
+// and writer of rules (the Alerts page, the alert engine, settings backup,
+// uninstall's references) then uses it. hearthd sets the automations
+// (ROADMAP 12.7) once at start, after MigrateAlertRules emptied alert_rules.
+func (db *DB) SetAlertRuleStore(s AlertRuleStore) { db.rules.Store(&s) }
+
+func (db *DB) ruleStore() AlertRuleStore {
+	if p := db.rules.Load(); p != nil {
+		return *p
+	}
+	return nil
+}
+
 // AlertRules returns all rules by id.
 func (db *DB) AlertRules(ctx context.Context) ([]AlertRule, error) {
+	if s := db.ruleStore(); s != nil {
+		return s.AlertRules(ctx)
+	}
 	rows, err := db.QueryContext(ctx, `SELECT `+ruleCols+` FROM alert_rules ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("store: alert rules: %w", err)
@@ -65,6 +89,9 @@ func (db *DB) AlertRules(ctx context.Context) ([]AlertRule, error) {
 
 // CreateAlertRule inserts r (its ID is ignored) and returns the new ID.
 func (db *DB) CreateAlertRule(ctx context.Context, r AlertRule) (int64, error) {
+	if s := db.ruleStore(); s != nil {
+		return s.CreateAlertRule(ctx, r)
+	}
 	res, err := db.ExecContext(ctx,
 		`INSERT INTO alert_rules (name, metric, target, op, threshold, for_s, severity, enabled, quiet_from, quiet_to, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -77,6 +104,9 @@ func (db *DB) CreateAlertRule(ctx context.Context, r AlertRule) (int64, error) {
 
 // UpdateAlertRule replaces rule r.ID.
 func (db *DB) UpdateAlertRule(ctx context.Context, r AlertRule) error {
+	if s := db.ruleStore(); s != nil {
+		return s.UpdateAlertRule(ctx, r)
+	}
 	res, err := db.ExecContext(ctx,
 		`UPDATE alert_rules SET name = ?, metric = ?, target = ?, op = ?, threshold = ?, for_s = ?, severity = ?,
 		 enabled = ?, quiet_from = ?, quiet_to = ?, updated_at = ? WHERE id = ?`,
@@ -89,6 +119,9 @@ func (db *DB) UpdateAlertRule(ctx context.Context, r AlertRule) error {
 
 // DeleteAlertRule deletes rule id. Its incidents stay in the history.
 func (db *DB) DeleteAlertRule(ctx context.Context, id int64) error {
+	if s := db.ruleStore(); s != nil {
+		return s.DeleteAlertRule(ctx, id)
+	}
 	res, err := db.ExecContext(ctx, `DELETE FROM alert_rules WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("store: delete alert rule: %w", err)
