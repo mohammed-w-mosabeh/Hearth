@@ -83,7 +83,7 @@ const pages: { name: string; hash: string; text: string }[] = [
   { name: 'Network process name', hash: '#/network?q=7778', text: COMM },
   { name: 'Games name', hash: '#/games', text: PAYLOAD },
   { name: 'Settings autostart entry', hash: '#/settings', text: PAYLOAD },
-  { name: 'Profiles name', hash: '#/profiles', text: PAYLOAD },
+  { name: 'Modes name', hash: '#/modes', text: PAYLOAD },
   { name: 'Space advisor cache folder', hash: '#/space', text: PAYLOAD },
 ];
 

@@ -622,7 +622,7 @@ check "a user cannot ask it" grep -q 'error EACCES' <<<"$(asuser node -e 'const 
 check "it created nothing" test ! -e /srv/itest-app/nope
 check "it wrote no stack" not test -e /var/lib/hearth/stacks
 echo "== stack lifecycle (9.4)"
-for a in deploy control remove danger; do
+for a in deploy control remove danger grant; do
 	check "polkit has org.hearth.stack.$a" grep -q "action id=\"org.hearth.stack.$a\"" /usr/share/polkit-1/actions/org.hearth.policy
 done
 usermod -aG hearth "$user" # a member without a polkit agent

@@ -728,3 +728,42 @@ func FuzzComposeConfigArgs(f *testing.F) {
 		}
 	})
 }
+
+func TestGSettingsShapes(t *testing.T) {
+	get, set := allowlist["gsettings-get"].Validate, allowlist["gsettings-set"].Validate
+	for _, ok := range [][]string{
+		{"get", "org.gnome.desktop.background", "picture-uri"},
+		{"get", "org.gnome.desktop.notifications", "show-banners"},
+	} {
+		if err := get(ok); err != nil {
+			t.Errorf("%q: %v", ok, err)
+		}
+	}
+	for _, ok := range [][]string{
+		{"set", "org.gnome.desktop.background", "picture-uri", "'file:///home/u/Pictures/a%20b.jpg'"},
+		{"set", "org.gnome.desktop.background", "picture-uri-dark", "'file:///usr/share/backgrounds/gnome/blobs-d.svg'"},
+		{"set", "org.gnome.desktop.notifications", "show-banners", "false"},
+	} {
+		if err := set(ok); err != nil {
+			t.Errorf("%q: %v", ok, err)
+		}
+	}
+	for _, bad := range [][]string{
+		{"set", "org.gnome.desktop.background", "picture-uri"},
+		{"get", "org.gnome.desktop.background", "picture-uri", "x"},
+		{"set", "org.gnome.desktop.lockdown", "disable-command-line", "false"},
+		{"set", "org.gnome.desktop.background", "picture-options", "'none'"},
+		{"set", "org.gnome.desktop.notifications", "show-banners", "'false'"},
+		{"set", "org.gnome.desktop.background", "picture-uri", "'file:///a.jpg' x"},
+		{"set", "org.gnome.desktop.background", "picture-uri", "'file:///a'b.jpg'"},
+		{"set", "org.gnome.desktop.background", "picture-uri", `'file:///a\'.jpg'`},
+		{"set", "org.gnome.desktop.background", "picture-uri", "'https://example.com/a.jpg'"},
+		{"set", "org.gnome.desktop.background", "picture-uri", "file:///a.jpg"},
+		{"reset", "org.gnome.desktop.background", "picture-uri"},
+		{"get", "org.gnome.desktop.background"},
+	} {
+		if get(bad) == nil && set(bad) == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+}

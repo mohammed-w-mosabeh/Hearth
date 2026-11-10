@@ -89,6 +89,7 @@ const reasons: Record<string, MessageKey> = {
   'firewall-no-tool': 'reason.firewallNoTool',
   'firewall-same': 'reason.firewallSame',
   active: 'reason.active',
+  desktop: 'reason.desktop',
 };
 
 /** The i18n key explaining why an item was blocked or failed. */

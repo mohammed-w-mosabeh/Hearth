@@ -17,7 +17,7 @@ const base = process.env.DESIGN_URL ?? 'http://127.0.0.1:5199';
 const args = process.argv.slice(2);
 const all = args.length === 0;
 const routes = all
-  ? ['', 'resources', 'disks', 'apps', 'games', 'services', 'docker', 'packages', 'tools', 'space', 'hardware', 'network', 'terminal', 'scheduler', 'insight', 'journal', 'alerts', 'security', 'tokens', 'profiles', 'changes', 'reports', 'settings']
+  ? ['', 'resources', 'disks', 'apps', 'games', 'services', 'docker', 'packages', 'tools', 'space', 'hardware', 'network', 'terminal', 'scheduler', 'insight', 'journal', 'alerts', 'security', 'tokens', 'modes', 'changes', 'reports', 'settings']
   : args.filter((a) => a !== 'states');
 const screens = ['apps-list', 'app-drawer', 'app-page', 'import', 'deploy', 'backup', 'modes', 'mode-editor', 'mode-revert', 'approval'];
 

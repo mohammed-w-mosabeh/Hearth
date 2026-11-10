@@ -57,6 +57,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/launcher"
 	"github.com/mohammed-w-mosabeh/hearth/internal/logview"
 	"github.com/mohammed-w-mosabeh/hearth/internal/lynis"
+	"github.com/mohammed-w-mosabeh/hearth/internal/modes"
 	"github.com/mohammed-w-mosabeh/hearth/internal/netinfo"
 	"github.com/mohammed-w-mosabeh/hearth/internal/pkgs"
 	"github.com/mohammed-w-mosabeh/hearth/internal/posture"
@@ -69,6 +70,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/scheduler"
 	"github.com/mohammed-w-mosabeh/hearth/internal/scheduler/schedapi"
 	"github.com/mohammed-w-mosabeh/hearth/internal/services"
+	"github.com/mohammed-w-mosabeh/hearth/internal/session"
 	"github.com/mohammed-w-mosabeh/hearth/internal/settings"
 	"github.com/mohammed-w-mosabeh/hearth/internal/smart"
 	"github.com/mohammed-w-mosabeh/hearth/internal/space"
@@ -130,6 +132,9 @@ func refuseRoot(euid int) error {
 
 // serverHook, set only by tests, sees the fully wired server.
 var serverHook func(*api.Server)
+
+// registryHook, set only by tests, sees every registered action.
+var registryHook func(*actions.Registry)
 
 // run starts the daemon and blocks until ctx is cancelled.
 func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.Context, string) error) error {
@@ -333,6 +338,12 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		Autostart: autostart,
 	})
 	sysSettings.Register(reg)
+	// Session settings a mode changes (ROADMAP 10.3): wallpaper and Do Not
+	// Disturb on GNOME, other desktops detected and refused by name; and the
+	// power profile as an action.
+	sess := session.New(session.Config{Desktop: session.DetectDesktop(os.Getenv("XDG_CURRENT_DESKTOP")), Home: appsCfg.Home})
+	sess.Register(reg)
+	pw.Register(reg)
 	srv.API.HandleFunc("GET /api/v1/system/info", sysSettings.HandleInfo)
 	srv.API.HandleFunc("GET /api/v1/system/timezones", sysSettings.HandleTimezones)
 	srv.API.HandleFunc("GET /api/v1/system/network", sysSettings.HandleNetwork)
@@ -531,6 +542,10 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	docker.RegisterUpdate(reg, brokerClient, images.Registry, safeexec.Run)
 	appUpdates := &stacks.UpdateNotes{Settings: db}
 	stacks.Register(reg, brokerClient, images.Registry, appUpdates)
+	// Unattended grants (ROADMAP 10.8): one password, then a trigger may
+	// stop (or start) that stack with nobody there, for 90 days.
+	stacks.RegisterGrants(reg, brokerClient)
+	srv.API.HandleFunc("GET /api/v1/stack-grants", stacks.HandleGrants(brokerClient))
 	srv.API.HandleFunc("GET /api/v1/app-health", stacks.HandleHealth(brokerClient, appUpdates))
 	// App names at http://<app>.localhost:<port>/ (9.13): off until the
 	// owner turns it on, 127.0.0.1 only, never Hearth.
@@ -770,17 +785,96 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	defer func() { stopTracker(); <-trackerDone }()
 	tracker.Register(srv.API)
 
+	// Modes: TOML files the user edits, untrusted, reloaded on change. An
+	// invalid file is ignored and listed with its reason; a changed file
+	// disarms its triggers (SECURITY S15b). Profiles are kept as modes
+	// (ROADMAP 10.2): the profile engine below reads and writes mode files.
+	var profileManager *profiles.Manager
+	modeSet := modes.NewSet(modes.Config{Dir: filepath.Join(paths.ConfigDir, "modes"), Store: db, Log: log,
+		Check: func(items []modes.Item, game bool) error {
+			list := make([]profiles.Item, len(items))
+			for i, it := range items {
+				list[i] = profiles.Item(it)
+			}
+			return profileManager.ValidateItems(list, game)
+		}})
+	modeProfiles := &modes.ProfileStore{Set: modeSet, DB: db}
+	// Approvals (ROADMAP 10.7): an automatic switch never asks for a
+	// password; its stack steps wait here for the user's click.
+	approvals := modes.NewApprovals(modes.ApprovalConfig{Set: modeSet, DB: db, Log: log,
+		Apply: func(ctx context.Context, modeID string, items []modes.Item) (actions.Result, error) {
+			nums, err := db.ModeNumbers(ctx, []string{modeID})
+			if err != nil {
+				return actions.Result{}, err
+			}
+			list := make([]profiles.Item, len(items))
+			for i, it := range items {
+				list[i] = profiles.Item(it)
+			}
+			return profileManager.ApplyDeferred(ctx, nums[modeID], list)
+		}})
+
 	// Profiles: sets of things to start or stop together, by hand or while
 	// a game runs (only then is the running state polled).
-	profileManager := profiles.New(profiles.Config{Store: db, Actions: reg, Log: log,
+	profileManager = profiles.New(profiles.Config{Store: modeProfiles, Actions: reg, Log: log,
 		Playing: games.Playing,
 		Notify: func(ctx context.Context, summary, body string) {
 			if err := notifier.Notify(ctx, summary, body, "info"); err != nil {
 				log.Debug("profiles: notification", "err", err)
 			}
 		},
+		// A mode's stacks run in one stack.batch: one polkit check, which
+		// may prompt only on a switch the user asked for (ROADMAP 10.4).
+		Batch: func(ctx context.Context, items []profiles.Item, interactive bool) []string {
+			batch := make([]broker.StackBatchItem, len(items))
+			for i, it := range items {
+				batch[i] = broker.StackBatchItem{Name: it.Target, Verb: it.Do}
+			}
+			reasons := make([]string, len(items))
+			results, err := stacks.Batch(ctx, brokerClient, batch, interactive)
+			for i := range reasons {
+				switch {
+				case errors.Is(err, stacks.ErrUnauthorized):
+					reasons[i] = stacks.ReasonUnauthorized
+				case err != nil:
+					reasons[i] = stacks.ReasonError
+				case !results[i].OK:
+					reasons[i] = stacks.ReasonError
+				}
+			}
+			if err != nil {
+				log.Warn("modes: stack batch", "err", err)
+			}
+			return reasons
+		},
+		// Session settings a mode sets: what each was is read before it
+		// changes, so revert puts back exactly that (ROADMAP 10.5).
+		Defer: func(ctx context.Context, p store.Profile, by string, items []profiles.Item) error {
+			m, ok := modeProfiles.ModeFor(ctx, p.ID)
+			if !ok {
+				return errors.New("modes: the mode's file is gone or broken")
+			}
+			list := make([]modes.Item, len(items))
+			for i, it := range items {
+				list[i] = modes.Item(it)
+			}
+			return approvals.Defer(ctx, m.ID, m.Hash, by, list)
+		},
+		Granted: func(ctx context.Context) (map[string][]string, error) { return stacks.Grants(ctx, brokerClient) },
+		Settings: modes.SessionSettings{Session: sess, Power: func() (string, bool) {
+			if p := pw.Snapshot().Profile; p != nil {
+				return p.Active, true
+			}
+			return "", false
+		}},
 		Active: func(ctx context.Context, it profiles.Item) (bool, error) {
 			switch it.Kind {
+			case profiles.KindConnection:
+				return sysSettings.ConnectionActive(ctx, it.Target)
+			case profiles.KindStack:
+				// partial counts as running for a stop, not for a start.
+				state, err := stacks.State(ctx, brokerClient, it.Target)
+				return state == "running" || (it.Do == profiles.DoStop && state == "partial"), err
 			case profiles.KindContainer:
 				return docker.Running(ctx, brokerClient, it.Target)
 			case profiles.KindProject:
@@ -807,6 +901,60 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	})
 	profileManager.Register(reg)
 	profileManager.HandleRegister(srv.API)
+	// Profiles left in the database move to mode files once, before either
+	// loop runs; one that cannot move stays and is tried at the next start.
+	if n, err := modes.Migrate(ctx, db, modeSet, os.Getuid()); err != nil {
+		log.Warn("modes: some profiles were not migrated", "moved", n, "err", err)
+	} else if n > 0 {
+		log.Info("modes: profiles migrated to mode files", "count", n)
+	}
+	modeSet.HandleRegister(srv.API, db, approvals)
+	approvals.Register(reg)
+	approvalsCtx, stopApprovals := context.WithCancel(ctx)
+	approvalsDone := make(chan struct{})
+	go func() { approvals.Run(approvalsCtx, time.Minute); close(approvalsDone) }()
+	defer func() { stopApprovals(); <-approvalsDone }()
+	// Triggers (ROADMAP 10.6): armed only by a click (mode/arm) for the file
+	// shown, they switch a mode on when what they wait for changes:
+	// unattended items only, never a dialog.
+	modes.RegisterArming(reg, modeSet, db, nil)
+	triggers := modes.NewTriggers(modes.TriggerConfig{Set: modeSet, DB: db, Log: log,
+		Sources: modes.Sources{
+			Next: func(ctx context.Context, cal string) (time.Time, error) {
+				c := scheduler.CheckSchedule(ctx, safeexec.Run, scheduler.Schedule{Kind: scheduler.KindCalendar, Value: cal})
+				now := time.Now()
+				for _, ms := range c.Next {
+					if t := time.UnixMilli(ms); t.After(now) {
+						return t, nil
+					}
+				}
+				return time.Time{}, fmt.Errorf("no next run for %q: %s", cal, c.Error)
+			},
+			Connections: sysSettings.ActiveConnections,
+			Battery: func() (float64, bool, bool) {
+				bats := pw.Snapshot().Batteries
+				if len(bats) == 0 {
+					return 0, false, false
+				}
+				return bats[0].Pct, bats[0].State == "discharging", true
+			},
+			Displays: func() (int, error) { return session.ConnectedDisplays("/sys") },
+		},
+		Activate: func(ctx context.Context, modeID, by, why string) error {
+			nums, err := db.ModeNumbers(ctx, []string{modeID})
+			if err != nil {
+				return err
+			}
+			return profileManager.AutoActivate(ctx, nums[modeID], by, why)
+		}})
+	triggersCtx, stopTriggers := context.WithCancel(ctx)
+	triggersDone := make(chan struct{})
+	go func() { triggers.Run(triggersCtx, 15*time.Second); close(triggersDone) }()
+	defer func() { stopTriggers(); <-triggersDone }()
+	modesCtx, stopModes := context.WithCancel(ctx)
+	modesDone := make(chan struct{})
+	go func() { modeSet.Run(modesCtx); close(modesDone) }()
+	defer func() { stopModes(); <-modesDone }()
 	profilesCtx, stopProfiles := context.WithCancel(ctx)
 	profilesDone := make(chan struct{})
 	go func() { profileManager.Run(profilesCtx, 15*time.Second); close(profilesDone) }()
@@ -858,7 +1006,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	(&reports.API{B: reportBuilder, Weekly: weekly, Audit: db}).Register(srv.API)
 
 	backups := backup.New(backup.Config{
-		DB: db, Dir: filepath.Join(paths.DataDir, "backups"), ValidateProfile: profileManager.ValidateImported,
+		DB: db, Dir: filepath.Join(paths.DataDir, "backups"), ValidateProfile: profileManager.ValidateImported, Profiles: modeProfiles,
 		Weekly:       reports.Toggle{W: weekly},
 		RulesChanged: func(ctx context.Context) { _ = engine.Reload(ctx) },
 		TilesChanged: checker.Changed, Log: log,
@@ -873,6 +1021,9 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 
 	if serverHook != nil {
 		serverHook(srv) // every route is registered by now
+	}
+	if registryHook != nil {
+		registryHook(reg)
 	}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve() }()

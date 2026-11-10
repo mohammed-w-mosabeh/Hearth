@@ -53,7 +53,7 @@ A rail on the inline-start side, 224 px open and 56 px collapsed, remembered per
 | Automation | Scheduler, Alerts, Modes |
 | Insight & security | Security, Changes, Reports, Journal, Heat and energy, Tokens |
 
-A group folds from its heading, remembered per browser; the group holding the page on screen stays open, so the rail fits a short screen. Every `g` shortcut and the Ctrl+K palette reach all groups. Every existing route keeps its URL. Two groups differ from the plan because those pages exist and the plan had no place for them: Space advisor and Terminal join System, Tokens joins Insight & security. Boot analysis and Connectivity stay inside their current pages. Apps (`#/stacks`) opens the Docker page's Compose tab and Modes (`#/modes`) the Profiles page until Phases 9 and 10 ship.
+A group folds from its heading, remembered per browser; the group holding the page on screen stays open, so the rail fits a short screen. Every `g` shortcut and the Ctrl+K palette reach all groups. Every existing route keeps its URL. Two groups differ from the plan because those pages exist and the plan had no place for them: Space advisor and Terminal join System, Tokens joins Insight & security. Boot analysis and Connectivity stay inside their current pages. Apps (`#/stacks`) has its own page since Phase 9. Modes (`#/modes`) is a route of its own since task 10.2 and has replaced the Profiles page since 10.9; `#/profiles` redirects to it. The Modes page follows the fixture screens `modes`, `mode-editor`, `mode-revert` and `approval`: pending approvals on top, a table of modes (session settings, managed apps and others, triggers armed by a checkbox), the editor as a dialog, and the revert view as the confirmation that lists what goes back and what stays because it was changed by hand.
 
 ## Page anatomy
 1. **Pulse strip:** a sticky 32 px bar with CPU, RAM, temperature, network and battery, in mono. Each value opens its chart on Resources. It reads the sampler's ring every 15 s, and follows a page already at 1 s, without raising the rate itself.
@@ -79,7 +79,7 @@ The ring is 100 minus the points below, never under 0. Each item takes fixed poi
 | Unhealthy app: a container unhealthy, restarting or dead, or exited while the app should run (9.12) | `GET /app-health` | 10 | 30 | Apps page |
 | App whose last backup failed (9.12) | same | 15 | 30 | Apps page |
 | App the owner's last update preview found a new digest for (9.12) | same | 5 | 10 | Apps page |
-| Pending mode approval | Phase 10 | 0 | 0 | reserved, inactive |
+| Pending mode approval: stack steps an automatic switch left for a click (10.7) | `GET /modes` (`approvals`) | 0 | 0 | Open modes |
 
 The update row never asks a registry itself (SECURITY S21a): it repeats what the owner's last update preview of the app found, kept in the `stacks.updates` setting, and lapses once the app's spec or a running image changes. A failed backup's row is keyed by the backup's time, so a snooze covers that failure only. A listener behind an active firewall is info on the Security page and is not counted here. A source that cannot be read deducts nothing and is named as not checked. Everything is read when Home opens and every 5 minutes after; alerts also arrive as they fire. A row snoozes for 24 hours, per viewer, in the `home.snoozed` setting (at most 200 items, each `{"until": {"<item id>": <unix ms>}}`); a snoozed item still counts in the ring. On Ember, Home's restart banner gives way to the restart row.
 

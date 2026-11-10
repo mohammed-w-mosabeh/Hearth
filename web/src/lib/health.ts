@@ -11,7 +11,7 @@ import type { AppHealth } from './stacks';
 import type { Unit } from './services';
 import type { Health } from './smart';
 
-export type Source = 'unit' | 'alert.critical' | 'alert.warning' | 'alert.info' | 'updates' | 'listener' | 'forecast' | 'restart' | 'smart' | 'lynis' | 'app' | 'backup' | 'appUpdate';
+export type Source = 'unit' | 'alert.critical' | 'alert.warning' | 'alert.info' | 'updates' | 'listener' | 'forecast' | 'restart' | 'smart' | 'lynis' | 'app' | 'backup' | 'appUpdate' | 'approval';
 
 /** Points per item and the most one source can take. */
 export const RULES: Record<Source, { each: number; cap: number }> = {
@@ -28,13 +28,20 @@ export const RULES: Record<Source, { each: number; cap: number }> = {
   app: { each: 10, cap: 30 },
   backup: { each: 15, cap: 30 },
   appUpdate: { each: 5, cap: 10 },
+  approval: { each: 0, cap: 0 },
 };
 
-/** Sources of Phase 10: listed, inactive, deducting nothing. */
-export const RESERVED = ['approvals'] as const;
+/** A stack step an automatic mode switch left for the user (ROADMAP 10.7),
+ *  from GET /modes. */
+export interface PendingApproval {
+  id: number;
+  mode: string;
+  name: string;
+  reason: string;
+}
 
 /** Which endpoint feeds which sources: one that failed is "not checked". */
-export type Feed = 'units' | 'alerts' | 'security' | 'forecasts' | 'smart' | 'lynis' | 'apps';
+export type Feed = 'units' | 'alerts' | 'security' | 'forecasts' | 'smart' | 'lynis' | 'apps' | 'modes';
 
 export const FEED_SOURCES: Record<Feed, Source[]> = {
   units: ['unit'],
@@ -44,6 +51,7 @@ export const FEED_SOURCES: Record<Feed, Source[]> = {
   smart: ['smart'],
   lynis: ['lynis'],
   apps: ['app', 'backup', 'appUpdate'],
+  modes: ['approval'],
 };
 
 export type Action = { kind: 'unit'; unit: Unit } | { kind: 'open'; route: string; q?: string };
@@ -68,6 +76,7 @@ export interface FeedData {
   smart: Health;
   lynis: LynisView;
   apps: AppHealth[];
+  modes: PendingApproval[];
 }
 
 /** A disk forecast counts when the disk fills within this many days. */
@@ -161,6 +170,9 @@ export function collect(inp: Inputs): Item[] {
     // Keyed by the backup's time: a new failure is a new row, unsnoozed.
     if (a.backup && !a.backup.ok) out.push({ id: `backup:${a.name}:${a.backup.at}`, source: 'backup', subject: a.name, action: open });
     if (a.updates.length > 0) out.push({ id: `update:${a.name}`, source: 'appUpdate', subject: `${a.name} (${a.updates.join(', ')})`, action: open });
+  }
+  for (const ap of inp.modes ?? []) {
+    out.push({ id: `approval:${ap.id}`, source: 'approval', subject: ap.name || ap.mode, action: { kind: 'open', route: 'modes' } });
   }
   return out;
 }

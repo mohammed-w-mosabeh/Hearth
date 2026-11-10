@@ -167,7 +167,7 @@ func (m *Manager) Export(ctx context.Context) (File, error) {
 	for _, t := range tiles {
 		f.Tiles = append(f.Tiles, fileTile(t))
 	}
-	list, err := m.cfg.DB.Profiles(ctx)
+	list, err := m.cfg.Profiles.Profiles(ctx)
 	if err != nil {
 		return f, err
 	}
@@ -369,7 +369,7 @@ func (m *Manager) planTiles(ctx context.Context, f File, c *collector) error {
 }
 
 func (m *Manager) planProfiles(ctx context.Context, f File, c *collector) error {
-	cur, err := m.cfg.DB.Profiles(ctx)
+	cur, err := m.cfg.Profiles.Profiles(ctx)
 	if err != nil {
 		return err
 	}
@@ -392,7 +392,7 @@ func (m *Manager) planProfiles(ctx context.Context, f File, c *collector) error 
 		i := indexBy(cur, func(x store.Profile) string { return x.Name }, p.Name)
 		if i < 0 {
 			c.add(id, p.Name, "add", func(ctx context.Context) error {
-				_, err := m.cfg.DB.AddProfile(ctx, store.Profile{Name: p.Name, Items: string(items)})
+				_, err := m.cfg.Profiles.AddProfile(ctx, store.Profile{Name: p.Name, Items: string(items)})
 				return err
 			})
 			continue
@@ -406,7 +406,7 @@ func (m *Manager) planProfiles(ctx context.Context, f File, c *collector) error 
 		}
 		s := cur[i]
 		s.Items = string(items)
-		c.add(id, p.Name, "update", func(ctx context.Context) error { return m.cfg.DB.UpdateProfile(ctx, s) })
+		c.add(id, p.Name, "update", func(ctx context.Context) error { return m.cfg.Profiles.UpdateProfile(ctx, s) })
 	}
 	return nil
 }

@@ -8,8 +8,10 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 
+	"github.com/mohammed-w-mosabeh/hearth/internal/actions"
 	"github.com/mohammed-w-mosabeh/hearth/internal/dbusx"
 	"github.com/mohammed-w-mosabeh/hearth/internal/store"
 )
@@ -86,4 +88,41 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// Register adds power/profile (target: power-saver, balanced or
+// performance), the step a mode takes to switch the profile; the same
+// change as POST /api/v1/power/profile, validated and audited by the
+// registry. A profile the daemon does not offer is blocked.
+func (w *Watcher) Register(reg *actions.Registry) {
+	reg.Register(actions.Action{Kind: "power", Name: "profile", Risk: actions.Safe,
+		Validate: func(r actions.Request) error {
+			switch r.Target {
+			case "power-saver", "balanced", "performance":
+			default:
+				return errors.New("target must be power-saver, balanced or performance")
+			}
+			if len(r.Params) != 0 {
+				return errors.New("params must be empty")
+			}
+			return nil
+		},
+		Plan: func(_ context.Context, r actions.Request) (actions.Plan, error) {
+			it := actions.Item{ID: "power-profile", Name: r.Target}
+			p := actions.Plan{Summary: "switch the power profile to " + r.Target, Items: []actions.Item{it}, Blocked: []actions.Blocked{}}
+			prof := w.Snapshot().Profile
+			if prof == nil || !slices.Contains(prof.Available, r.Target) {
+				p.Items, p.Blocked = []actions.Item{}, []actions.Blocked{{Item: it, Reason: "unavailable"}}
+			}
+			return p, nil
+		},
+		Run: func(ctx context.Context, r actions.Request, p actions.Plan) (actions.Result, error) {
+			res := actions.Result{Failed: []actions.Blocked{}}
+			if err := w.SetProfile(ctx, r.Target); err != nil {
+				res.Failed = append(res.Failed, actions.Blocked{Item: p.Items[0], Reason: "error"})
+				return res, nil
+			}
+			res.Done = 1
+			return res, nil
+		}})
 }

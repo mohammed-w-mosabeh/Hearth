@@ -12,7 +12,7 @@ const axeSource = readFileSync(createRequire(import.meta.url).resolve('axe-core/
 const base = process.env.HEARTH_URL ?? '';
 const origin = new URL(base).origin;
 
-const routes = ['', 'resources', 'disks', 'apps', 'games', 'services', 'docker', 'stacks', 'packages', 'tools', 'space', 'hardware', 'network', 'terminal', 'scheduler', 'insight', 'journal', 'alerts', 'security', 'tokens', 'profiles', 'changes', 'reports', 'settings'];
+const routes = ['', 'resources', 'disks', 'apps', 'games', 'services', 'docker', 'stacks', 'packages', 'tools', 'space', 'hardware', 'network', 'terminal', 'scheduler', 'insight', 'journal', 'alerts', 'security', 'tokens', 'modes', 'changes', 'reports', 'settings'];
 
 // Not serial: one page failing must not hide what the other tests find.
 

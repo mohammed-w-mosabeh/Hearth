@@ -65,6 +65,9 @@ type Method struct {
 	// of Action, and details for the dialog to show (polkit.message among
 	// them). It runs after Check; an empty action means Action.
 	Authorize func(params json.RawMessage) (action string, details map[string]string)
+	// Authorized, if set, may decide a call before polkit: decided true
+	// means ok alone allows or refuses it, and polkit is not asked.
+	Authorized func(ctx context.Context, c Caller, params json.RawMessage) (decided, ok bool)
 }
 
 // Authority decides privileged calls (polkit in production).
@@ -343,7 +346,15 @@ func (s *Server) call(ctx context.Context, c Caller, line []byte, conn net.Conn,
 			return fail(be) // before polkit: no dialog for a request that is refused anyway
 		}
 	}
-	if m.Privileged {
+	decided := false
+	if m.Privileged && m.Authorized != nil {
+		var ok bool
+		if decided, ok = m.Authorized(ctx, c, req.Params); decided && !ok {
+			s.audit(c, req.Method, audited, "refused: not authorized without a password")
+			return send(Response{ID: req.ID, Error: Errorf(CodeUnauthorized, "not authorized")}) == nil
+		}
+	}
+	if m.Privileged && !decided {
 		action, details := m.Action, map[string]string(nil)
 		if m.Authorize != nil {
 			if a, d := m.Authorize(req.Params); a != "" {

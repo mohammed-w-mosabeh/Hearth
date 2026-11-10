@@ -25,6 +25,57 @@ type host struct {
 	games   []string
 	gameErr error
 	notes   []string
+	batches []batchCall
+	// settings are session settings by name; conns the active connections.
+	settings map[string]string
+	conns    map[string]bool
+	// deferred are the stack steps automatic switches left for approval.
+	deferred []deferCall
+	// grants are the unattended grants: stack to verbs.
+	grants map[string][]string
+}
+
+type deferCall struct {
+	id    int64
+	by    string
+	items []Item
+}
+
+// Current implements Settings.
+func (h *host) Current(_ context.Context, name string) (string, error) {
+	v, ok := h.settings[name]
+	if !ok {
+		return "", errors.New("unsupported")
+	}
+	return v, nil
+}
+
+// Request implements Settings: each setting is the action "set/<name>".
+func (h *host) Request(name, value string) (string, actions.Request, error) {
+	if _, ok := h.settings[name]; !ok && name != "dnd" {
+		return "", actions.Request{}, errors.New("no such setting")
+	}
+	return "set/" + name, actions.Request{Target: value, Params: map[string]string{}}, nil
+}
+
+// batchCall is one Batch call: its items and whether it could prompt.
+type batchCall struct {
+	items       []Item
+	interactive bool
+}
+
+// batch is a pretend stack.batch over the host.
+func (h *host) batch(_ context.Context, items []Item, interactive bool) []string {
+	h.batches = append(h.batches, batchCall{items: slices.Clone(items), interactive: interactive})
+	out := make([]string, len(items))
+	for i, it := range items {
+		if h.failOn["stack/"+it.Do+" "+it.Target] {
+			out[i] = "error"
+			continue
+		}
+		h.on[h.key(it)] = it.Do == DoStart
+	}
+	return out
 }
 
 func (h *host) key(it Item) string { return it.Kind + ":" + it.Target }
@@ -60,17 +111,65 @@ func (h *host) register(reg *actions.Registry) {
 				return actions.Result{Done: 1}, nil
 			}})
 	}
-	for _, kind := range []string{"unit", "container", "project"} {
+	for _, kind := range []string{"unit", "container", "project", "stack"} {
 		add(kind, "start", actions.Safe, DoStart)
 		add(kind, "stop", actions.Reversible, DoStop)
 	}
 	add("app", "launch", actions.Safe, DoStart)
+	for _, name := range []string{"dnd", "brightness", "wallpaper"} {
+		reg.Register(actions.Action{Kind: "set", Name: name, Risk: actions.Safe,
+			Validate: func(r actions.Request) error {
+				if r.Target == "" || strings.HasPrefix(r.Target, "-") {
+					return errors.New("bad value")
+				}
+				return nil
+			},
+			Plan: func(_ context.Context, r actions.Request) (actions.Plan, error) {
+				return actions.Plan{Items: []actions.Item{{ID: name, Name: r.Target}}}, nil
+			},
+			Run: func(_ context.Context, r actions.Request, _ actions.Plan) (actions.Result, error) {
+				call := "set/" + name + " " + r.Target
+				h.calls = append(h.calls, call)
+				if h.failOn[call] {
+					return actions.Result{Failed: []actions.Blocked{{Item: actions.Item{ID: name}, Reason: "error"}}}, nil
+				}
+				v := r.Target
+				if name == "brightness" { // the hardware rounds
+					v = r.Target + "~"
+				}
+				h.settings[name] = v
+				return actions.Result{Done: 1}, nil
+			}})
+	}
+	for verb, on := range map[string]bool{"connect": true, "disconnect": false} {
+		reg.Register(actions.Action{Kind: "network", Name: verb, Risk: actions.Reversible,
+			Validate: func(actions.Request) error { return nil },
+			Plan: func(_ context.Context, r actions.Request) (actions.Plan, error) {
+				return actions.Plan{Items: []actions.Item{{ID: r.Target, Name: r.Target}}}, nil
+			},
+			Run: func(_ context.Context, r actions.Request, _ actions.Plan) (actions.Result, error) {
+				h.calls = append(h.calls, "network/"+verb+" "+r.Target)
+				h.conns[r.Target] = on
+				return actions.Result{Done: 1}, nil
+			}})
+	}
 }
+
+// testStore is a Store the tests can also plant rows in, as if edited
+// behind the API, and read the audit log of.
+type testStore interface {
+	Store
+	AuditBetween(ctx context.Context, from, to time.Time, limit int) ([]store.AuditRow, error)
+}
+
+// newStore is the Store under test: the database, or mode files when
+// TestProfilesOnModes runs the suite again (ROADMAP 10.2).
+var newStore = func(_ *testing.T, db *store.DB) testStore { return db }
 
 type fixture struct {
 	h   *host
 	m   *Manager
-	db  *store.DB
+	db  testStore
 	reg *actions.Registry
 	mux *http.ServeMux
 }
@@ -88,19 +187,32 @@ func setup(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	h := &host{on: map[string]bool{}, failOn: map[string]bool{}}
+	h := &host{on: map[string]bool{}, failOn: map[string]bool{}, settings: map[string]string{}, conns: map[string]bool{}}
 	reg := actions.NewRegistry(db)
 	h.register(reg)
-	m := New(Config{Store: db, Actions: reg,
-		Active:  func(_ context.Context, it Item) (bool, error) { return h.on[h.key(it)], nil },
+	st := newStore(t, db)
+	m := New(Config{Store: st, Actions: reg,
+		Active: func(_ context.Context, it Item) (bool, error) {
+			if it.Kind == KindConnection {
+				return h.conns[it.Target], nil
+			}
+			return h.on[h.key(it)], nil
+		},
+		Settings: h,
+		Granted:  func(context.Context) (map[string][]string, error) { return h.grants, nil },
+		Defer: func(_ context.Context, p store.Profile, by string, items []Item) error {
+			h.deferred = append(h.deferred, deferCall{p.ID, by, slices.Clone(items)})
+			return nil
+		},
 		Playing: func() ([]string, error) { return h.games, h.gameErr },
 		Notify:  func(_ context.Context, s, _ string) { h.notes = append(h.notes, s) },
+		Batch:   h.batch,
 	})
 	m.Register(reg)
 	mux := http.NewServeMux()
 	m.HandleRegister(muxer{mux})
 	mux.HandleFunc("POST /api/v1/actions/{kind}/{action}", reg.Handle)
-	return &fixture{h: h, m: m, db: db, reg: reg, mux: mux}
+	return &fixture{h: h, m: m, db: st, reg: reg, mux: mux}
 }
 
 func (f *fixture) do(t *testing.T, method, target, body string) *httptest.ResponseRecorder {

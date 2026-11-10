@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 // The router reads location and listens on window at import time.
 vi.stubGlobal('location', { hash: '' });
 vi.stubGlobal('window', { addEventListener: () => {} });
-const { href, inspectHref, routeId, routeParam, routeQuery } = await import('./router.svelte');
+const { href, inspectHref, redirected, routeId, routeParam, routeQuery } = await import('./router.svelte');
 
 describe('router', () => {
   it('maps hashes to route ids', () => {
@@ -12,6 +12,14 @@ describe('router', () => {
     expect(routeId('#/docker')).toBe('docker');
     expect(routeId('#k=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcde')).toBe('home');
     expect(routeId('#/services?q=cups')).toBe('services');
+  });
+  it('sends Profiles to Modes, keeping the query', () => {
+    expect(redirected('#/profiles')).toBe('#/modes');
+    expect(redirected('#profiles')).toBe('#/modes');
+    expect(redirected('#/profiles?inspect=x&q=a')).toBe('#/modes?inspect=x&q=a');
+    expect(redirected('#/modes')).toBe('#/modes');
+    expect(redirected('#/docker?q=profiles')).toBe('#/docker?q=profiles');
+    expect(redirected('')).toBe('');
   });
   it('carries a search', () => {
     expect(routeQuery('#/services?q=cups.service')).toBe('cups.service');

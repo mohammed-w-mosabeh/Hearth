@@ -58,6 +58,7 @@ hearth/
     stacks/       # v1.5: Apps, import dry-run; spec validation shared with the broker
       spec/       # the stack spec: strict JSON decoding and the S12b rules, no I/O (imported by the broker)
     modes/        # v1.6: mode files, triggers, snapshots, approvals (extends profiles/)
+    session/      # v1.6: session settings a mode sets: GNOME wallpaper and Do Not Disturb (gsettings), desktop detection, backlight choice
     dbusx/        # small helpers over godbus
     safeexec/     # the ONLY place allowed to call os/exec; validates args
     secret/       # S19: which env names and values are masked, for hearthd and the broker
@@ -87,7 +88,7 @@ hearth/
 - **os/exec only inside `internal/safeexec`**. `safeexec.Run(ctx, bin, args...)` resolves `bin` against an allowlist of absolute paths, validates each arg with a per-command validator, never uses a shell. A lint rule forbids importing `os/exec` elsewhere.
 - **API**: REST under `/api/v1`, JSON. Live data over one WebSocket `/api/v1/ws` with topic subscriptions (`metrics`, `procs`, `docker` (snapshots + events), `alerts`, `logs:<id>`, `term:<id>`). Server sends only deltas.
 - **Actions endpoint**: `POST /api/v1/actions/{kind}/{action}` body `{ "target": "...", "params": {...}, "preview": true|false, "confirm": "<name>" }`. `preview: true` returns what would happen without doing it. Destructive actions without a prior preview token are rejected.
-- **Database**: migrations in `internal/store/migrations/NNNN_*.sql`, applied at start. Tables: `items_override`, `homepage_tiles`, `alert_rules`, `alert_events`, `metrics_1m`, `metrics_1h`, `audit_log`, `jobs`, `profiles`, `settings`. In v1.6 `profiles` migrates to modes: definitions move to TOML files in `~/.config/hearth/modes/`, and the database keeps arming, active mode, snapshots and approvals.
+- **Database**: migrations in `internal/store/migrations/NNNN_*.sql`, applied at start. Tables: `items_override`, `homepage_tiles`, `alert_rules`, `alert_events`, `metrics_1m`, `metrics_1h`, `audit_log`, `jobs`, `profiles`, `settings`. In v1.6 `profiles` migrates to modes: definitions move to TOML files in `~/.config/hearth/modes/`, and the database keeps arming, active mode, snapshots and approvals (`mode_arming`, `mode_active` with its snapshot, `mode_approvals`).
 - **Sampling**: 1 s while a UI client subscribes to live metrics; 15 s otherwise (alerts only). Process sampling only while the processes page is open (or for alert rules that need it).
 - **Discovery**: full scan at start, then incremental via fsnotify / D-Bus signals / Docker `/events`. Debounce bursts (500 ms).
 - **Frontend**: Svelte 5 runes, TypeScript strict. No `{@html}`. All data rendered as text. Route-level code splitting; xterm.js and uPlot lazy-loaded. CSS tokens in `styles/tokens.css` (the Ember design, `docs/design/ember.md`): dark by default, light, or the system's, chosen per browser; `theme.ts` resolves the choice into `data-theme` on `<html>`.

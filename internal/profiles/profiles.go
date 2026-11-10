@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,6 +33,16 @@ const (
 	KindContainer = "container"
 	KindProject   = "project"
 	KindApp       = "app"
+	// KindStack is a managed app (a mode's [[stack]], ROADMAP 10.4): its
+	// steps run together in one stack.batch, with one polkit check.
+	KindStack = "stack"
+	// KindSetting is a session setting a mode sets (ROADMAP 10.5): Target
+	// names it (Settings), Do is the value. Restoring puts back the value
+	// read before, only while the setting still has the value read after.
+	KindSetting = "setting"
+	// KindConnection is a NetworkManager connection by UUID: start connects,
+	// stop disconnects.
+	KindConnection = "connection"
 )
 
 // What to do to an item.
@@ -50,6 +61,9 @@ const (
 const (
 	ReasonSystem = "system" // it would need a typed confirmation
 	ReasonError  = "error"
+	// ReasonChanged: the setting was changed by hand after the switch, so
+	// restoring leaves it as it is.
+	ReasonChanged = "changed"
 )
 
 // Limits of a profile.
@@ -68,6 +82,18 @@ type Item struct {
 	Kind   string `json:"kind"`
 	Target string `json:"target"`
 	Do     string `json:"do"`
+	// Expect, on a setting in a restore list, is the value the switch left;
+	// a setting that no longer has it is not restored.
+	Expect string `json:"expect,omitempty"`
+}
+
+// Settings reads session settings and names the action that sets one
+// (modes.SessionSettings in production).
+type Settings interface {
+	// Current is the setting's value now, in the form Request takes.
+	Current(ctx context.Context, name string) (string, error)
+	// Request is the registered action and request that set name to value.
+	Request(name, value string) (key string, r actions.Request, err error)
 }
 
 // Store is what profiles keep (store.DB in production).
@@ -97,8 +123,27 @@ type Config struct {
 	Playing func() ([]string, error)
 	// Notify tells the user what was done without being asked.
 	Notify func(ctx context.Context, summary, body string)
-	Log    *slog.Logger
-	Clock  func() time.Time
+	// Batch, if set, runs every stack step of an activation or restore in
+	// one call (stack.batch): one polkit check for all of them, which may
+	// show a dialog only when interactive is true. It returns, per item, ""
+	// when done or the reason it failed. Without it, stack steps run one by
+	// one through their actions.
+	Batch func(ctx context.Context, items []Item, interactive bool) []string
+	// Settings, if set, allows setting items.
+	Settings Settings
+	// Defer, if set, takes the stack steps an automatic switch would make
+	// (ROADMAP 10.7): they need authorization, which nobody is there to
+	// give, so they wait for the user to approve them; the rest of the
+	// switch runs. Without it, an automatic switch leaves stacks out and a
+	// profile that has them cannot have the game trigger.
+	Defer func(ctx context.Context, p store.Profile, by string, items []Item) error
+	// Granted, if set, lists the stacks the owner allowed a trigger to
+	// change with nobody there (ROADMAP 10.8): stack name to verbs. Such a
+	// step runs in the automatic switch's batch, which never prompts and
+	// which the broker allows by the grant alone; the rest wait for approval.
+	Granted func(ctx context.Context) (map[string][]string, error)
+	Log     *slog.Logger
+	Clock   func() time.Time
 }
 
 // Manager applies and restores profiles.
@@ -124,12 +169,24 @@ func New(cfg Config) *Manager {
 	return &Manager{cfg: cfg}
 }
 
-// actionKey is the action that does it.
-func actionKey(it Item) string {
-	if it.Kind == KindApp {
-		return "app/launch"
+// request is the action that does it, and its request.
+func (m *Manager) request(it Item) (string, actions.Request, error) {
+	r := actions.Request{Target: it.Target, Params: map[string]string{}}
+	switch it.Kind {
+	case KindApp:
+		return "app/launch", r, nil
+	case KindConnection:
+		if it.Do == DoStart {
+			return "network/connect", r, nil
+		}
+		return "network/disconnect", r, nil
+	case KindSetting:
+		if m.cfg.Settings == nil {
+			return "", r, errors.New("session settings are not available")
+		}
+		return m.cfg.Settings.Request(it.Target, it.Do)
 	}
-	return it.Kind + "/" + it.Do
+	return it.Kind + "/" + it.Do, r, nil
 }
 
 // inverse undoes it; apps are never closed (that could lose work).
@@ -146,9 +203,14 @@ func inverse(it Item) (Item, bool) {
 }
 
 // unattended reports whether it can run with nobody there: a system unit
-// or a container may open a password dialog (SECURITY S15a).
+// or a container may open a password dialog (SECURITY S15a). Session
+// settings and connections are the user's own (S15b).
 func unattended(it Item) bool {
-	return it.Kind == KindApp || (it.Kind == KindUnit && strings.HasPrefix(it.Target, "user/"))
+	switch it.Kind {
+	case KindApp, KindSetting, KindConnection:
+		return true
+	}
+	return it.Kind == KindUnit && strings.HasPrefix(it.Target, "user/")
 }
 
 // validate checks a profile before it is stored.
@@ -167,7 +229,7 @@ func (m *Manager) validate(name string, items []Item, auto bool) error {
 	seen := map[Item]bool{}
 	for _, it := range items {
 		switch it.Kind {
-		case KindUnit, KindContainer, KindProject:
+		case KindUnit, KindContainer, KindProject, KindStack:
 			if it.Do != DoStart && it.Do != DoStop {
 				return errors.New("an item either starts or stops")
 			}
@@ -175,23 +237,37 @@ func (m *Manager) validate(name string, items []Item, auto bool) error {
 			if it.Do != DoStart {
 				return fmt.Errorf("%s: apps are not closed by a profile: that could lose unsaved work", it.Target)
 			}
+		case KindConnection:
+			if it.Do != DoStart && it.Do != DoStop {
+				return errors.New("a connection either connects or disconnects")
+			}
+		case KindSetting:
+			if m.cfg.Settings == nil {
+				return fmt.Errorf("%s: session settings are not available", it.Target)
+			}
 		default:
-			return errors.New("an item is a unit, container, project or app")
+			return errors.New("an item is a unit, container, project, stack, setting, connection or app")
 		}
-		key := Item{Kind: it.Kind, Target: it.Target}
-		if seen[key] {
+		if it.Expect != "" {
+			return errors.New("expect is only for restoring")
+		}
+		once := Item{Kind: it.Kind, Target: it.Target}
+		if seen[once] {
 			return fmt.Errorf("%s is listed twice", it.Target)
 		}
-		seen[key] = true
-		a, ok := m.cfg.Actions.Lookup(actionKey(it))
+		seen[once] = true
+		key, r, err := m.request(it)
+		if err != nil {
+			return fmt.Errorf("%s: %w", it.Target, err)
+		}
+		a, ok := m.cfg.Actions.Lookup(key)
 		if !ok {
 			return fmt.Errorf("%s: not available", it.Kind)
 		}
-		r := actions.Request{Target: it.Target, Params: map[string]string{}}
 		if err := a.Validate(r); err != nil {
 			return fmt.Errorf("%s: %w", it.Target, err)
 		}
-		if auto && !unattended(it) {
+		if auto && !unattended(it) && (it.Kind != KindStack || m.cfg.Defer == nil) {
 			return fmt.Errorf("%s: it may ask for a password, so it cannot run while a game starts", it.Target)
 		}
 		if it.Kind == KindUnit { // planning a unit touches nothing
@@ -213,12 +289,19 @@ func (m *Manager) ValidateImported(name string, items []Item) error {
 	return m.validate(name, items, false)
 }
 
+// ValidateItems checks a mode's items and apps as a saved profile's, with
+// the game trigger's limits when game is true (ROADMAP 10.2).
+func (m *Manager) ValidateItems(items []Item, game bool) error {
+	return m.validate("mode", items, game)
+}
+
 // step is one planned action.
 type step struct {
 	item Item
 	a    actions.Action
 	r    actions.Request
 	plan actions.Plan
+	prev string // a setting's value before the step
 }
 
 // prepared is what activation or deactivation will do.
@@ -226,6 +309,8 @@ type prepared struct {
 	id    int64
 	name  string
 	steps []step
+	// deferred are stack items an automatic switch leaves for approval.
+	deferred []Item
 }
 
 func toItem(it Item) actions.Item {
@@ -233,19 +318,23 @@ func toItem(it Item) actions.Item {
 }
 
 // prepare plans items in order, leaving out what is already as wanted.
-func (m *Manager) prepare(ctx context.Context, items []Item, auto bool) ([]step, []actions.Blocked) {
+func (m *Manager) prepare(ctx context.Context, items []Item, auto bool) ([]step, []actions.Blocked, []Item) {
 	var steps []step
+	var deferred []Item
+	var granted map[string][]string // read once, when an automatic switch has stacks
+	grantRead := false
 	blocked := []actions.Blocked{}
 	block := func(it Item, reason string) {
 		blocked = append(blocked, actions.Blocked{Item: toItem(it), Reason: reason})
 	}
 	for _, it := range items {
-		a, ok := m.cfg.Actions.Lookup(actionKey(it))
-		if !ok || (auto && !unattended(it)) {
+		key, r, rerr := m.request(it)
+		a, ok := m.cfg.Actions.Lookup(key)
+		wait := auto && it.Kind == KindStack && m.cfg.Defer != nil
+		if rerr != nil || !ok || (auto && !unattended(it) && !wait) {
 			block(it, ReasonSystem)
 			continue
 		}
-		r := actions.Request{Target: it.Target, Params: map[string]string{}}
 		if err := a.Validate(r); err != nil {
 			block(it, ReasonError)
 			continue
@@ -262,6 +351,21 @@ func (m *Manager) prepare(ctx context.Context, items []Item, auto bool) ([]step,
 			block(it, ReasonSystem)
 			continue
 		}
+		if it.Kind == KindSetting {
+			// What it is now is what restoring puts back; a setting
+			// changed by hand since the switch is left alone.
+			cur, err := m.cfg.Settings.Current(ctx, it.Target)
+			switch {
+			case err != nil:
+				block(it, ReasonError)
+			case it.Expect != "" && cur != it.Expect:
+				block(it, ReasonChanged)
+			case cur == it.Do:
+			default:
+				steps = append(steps, step{item: it, a: a, r: r, plan: plan, prev: cur})
+			}
+			continue
+		}
 		running, err := m.cfg.Active(ctx, it)
 		if err != nil {
 			block(it, ReasonError)
@@ -270,20 +374,52 @@ func (m *Manager) prepare(ctx context.Context, items []Item, auto bool) ([]step,
 		if running == (it.Do == DoStart) {
 			continue
 		}
+		if wait {
+			if !grantRead && m.cfg.Granted != nil {
+				var err error
+				if granted, err = m.cfg.Granted(ctx); err != nil {
+					m.cfg.Log.Warn("profiles: cannot read unattended grants", "err", err)
+				}
+				grantRead = true
+			}
+			if !slices.Contains(granted[it.Target], it.Do) {
+				deferred = append(deferred, it)
+				continue
+			}
+		}
 		steps = append(steps, step{item: it, a: a, r: r, plan: plan})
 	}
-	return steps, blocked
+	return steps, blocked, deferred
 }
 
 // execute runs steps, each audited. done lists what happened, left what
-// failed. A client going away does not stop it half way.
-func (m *Manager) execute(ctx context.Context, profile string, steps []step) (res actions.Result, done, left []Item, err error) {
+// failed. A client going away does not stop it half way. Stack steps run
+// together through Batch when the first of them is reached; interactive
+// says whether its polkit check may show a dialog.
+//
+// undo lists, in the order they ran, what restores each step that was done:
+// the inverse of a start or stop, or a setting's earlier value with the
+// value it has now as Expect. Apps have none.
+func (m *Manager) execute(ctx context.Context, profile string, steps []step, interactive bool) (res actions.Result, done, left, undo []Item, err error) {
 	res.Failed = []actions.Blocked{}
 	ctx = context.WithoutCancel(ctx)
-	for _, s := range steps {
-		sctx, cancel := context.WithTimeout(ctx, stepTimeout)
-		r, runErr := s.a.Run(sctx, s.r, s.plan)
-		cancel()
+	var batched map[int]string // step index to its batch reason
+	for i, s := range steps {
+		var r actions.Result
+		var runErr error
+		if s.item.Kind == KindStack && m.cfg.Batch != nil {
+			if batched == nil {
+				batched = m.runBatch(ctx, steps, interactive)
+			}
+			r = actions.Result{Done: 1, Failed: []actions.Blocked{}}
+			if reason := batched[i]; reason != "" {
+				r = actions.Result{Failed: []actions.Blocked{{Item: toItem(s.item), Reason: reason}}}
+			}
+		} else {
+			sctx, cancel := context.WithTimeout(ctx, stepTimeout)
+			r, runErr = s.a.Run(sctx, s.r, s.plan)
+			cancel()
+		}
 		outcome := "ok"
 		switch {
 		case runErr != nil:
@@ -298,6 +434,15 @@ func (m *Manager) execute(ctx context.Context, profile string, steps []step) (re
 		if runErr == nil && len(r.Failed) == 0 {
 			res.Done++
 			done = append(done, s.item)
+			if s.item.Kind == KindSetting {
+				now, cerr := m.cfg.Settings.Current(ctx, s.item.Target)
+				if cerr != nil {
+					now = s.item.Do
+				}
+				undo = append(undo, Item{Kind: KindSetting, Target: s.item.Target, Do: s.prev, Expect: now})
+			} else if u, ok := inverse(s.item); ok {
+				undo = append(undo, u)
+			}
 		} else {
 			left = append(left, s.item)
 		}
@@ -306,7 +451,30 @@ func (m *Manager) execute(ctx context.Context, profile string, steps []step) (re
 			err = aerr // the step ran; finish so that it can be restored
 		}
 	}
-	return res, done, left, err
+	return res, done, left, undo, err
+}
+
+// runBatch runs every stack step in one Batch call, in order, and maps each
+// step's index to "" (done) or the reason it failed.
+func (m *Manager) runBatch(ctx context.Context, steps []step, interactive bool) map[int]string {
+	var idx []int
+	var items []Item
+	for i, s := range steps {
+		if s.item.Kind == KindStack {
+			idx, items = append(idx, i), append(items, s.item)
+		}
+	}
+	bctx, cancel := context.WithTimeout(ctx, time.Duration(len(items))*stepTimeout)
+	reasons := m.cfg.Batch(bctx, items, interactive)
+	cancel()
+	out := make(map[int]string, len(idx))
+	for j, i := range idx {
+		out[i] = ReasonError
+		if j < len(reasons) {
+			out[i] = reasons[j]
+		}
+	}
+	return out
 }
 
 func encodeItems(items []Item) (string, error) {
@@ -339,8 +507,8 @@ func (m *Manager) planActivate(ctx context.Context, p store.Profile, auto bool) 
 			starts = append(starts, it)
 		}
 	}
-	steps, blocked := m.prepare(ctx, append(stops, starts...), auto)
-	return prepared{id: p.ID, name: p.Name, steps: steps}, blocked, nil
+	steps, blocked, deferred := m.prepare(ctx, append(stops, starts...), auto)
+	return prepared{id: p.ID, name: p.Name, steps: steps, deferred: deferred}, blocked, nil
 }
 
 // applyActivate runs a plan and records what will restore it.
@@ -352,15 +520,13 @@ func (m *Manager) applyActivate(ctx context.Context, pr prepared, by string) (ac
 	} else if !p.ActivatedAt.IsZero() {
 		return actions.Result{}, actions.Errorf(http.StatusConflict, "this profile is already active")
 	}
-	res, done, left, err := m.execute(ctx, pr.name, pr.steps)
+	res, done, left, undone, err := m.execute(ctx, pr.name, pr.steps, by == ByUser)
 	if len(done) == 0 && len(left) > 0 {
 		return res, err // nothing changed: not active
 	}
 	undo := []Item{}
-	for i := len(done) - 1; i >= 0; i-- {
-		if u, ok := inverse(done[i]); ok {
-			undo = append(undo, u)
-		}
+	for i := len(undone) - 1; i >= 0; i-- {
+		undo = append(undo, undone[i])
 	}
 	text, jerr := encodeItems(undo)
 	if jerr != nil {
@@ -378,15 +544,16 @@ func (m *Manager) planDeactivate(ctx context.Context, p store.Profile) (prepared
 	if err != nil {
 		return prepared{}, nil, err
 	}
-	steps, blocked := m.prepare(ctx, undo, false)
+	steps, blocked, _ := m.prepare(ctx, undo, false)
 	return prepared{id: p.ID, name: p.Name, steps: steps}, blocked, nil
 }
 
 // applyDeactivate restores. What failed stays to be tried again by hand.
-func (m *Manager) applyDeactivate(ctx context.Context, pr prepared) (actions.Result, error) {
+// interactive is false when nobody asked for it (the game ended).
+func (m *Manager) applyDeactivate(ctx context.Context, pr prepared, interactive bool) (actions.Result, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	res, _, left, err := m.execute(ctx, pr.name, pr.steps)
+	res, _, left, _, err := m.execute(ctx, pr.name, pr.steps, interactive)
 	ctx = context.WithoutCancel(ctx)
 	if len(left) == 0 {
 		if serr := m.cfg.Store.ClearProfileActive(ctx, pr.id); serr != nil {
@@ -477,7 +644,7 @@ func (m *Manager) Register(reg *actions.Registry) {
 			if !ok {
 				return actions.Result{}, errors.New("profiles: no plan")
 			}
-			return m.applyDeactivate(ctx, pr)
+			return m.applyDeactivate(ctx, pr, true)
 		}})
 }
 
@@ -527,7 +694,7 @@ func (m *Manager) poll(ctx context.Context) {
 		if !m.playing { // once per game: the user may deactivate during it
 			m.playing = true
 			for _, p := range auto {
-				m.autoActivate(ctx, p)
+				m.autoActivate(ctx, p, ByGame, "a game started")
 			}
 		}
 		return
@@ -542,23 +709,101 @@ func (m *Manager) poll(ctx context.Context) {
 	}
 }
 
-func (m *Manager) autoActivate(ctx context.Context, p store.Profile) {
+// autoActivate switches p on with nobody there: only what can run
+// unattended, never a dialog. by is who switched it (a trigger's kind) and
+// why says so in the notification.
+func (m *Manager) autoActivate(ctx context.Context, p store.Profile, by, why string) {
 	pr, blocked, err := m.planActivate(ctx, p, true)
-	if err == nil {
-		var res actions.Result
-		res, err = m.applyActivate(ctx, pr, ByGame)
+	if err == nil && len(pr.steps) == 0 && len(pr.deferred) > 0 {
+		// Only stacks would change: the mode is on, and they wait.
+		err = m.cfg.Store.SetProfileActive(context.WithoutCancel(ctx), pr.id, m.cfg.Clock(), by, "[]")
 		if err == nil {
-			m.cfg.Notify(ctx, p.Name+" is on, a game started", fmt.Sprintf("%d changed, %d failed, %d skipped.", res.Done, len(res.Failed), len(blocked)))
+			m.cfg.Notify(ctx, p.Name+" is on, "+why, "Its apps wait for your approval in Hearth.")
+		}
+	} else if err == nil {
+		var res actions.Result
+		res, err = m.applyActivate(ctx, pr, by)
+		if err == nil {
+			body := fmt.Sprintf("%d changed, %d failed, %d skipped.", res.Done, len(res.Failed), len(blocked))
+			if len(pr.deferred) > 0 {
+				body += fmt.Sprintf(" %d apps wait for your approval in Hearth.", len(pr.deferred))
+			}
+			m.cfg.Notify(ctx, p.Name+" is on, "+why, body)
 		}
 	}
-	m.autoAudit(ctx, p, "profile.activate", err)
+	if err == nil && len(pr.deferred) > 0 {
+		if derr := m.cfg.Defer(ctx, p, by, pr.deferred); derr != nil {
+			m.cfg.Log.Warn("profiles: cannot ask for approval", "profile", p.Name, "err", derr)
+		}
+	}
+	m.autoAuditBy(ctx, p, "profile.activate", by, err)
+}
+
+// ApplyDeferred runs items an automatic switch of profile id left for
+// approval, now that the user approved them (ROADMAP 10.7): the stack steps
+// in one batch that may prompt once, then their inverses join the front of
+// the restore list, so revert undoes them first. The profile must still be
+// active. Items no longer needed are left out.
+func (m *Manager) ApplyDeferred(ctx context.Context, id int64, items []Item) (actions.Result, error) {
+	for _, it := range items {
+		if it.Kind != KindStack || (it.Do != DoStart && it.Do != DoStop) || it.Expect != "" {
+			return actions.Result{}, errors.New("profiles: only stack steps wait for approval")
+		}
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	p, err := m.cfg.Store.Profile(ctx, id)
+	if err != nil {
+		return actions.Result{}, err
+	}
+	if p.ActivatedAt.IsZero() {
+		return actions.Result{}, actions.Errorf(http.StatusConflict, "this mode is no longer on")
+	}
+	undo, err := decodeItems(p.Undo)
+	if err != nil {
+		return actions.Result{}, err
+	}
+	steps, blocked, _ := m.prepare(ctx, items, false)
+	res, _, _, undone, err := m.execute(ctx, p.Name, steps, true)
+	res.Blocked = append(res.Blocked, blocked...)
+	front := []Item{}
+	for i := len(undone) - 1; i >= 0; i-- {
+		front = append(front, undone[i])
+	}
+	text, jerr := encodeItems(append(front, undo...))
+	if jerr != nil {
+		return res, jerr
+	}
+	if serr := m.cfg.Store.SetProfileActive(context.WithoutCancel(ctx), p.ID, p.ActivatedAt, p.ActivatedBy, text); serr != nil {
+		return res, serr
+	}
+	return res, err
+}
+
+// AutoActivate switches profile id on for a trigger (ROADMAP 10.6): as
+// the game trigger does, unattended items only and no dialog. by names the
+// trigger; a profile already active is left as it is. by must not be
+// ByUser, which would allow a dialog.
+func (m *Manager) AutoActivate(ctx context.Context, id int64, by, why string) error {
+	if by == ByUser || by == "" {
+		return errors.New("profiles: an automatic switch names its trigger")
+	}
+	p, err := m.cfg.Store.Profile(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !p.ActivatedAt.IsZero() {
+		return nil
+	}
+	m.autoActivate(ctx, p, by, why)
+	return nil
 }
 
 func (m *Manager) autoDeactivate(ctx context.Context, p store.Profile) {
 	pr, _, err := m.planDeactivate(ctx, p)
 	if err == nil {
 		var res actions.Result
-		res, err = m.applyDeactivate(ctx, pr)
+		res, err = m.applyDeactivate(ctx, pr, false)
 		switch {
 		case err != nil:
 		case len(res.Failed) > 0:
@@ -567,17 +812,17 @@ func (m *Manager) autoDeactivate(ctx context.Context, p store.Profile) {
 			m.cfg.Notify(ctx, p.Name+" is off, the game ended", fmt.Sprintf("%d restored.", res.Done))
 		}
 	}
-	m.autoAudit(ctx, p, "profile.deactivate", err)
+	m.autoAuditBy(ctx, p, "profile.deactivate", ByGame, err)
 }
 
-func (m *Manager) autoAudit(ctx context.Context, p store.Profile, action string, err error) {
+func (m *Manager) autoAuditBy(ctx context.Context, p store.Profile, action, by string, err error) {
 	result := "ok"
 	if err != nil {
 		result = "error: " + err.Error()
 		m.cfg.Log.Warn("profiles: automatic change", "profile", p.Name, "err", err)
 	}
 	if aerr := m.cfg.Store.Audit(ctx, store.AuditEntry{Origin: store.OriginLocal, UID: os.Getuid(), Action: action,
-		Target: strconv.FormatInt(p.ID, 10), Params: map[string]string{"by": ByGame, "profile": p.Name}, Result: result}); aerr != nil {
+		Target: strconv.FormatInt(p.ID, 10), Params: map[string]string{"by": by, "profile": p.Name}, Result: result}); aerr != nil {
 		m.cfg.Log.Warn("profiles: audit", "err", aerr)
 	}
 }

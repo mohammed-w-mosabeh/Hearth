@@ -223,6 +223,8 @@ type stacks struct {
 	cache  *pathCache
 	locks  *stackLocks
 	grants *restoreGrants
+	// unattended are the owner's unattended grants (stack.grant.*).
+	unattended *grantStore
 }
 
 // newStacks fills c's defaults.
@@ -247,14 +249,15 @@ func newStacks(c StackConfig) *stacks {
 	}
 	return &stacks{c: c, cache: &pathCache{m: map[string]cachedPaths{}, now: c.Now},
 		locks:  &stackLocks{m: map[string]*sync.Mutex{}, dir: c.Store.dir()},
-		grants: &restoreGrants{m: map[string]restoreGrant{}, now: c.Now}}
+		grants: &restoreGrants{m: map[string]restoreGrant{}, now: c.Now}, unattended: &grantStore{store: c.Store}}
 }
 
 // StackLifeMethods are stack.status, stack.deploy, stack.update,
-// stack.control, stack.remove, stack.secrets.set and stack.secrets.reveal.
+// stack.control, stack.batch, stack.remove, stack.secrets.set and
+// stack.secrets.reveal.
 func StackLifeMethods(c StackConfig) []Method {
 	s := newStacks(c)
-	return append(append(append(s.secretMethods(), s.importMethod(), s.scheduleMethod()), s.backupMethods()...), []Method{
+	return append(append(append(s.secretMethods(), s.importMethod(), s.scheduleMethod(), s.batchMethod()), append(s.backupMethods(), s.grantMethods()...)...), []Method{
 		{Name: "stack.status", Handle: s.status},
 		{Name: "stack.deploy", Privileged: true, Action: ActionStackDeploy, Timeout: StackTimeout,
 			Check: func(ctx context.Context, p json.RawMessage) error {
@@ -648,6 +651,11 @@ func (s *stacks) remove(ctx context.Context, _ Caller, p json.RawMessage) (any, 
 	}
 	if _, err := s.run(ctx, v.Name, verb); err != nil {
 		return nil, err
+	}
+	// Its unattended grants go with it, so a new stack of that name starts
+	// without them.
+	if err := s.unattended.drop(v.Name); err != nil {
+		return nil, Errorf(CodeFailed, "the containers are gone, but the stack's grants could not be removed")
 	}
 	// Its schedule goes with it; archives stay.
 	if err := s.unschedule(ctx, v.Name); err != nil {

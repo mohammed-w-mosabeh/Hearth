@@ -34,13 +34,24 @@ type Weekly interface {
 	SetEnabled(ctx context.Context, on bool) error
 }
 
+// Profiles keeps profiles: mode files since v1.6 (modes.ProfileStore),
+// the database before.
+type Profiles interface {
+	Profiles(ctx context.Context) ([]store.Profile, error)
+	AddProfile(ctx context.Context, p store.Profile) (int64, error)
+	UpdateProfile(ctx context.Context, p store.Profile) error
+}
+
 // Config configures a Manager.
 type Config struct {
 	DB  *store.DB
 	Dir string // of the database copies
 	// ValidateProfile checks a profile as if the user had saved it.
 	ValidateProfile func(name string, items []profiles.Item) error
-	Weekly          Weekly
+	// Profiles is where profiles are exported from and imported to; DB when
+	// nil.
+	Profiles Profiles
+	Weekly   Weekly
 	// RulesChanged and TilesChanged run after an import.
 	RulesChanged func(ctx context.Context)
 	TilesChanged func()
@@ -56,6 +67,9 @@ type Manager struct {
 
 // New returns a Manager.
 func New(cfg Config) *Manager {
+	if cfg.Profiles == nil {
+		cfg.Profiles = cfg.DB
+	}
 	if cfg.Clock == nil {
 		cfg.Clock = time.Now
 	}
