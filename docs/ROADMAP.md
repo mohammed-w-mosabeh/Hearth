@@ -234,7 +234,7 @@ Publish Hearth as an open-source project with its full history, cleaned of priva
 
 - [x] R.1 Fixtures: values that came from a real machine (DMI, GPU, gateway, interface and app names) become invented ones.
 - [x] R.2 Private-pattern guard in `make check`, reading a gitignored local pattern file; it says so when the file is absent.
-- [ ] R.3 Packaging: maintainer with the GitHub noreply address, licence Apache-2.0, reproducible build flags, `scripts/release/build.sh` writing `SHA256SUMS`.
+- [x] R.3 Packaging: maintainer with the GitHub noreply address, licence Apache-2.0, reproducible build flags, `scripts/release/build.sh` writing `SHA256SUMS`.
 - [x] R.4 `LICENSE` and a generated `THIRD_PARTY_NOTICES` (Go modules, npm packages, fonts, icons).
 - [x] R.5 Root `SECURITY.md` (reporting policy, supported versions); the invariants move to `docs/SECURITY-INVARIANTS.md`, every link fixed.
 - [ ] R.6 README, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `CHANGELOG.md`, issue and PR templates.
