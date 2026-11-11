@@ -96,9 +96,10 @@ fuzz: web ## Run every Fuzz* target for FUZZTIME each (default 60s)
 	done
 
 .PHONY: lint
-lint: web ## golangci-lint (incl. gosec, depguard), gosec, forbidden patterns, svelte-check, eslint
+lint: web ## golangci-lint (incl. gosec, depguard), gosec, forbidden and private patterns, svelte-check, eslint
 	@out=$$(git ls-files -z '*.go' | xargs -0 -r gofmt -l); if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
 	./scripts/check-forbidden.sh
+	./scripts/check-private.sh
 	desktop-file-validate packaging/desktop/hearth.desktop
 	$(GO) vet ./...
 	$(GOLANGCI_LINT) run ./...
