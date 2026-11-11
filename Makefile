@@ -100,11 +100,16 @@ lint: web ## golangci-lint (incl. gosec, depguard), gosec, forbidden and private
 	@out=$$(git ls-files -z '*.go' | xargs -0 -r gofmt -l); if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
 	./scripts/check-forbidden.sh
 	./scripts/check-private.sh
+	./scripts/third-party-notices.sh --check
 	desktop-file-validate packaging/desktop/hearth.desktop
 	$(GO) vet ./...
 	$(GOLANGCI_LINT) run ./...
 	$(GOSEC) -quiet -exclude-dir=web/node_modules ./...
 	cd web && npm run -s check && npm run -s lint
+
+.PHONY: notices
+notices: web ## Regenerate THIRD_PARTY_NOTICES.md from the module cache and node_modules
+	./scripts/third-party-notices.sh
 
 .PHONY: vuln
 vuln: web ## govulncheck + npm audit
