@@ -83,6 +83,9 @@ check "db 0600" test "$(stat -c %a /home/$user/.local/share/hearth/hearth.db)" =
 
 pid=$(asuser systemctl --user show -p MainPID --value hearthd.service)
 check "not running as root" test "$(stat -c %u /proc/"$pid")" = $uid
+# hearthd opts out of transparent huge pages, which made a 5 MB heap cost
+# 14 MB where the kernel's setting is "always" (Gate 12).
+check "huge pages are off for hearthd" grep -Eq '^THP_enabled:[[:space:]]*0$' "/proc/$pid/status"
 
 echo "== first-run browser launch (no display here, so it may fail; it must not be refused by safeexec)"
 sleep 1

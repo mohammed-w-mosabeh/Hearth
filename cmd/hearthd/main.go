@@ -84,6 +84,7 @@ import (
 )
 
 func main() {
+	safeexec.NoHugePages() // first: it starts the process again
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	if err := refuseRoot(os.Geteuid()); err != nil {
 		log.Error(err.Error())

@@ -111,7 +111,7 @@ func start(spec Spec, grace time.Duration, args []string) error {
 	cmd.Env = buildEnv(spec.Env, spec.SetEnv)
 	cmd.Dir = "/"
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	if err := cmd.Start(); err != nil {
+	if err := startDetached(cmd); err != nil {
 		return fmt.Errorf("safeexec: cannot start %s", bin)
 	}
 	done := make(chan error, 1)
