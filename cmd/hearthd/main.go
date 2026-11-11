@@ -84,12 +84,12 @@ import (
 )
 
 func main() {
-	safeexec.NoHugePages() // first: it starts the process again
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	if err := refuseRoot(os.Geteuid()); err != nil {
 		log.Error(err.Error())
 		os.Exit(1)
 	}
+	safeexec.NoHugePages() // starts the process again: nothing above may have effects
 	paths, err := resolvePaths(os.Getenv)
 	if err != nil {
 		log.Error(err.Error())

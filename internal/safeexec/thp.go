@@ -22,8 +22,8 @@ var (
 // (/proc/self/exe, even when the package was upgraded underneath), the
 // same arguments, and the same environment plus a mark that the new image
 // removes. Nothing is the caller's to choose, so there is nothing to
-// validate (SECURITY S7). Call it first in main, before anything that
-// must not happen twice.
+// validate (SECURITY S7). Call it in main before anything that must not
+// happen twice.
 //
 // Where the kernel's setting is "always", memory becomes resident 2 MB at
 // a time: the Go heap's arenas, and the binary's zeroed data when a
