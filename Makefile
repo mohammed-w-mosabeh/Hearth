@@ -107,6 +107,10 @@ lint: web ## golangci-lint (incl. gosec, depguard), gosec, forbidden and private
 	$(GOSEC) -quiet -exclude-dir=web/node_modules ./...
 	cd web && npm run -s check && npm run -s lint
 
+.PHONY: screenshots
+screenshots: web ## Regenerate docs/design/screens from invented fixtures and strip image metadata
+	./scripts/screenshots.sh
+
 .PHONY: notices
 notices: web ## Regenerate THIRD_PARTY_NOTICES.md from the module cache and node_modules
 	./scripts/third-party-notices.sh

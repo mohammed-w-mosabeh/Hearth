@@ -2,7 +2,7 @@
 
 A lightweight, local-first system manager and monitor for a single Debian desktop or laptop. One place for what Homepage, Portainer, btop, Cockpit, a cron UI and the GUI package manager each do in part: resources, disks and battery, services, Docker, packages, applications, tools, network and ports, scheduled jobs, alerts, security posture and a terminal.
 
-![Home, before and after the Ember redesign](docs/design/screens/home.dark.comfortable.ltr.jpg)
+![Home](docs/design/screens/home.dark.comfortable.ltr.jpg)
 
 ## How it works
 - `hearthd` runs as you, as a systemd user service, and serves the UI on `127.0.0.1` only. There is no LAN listener.

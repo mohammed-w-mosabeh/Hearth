@@ -97,6 +97,10 @@ const checks = [
 /** Answers by API path. A path missing here fails the capture. */
 export const api = {
   '/session': { ok: true },
+  '/app-health': [],
+  '/modes': { modes: [], approvals: [] },
+  '/automations/approvals': { automations: [] },
+  '/automations/pause': { paused: false },
   '/apps': {
     apps: [
       { id: 'org.example.Notes', name: 'Notes', generic_name: 'Text editor', comment: 'Write plain notes', categories: ['Utility'], source: 'system', path: '/usr/share/applications/org.example.Notes.desktop', has_icon: false },
