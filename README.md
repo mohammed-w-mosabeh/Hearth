@@ -10,7 +10,7 @@ A lightweight, local-first system manager and monitor for a single Debian deskto
 - Destructive actions show a preview first, ask for confirmation and are written to an audit log.
 - Everything is discovered on its own. Settings, history and audit live in one SQLite file at `$XDG_DATA_HOME/hearth/hearth.db`.
 
-The full rules are in [`docs/SECURITY.md`](docs/SECURITY.md).
+The full rules are in [`docs/SECURITY-INVARIANTS.md`](docs/SECURITY-INVARIANTS.md).
 
 ## The interface
 The Ember design ([`docs/design/ember.md`](docs/design/ember.md)): dark by default, plus light or the system's choice; comfortable or compact density; English and Arabic, right to left. Its parts:
@@ -44,4 +44,4 @@ Go and Svelte 5 + Vite + TypeScript. The UI is embedded in the binary.
 | `make bench` | the resource budget |
 | `make deb` | the `.deb` |
 
-Read [`docs/SPEC.md`](docs/SPEC.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/SECURITY.md`](docs/SECURITY.md) and [`docs/ROADMAP.md`](docs/ROADMAP.md) before changing anything.
+Read [`docs/SPEC.md`](docs/SPEC.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/SECURITY-INVARIANTS.md`](docs/SECURITY-INVARIANTS.md) and [`docs/ROADMAP.md`](docs/ROADMAP.md) before changing anything.

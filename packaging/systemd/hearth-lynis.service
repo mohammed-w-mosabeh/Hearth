@@ -25,7 +25,7 @@ Nice=19
 IOSchedulingClass=idle
 TimeoutStartSec=15min
 
-# --- Hardening (SECURITY.md "systemd hardening") ---
+# --- Hardening (docs/SECURITY-INVARIANTS.md "systemd hardening") ---
 # An audit reads; nothing outside the state directory can be written, so
 # Lynis cannot change what it looks at. /run stays read-only too: Lynis then
 # leaves no PID file behind, and a killed run cannot block the next.

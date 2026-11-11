@@ -10,7 +10,7 @@ StandardOutput=journal
 StandardError=journal
 UMask=0077
 
-# --- Hardening (SECURITY.md "systemd hardening") ---
+# --- Hardening (docs/SECURITY-INVARIANTS.md "systemd hardening") ---
 # Removes only folders named as operations under /var/lib/hearth/removed and
 # /var/lib/hearth/uninstall; archives are root's, so no capability is needed.
 CapabilityBoundingSet=

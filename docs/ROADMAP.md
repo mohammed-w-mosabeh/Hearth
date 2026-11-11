@@ -83,7 +83,7 @@ Gate 3 result (2026-10-29): **passed.** Fuzzing: 30 targets, every validator of 
 - [x] 4.9 Boot analysis + full journal viewer (systemd-analyze time, blame and critical-chain; the journal filtered by unit, priority, time, boot and literal text, newest first with paging; read-only, as the user)
 - [x] 4.10 Polish: empty states, compact density, keyboard shortcuts, ar/en review (English ships; every page crawled in normal, compact and right-to-left; check-forbidden refuses physical-direction CSS; notes for an Arabic translation in ARCHITECTURE)
 
-**Gate 4:** full SECURITY.md pre-release checklist signed off; resource budget met → tag v1.0.0 locally (no push without approval).
+**Gate 4:** full docs/SECURITY-INVARIANTS.md pre-release checklist signed off; resource budget met → tag v1.0.0 locally (no push without approval).
 
 Gate 4 result (2026-10-31): **passed; signed off by the owner (2026-10-31).** All 12 checklist items pass. No `sh -c`, `os/exec` in `internal/safeexec` only. Every route is checked against the real wiring: 84 routes, 21 state-changing, each refused without a key and with a foreign Host, Origin or none, no cookie; every GET route and `/api/v1/ws` also refuses a WebSocket upgrade from a foreign or missing Origin (the upgrade check was added for this gate and fails 128 times with the Origin check removed). Session key only through `Authorization` or the WS subprotocol; CSP without `unsafe-*`; no `{@html}`; listens on 127.0.0.1 only; broker refusals tested; XSS (13 tests, now also Profiles, Space, Journal and snapshot labels) and DNS rebinding pass; gosec and govulncheck clean; `npm audit` no high (production dependencies 0; dev tools 2 low, 12 moderate); purge leaves nothing. Fuzzing: 39 targets, 60 s each, one finding, fixed: a `group:` process target could exceed its length limit (2,272 bytes accepted), because the prefix had no bound; the string is only compared with live groups, so harmless. Fuzzing stopped at that finding, so 16 targets ran before the fix and the 23 from `FuzzTarget` on ran after it. Budget on the final code: idle peak 37.0 MB, 0.25% CPU; UI open (nine pages, 20 s each, without a session bus, measured before the procctl fix) peak 44.5 MB, 1.90% CPU; bundle 181 KB gz without the lazy terminal; binary 27.6 MB. `make itest`: all checks passed. Untested on real data: game detection with real launchers, Docker items in profiles, the energy estimate.
 
@@ -236,7 +236,7 @@ Publish Hearth as an open-source project with its full history, cleaned of priva
 - [x] R.2 Private-pattern guard in `make check`, reading a gitignored local pattern file; it says so when the file is absent.
 - [ ] R.3 Packaging: maintainer with the GitHub noreply address, licence Apache-2.0, reproducible build flags, `scripts/release/build.sh` writing `SHA256SUMS`.
 - [x] R.4 `LICENSE` and a generated `THIRD_PARTY_NOTICES` (Go modules, npm packages, fonts, icons).
-- [ ] R.5 Root `SECURITY.md` (reporting policy, supported versions); the invariants move to `docs/SECURITY-INVARIANTS.md`, every link fixed.
+- [x] R.5 Root `SECURITY.md` (reporting policy, supported versions); the invariants move to `docs/SECURITY-INVARIANTS.md`, every link fixed.
 - [ ] R.6 README, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `CHANGELOG.md`, issue and PR templates.
 - [ ] R.7 `.github`: Dependabot (Go, npm, actions), scheduled govulncheck and CodeQL, actions pinned by SHA.
 - [ ] R.8 Screenshots regenerated from the invented fixtures, metadata stripped.

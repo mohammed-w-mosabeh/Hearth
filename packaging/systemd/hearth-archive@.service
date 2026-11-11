@@ -16,7 +16,7 @@ TimeoutStartSec=6h
 Nice=10
 IOSchedulingClass=idle
 
-# --- Hardening (SECURITY.md "systemd hardening") ---
+# --- Hardening (docs/SECURITY-INVARIANTS.md "systemd hardening") ---
 # Leftovers may belong to other users (/var/lib/postgresql is postgres's,
 # mode 0700): reading them needs CAP_DAC_READ_SEARCH, renaming and removing
 # what is inside needs CAP_DAC_OVERRIDE and CAP_FOWNER. This unit holds them

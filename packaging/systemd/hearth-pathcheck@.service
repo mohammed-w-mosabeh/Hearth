@@ -16,7 +16,7 @@ Environment=LC_ALL=C
 UMask=0077
 TimeoutStartSec=30s
 
-# --- Hardening (SECURITY.md "systemd hardening") ---
+# --- Hardening (docs/SECURITY-INVARIANTS.md "systemd hardening") ---
 # Root with only CAP_DAC_READ_SEARCH: it can walk any folder, read nothing
 # it opens (O_PATH) and gain no other power.
 CapabilityBoundingSet=CAP_DAC_READ_SEARCH

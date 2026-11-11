@@ -19,7 +19,7 @@ Environment=LC_ALL=C
 UMask=0077
 TimeoutStartSec=7h
 
-# --- Hardening (SECURITY.md "systemd hardening") ---
+# --- Hardening (docs/SECURITY-INVARIANTS.md "systemd hardening") ---
 # As the broker, but less: no capability at all. It talks to Docker, the
 # system bus (to start hearth-stack@ and hearth-backup@, which root may do
 # without polkit) and the path check, all Unix sockets, and writes only

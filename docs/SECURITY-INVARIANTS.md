@@ -1,4 +1,4 @@
-# Hearth — Security (NON-NEGOTIABLE)
+# Hearth — Security invariants (NON-NEGOTIABLE)
 
 Hearth is effectively a root-capable control panel. Assume any web page the user visits, any device on the same network, and any string coming from the system (container names, labels, package descriptions, file names) can be hostile.
 

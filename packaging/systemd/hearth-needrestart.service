@@ -20,7 +20,7 @@ Nice=19
 IOSchedulingClass=idle
 TimeoutStartSec=120s
 
-# --- Hardening (SECURITY.md "systemd hardening") ---
+# --- Hardening (docs/SECURITY-INVARIANTS.md "systemd hardening") ---
 # CAP_SYS_PTRACE: reading /proc/<pid>/maps of other users' processes, which
 # is the whole job; without it needrestart sees nothing and reports nothing
 # to restart. CAP_DAC_READ_SEARCH: reading their binaries and scripts. This

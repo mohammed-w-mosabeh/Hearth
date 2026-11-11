@@ -22,7 +22,7 @@ TimeoutStartSec=6h
 Nice=10
 IOSchedulingClass=idle
 
-# --- Hardening (SECURITY.md "systemd hardening") ---
+# --- Hardening (docs/SECURITY-INVARIANTS.md "systemd hardening") ---
 # Restoring files as their owners had them needs chown, the file-owner
 # override and reading and writing whatever is there; no other capability.
 # Only Docker's volume store and the app's own folder are writable, and
