@@ -21,6 +21,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/safeexec"
 	"github.com/mohammed-w-mosabeh/hearth/internal/secret"
 	"github.com/mohammed-w-mosabeh/hearth/internal/stacks/spec"
+	"github.com/mohammed-w-mosabeh/hearth/internal/unattended"
 )
 
 // Stack lifecycle (ROADMAP 9.4, SECURITY S12b): deploy, update, start,
@@ -275,6 +276,19 @@ func StackLifeMethods(c StackConfig) []Method {
 			Check: func(ctx context.Context, p json.RawMessage) error {
 				_, _, err := s.checkControl(ctx, p, true)
 				return pre(err)
+			},
+			// With nobody at the screen (an automation, S15d), the owner's
+			// grant for this stack and verb allows it and polkit is never
+			// asked; attended calls always go to polkit.
+			Authorized: func(ctx context.Context, c Caller, p json.RawMessage) (bool, bool) {
+				if !unattended.Is(ctx) {
+					return false, false
+				}
+				var v StackControlParams
+				if decodeParams(p, &v) != nil {
+					return true, false
+				}
+				return true, s.unattended.allows(c.UID, []StackBatchItem{{Name: v.Name, Verb: v.Verb}}, s.c.Now())
 			},
 			Handle: s.control},
 		{Name: "stack.remove", Privileged: true, Action: ActionStackRemove, Timeout: 10 * time.Minute,

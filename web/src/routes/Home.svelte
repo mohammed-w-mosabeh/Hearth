@@ -1,5 +1,6 @@
 <script lang="ts">
   import { failure } from '../lib/errors';
+  import AutoPause from '../components/AutoPause.svelte';
   import HomeHealth from '../components/HomeHealth.svelte';
   import HomeTiles from '../components/HomeTiles.svelte';
   import CpuCard from '../components/cards/CpuCard.svelte';
@@ -123,6 +124,8 @@
 </header>
 
 <HomeHealth {live} />
+
+<AutoPause />
 
 <HomeTiles {live} />
 

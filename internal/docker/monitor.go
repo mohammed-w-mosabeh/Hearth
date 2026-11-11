@@ -71,10 +71,11 @@ type Monitor struct {
 	names   map[string]string // container id -> name
 	stopped int
 	unexp   []string
-	sick    []string     // running and reported unhealthy
-	ooms    alerts.Pulse // sample's goroutine only
-	known   bool         // the list has been read at least once
-	read    time.Time    // when it was last read, or last failed
+	sick    []string          // running and reported unhealthy
+	states  map[string]string // by name: "running" or "stopped", then "healthy" or "unhealthy" when known
+	ooms    alerts.Pulse      // sample's goroutine only
+	known   bool              // the list has been read at least once
+	read    time.Time         // when it was last read, or last failed
 }
 
 type scope struct {
@@ -244,6 +245,16 @@ func oomKills(dir string) (uint64, bool) {
 
 // Name returns the name of a running container from the start of its ID
 // (the 12 characters Hearth's process groups use).
+// State is a container's state by name as last sampled: "running" or
+// "stopped", then "healthy" or "unhealthy" when it has a health check
+// (automations' conditions and checks, ROADMAP 12.4).
+func (m *Monitor) State(name string) (string, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.states[name]
+	return s, ok
+}
+
 func (m *Monitor) Name(id string) (string, bool) {
 	if id == "" {
 		return "", false
@@ -289,12 +300,24 @@ func (m *Monitor) refresh(ctx context.Context) bool {
 	names := make(map[string]string, len(list))
 	stopped := 0
 	var unexp, sick []string
+	states := map[string]string{}
 	for _, c := range list {
 		name := c.ID
 		if len(c.Names) > 0 {
 			name = strings.TrimPrefix(c.Names[0], "/")
 		}
 		names[c.ID] = name
+		st := "stopped"
+		if c.State == "running" {
+			st = "running"
+		}
+		switch {
+		case strings.HasSuffix(c.Status, "(unhealthy)"):
+			st += " unhealthy"
+		case strings.HasSuffix(c.Status, "(healthy)"):
+			st += " healthy"
+		}
+		states[name] = st
 		if c.State != "running" && c.State != "paused" && c.State != "restarting" {
 			stopped++
 		}
@@ -307,7 +330,7 @@ func (m *Monitor) refresh(ctx context.Context) bool {
 	}
 	sort.Strings(unexp)
 	m.mu.Lock()
-	m.names, m.stopped, m.unexp, m.sick = names, stopped, unexp, sick
+	m.names, m.stopped, m.unexp, m.sick, m.states = names, stopped, unexp, sick, states
 	m.mu.Unlock()
 	return true
 }

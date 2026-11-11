@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -97,6 +98,10 @@ type Action struct {
 	Plan func(ctx context.Context, r Request) (Plan, error)
 	// Run executes plan (from the preview for Destructive actions).
 	Run func(ctx context.Context, r Request, plan Plan) (Result, error)
+	// Authority, or AuthorityFor per request, says whether running it can
+	// ask for a password; unset falls back to DefaultAuthority (S15d).
+	Authority    Authority
+	AuthorityFor func(r Request) Authority
 }
 
 // Auditor records actions (store.DB in production).
@@ -165,6 +170,18 @@ func (r *Registry) Lookup(key string) (Action, bool) {
 	defer r.mu.Unlock()
 	a, ok := r.actions[key]
 	return a, ok
+}
+
+// Keys lists every registered action as "kind/name", sorted.
+func (r *Registry) Keys() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]string, 0, len(r.actions))
+	for k := range r.actions {
+		out = append(out, k)
+	}
+	slices.Sort(out)
+	return out
 }
 
 // body is the request body.

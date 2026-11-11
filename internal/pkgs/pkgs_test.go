@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/actions"
 	"github.com/mohammed-w-mosabeh/hearth/internal/discovery"
+	"github.com/mohammed-w-mosabeh/hearth/internal/unattended"
 )
 
 // sig is a scripted transaction signal.
@@ -33,6 +35,7 @@ type fakePK struct {
 	script func(method string, args []any) []sig
 	n      int
 	ch     chan *dbus.Signal
+	hints  [][]string
 }
 
 func (f *fakePK) GetAll(context.Context, string, dbus.ObjectPath, string) (map[string]dbus.Variant, error) {
@@ -55,6 +58,7 @@ func (f *fakePK) Call(_ context.Context, _ string, path dbus.ObjectPath, method 
 		f.ch = make(chan *dbus.Signal, 64)
 		return nil
 	case strings.HasSuffix(method, ".SetHints"):
+		f.hints = append(f.hints, args[0].([]string))
 		return nil
 	}
 	short := strings.TrimPrefix(method, pkTx+".")
@@ -256,5 +260,16 @@ func TestRunChecksThePreviewAgain(t *testing.T) {
 	res, err = run(ctx, cfg, OpRemove, p)
 	if err != nil || res.Done != 0 || len(res.Failed) != 1 || res.Failed[0].Reason != ReasonUnauthorized {
 		t.Fatalf("%v %+v", err, res)
+	}
+}
+
+// Unattended work never lets PackageKit ask for a password (S15d).
+func TestUnattendedTransactionIsNotInteractive(t *testing.T) {
+	f := &fakePK{script: func(string, []any) []sig { return nil }}
+	c := &Client{Dial: func(context.Context) (Bus, error) { return f, nil }}
+	_ = c.Apply(context.Background(), OpRemove, []string{"vlc;1;amd64;debian"})
+	_ = c.Apply(unattended.With(context.Background()), OpRemove, []string{"vlc;1;amd64;debian"})
+	if len(f.hints) != 2 || !slices.Contains(f.hints[0], "interactive=true") || !slices.Contains(f.hints[1], "interactive=false") {
+		t.Fatalf("%v", f.hints)
 	}
 }

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/mohammed-w-mosabeh/hearth/internal/unattended"
 )
 
 func TestStackGrants(t *testing.T) {
@@ -110,5 +112,56 @@ func TestStackGrants(t *testing.T) {
 	}
 	if decided, ok := g.Authorized(context.Background(), Caller{UID: 1000}, stop); !decided || ok {
 		t.Fatal("a linked file allowed a batch")
+	}
+}
+
+// A restart grant (v1.8, S15b) needs start, and lets an unattended
+// stack.control restart the stack; attended calls always go to polkit.
+func TestStackGrantRestartAndControl(t *testing.T) {
+	now := time.UnixMilli(1793359297763)
+	r := newLifeRigWith(t, func(_ *lifeRig, c *StackConfig) { c.Now = func() time.Time { return now } })
+	if _, err := r.call(t, "stack.deploy", deployParams(lifeSpec)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.call(t, "stack.grant.set", map[string]any{"name": "web", "restart": true}); errCode(err) != CodeBadParams {
+		t.Fatalf("restart without start: %v", err)
+	}
+	m := r.methods["stack.grant.set"]
+	raw, _ := json.Marshal(map[string]any{"name": "web", "start": true, "restart": true})
+	if _, d := m.Authorize(raw); d["allows"] != "stop, start or restart" {
+		t.Fatalf("the dialog must name restart: %v", d)
+	}
+	ctl := r.methods["stack.control"]
+	restart, _ := json.Marshal(StackControlParams{Name: "web", Verb: "restart"})
+	stop, _ := json.Marshal(StackControlParams{Name: "web", Verb: "stop"})
+	away := unattended.With(context.Background())
+	if decided, ok := ctl.Authorized(away, Caller{UID: 1000}, restart); !decided || ok {
+		t.Fatal("no grant yet: refused without polkit")
+	}
+	stopOnly, _ := json.Marshal(map[string]any{"name": "web"})
+	if _, err := m.Handle(context.Background(), Caller{UID: 1000}, stopOnly); err != nil {
+		t.Fatal(err)
+	}
+	if decided, ok := ctl.Authorized(away, Caller{UID: 1000}, restart); !decided || ok {
+		t.Fatal("a stop grant allowed restart")
+	}
+	if decided, ok := ctl.Authorized(away, Caller{UID: 1000}, stop); !decided || !ok {
+		t.Fatal("a stop grant must allow an unattended stop")
+	}
+	if _, err := m.Handle(context.Background(), Caller{UID: 1000}, raw); err != nil {
+		t.Fatal(err)
+	}
+	if decided, ok := ctl.Authorized(away, Caller{UID: 1000}, restart); !decided || !ok {
+		t.Fatal("the restart grant did not allow restart")
+	}
+	if decided, ok := ctl.Authorized(away, Caller{UID: 1001}, restart); !decided || ok {
+		t.Fatal("another user's grant allowed restart")
+	}
+	if decided, _ := ctl.Authorized(context.Background(), Caller{UID: 1000}, restart); decided {
+		t.Fatal("an attended call must go to polkit")
+	}
+	now = now.Add(GrantTTL)
+	if decided, ok := ctl.Authorized(away, Caller{UID: 1000}, restart); !decided || ok {
+		t.Fatal("a lapsed grant allowed restart")
 	}
 }

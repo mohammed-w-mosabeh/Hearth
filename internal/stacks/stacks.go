@@ -51,8 +51,10 @@ type removeState struct{ Params broker.StackRemoveParams }
 
 // Register adds stack/deploy, stack/start, stack/stop, stack/restart,
 // stack/update, stack/remove, stack/backup and stack/restore.
-// notes, which may be nil, remembers what each update preview found.
-func Register(reg *actions.Registry, b Broker, tags docker.TagChecker, notes *UpdateNotes) {
+// notes, which may be nil, remembers what each update preview found;
+// grants, which may be nil, lets granted stop, start and restart run
+// unattended.
+func Register(reg *actions.Registry, b Broker, tags docker.TagChecker, notes *UpdateNotes, grants *GrantCache) {
 	reg.Register(actions.Action{Kind: Kind, Name: "deploy", Risk: actions.Destructive,
 		Validate: func(r actions.Request) error {
 			if !spec.ValidName(r.Target) {
@@ -84,7 +86,16 @@ func Register(reg *actions.Registry, b Broker, tags docker.TagChecker, notes *Up
 		verb string
 		risk actions.Risk
 	}{{"start", actions.Safe}, {"stop", actions.Reversible}, {"restart", actions.Reversible}} {
+		verb := op.verb
 		reg.Register(actions.Action{Kind: Kind, Name: op.verb, Risk: op.risk,
+			// The broker asks polkit, unless the user's grant covers this
+			// stack and verb: then it never asks (S15b, S15d).
+			AuthorityFor: func(r actions.Request) actions.Authority {
+				if grants.Covers(r.Target, verb) {
+					return actions.AuthorityNone
+				}
+				return actions.AuthorityPolkit
+			},
 			Validate: nameOnly,
 			Plan: func(ctx context.Context, r actions.Request) (actions.Plan, error) {
 				info, p, err := find(ctx, b, r.Target, op.verb)
@@ -104,6 +115,7 @@ func Register(reg *actions.Registry, b Broker, tags docker.TagChecker, notes *Up
 				return call(ctx, b, p, "stack.control", broker.StackControlParams{Name: r.Target, Verb: op.verb})
 			}})
 	}
+	registerCheckUpdates(reg, b, tags, notes)
 	reg.Register(actions.Action{Kind: Kind, Name: "update", Risk: actions.Destructive,
 		Validate: nameOnly,
 		Plan: func(ctx context.Context, r actions.Request) (actions.Plan, error) {

@@ -7,7 +7,7 @@ SHELL := /bin/bash
 
 MODULE    := github.com/mohammed-w-mosabeh/hearth
 GO        ?= go
-GO_VERSION := 1.27.3
+GO_VERSION := 1.27.4
 
 # Pinned dev tools, installed into .tools/bin by `make tools`.
 # Bump deliberately: update the version here and re-run `make tools`.
@@ -122,8 +122,9 @@ itest: deb ## Install/uninstall the .deb in a Debian 13 container with systemd
 	./test/itest/run.sh $(DEB) dist/itest-fakedocker dist/brokerprobe dist/itest-termprobe dist/itest-fakeportal
 
 .PHONY: bench
-bench: build ## Measure hearthd idle RSS/CPU over BENCH_SECONDS (default 60) against the budget
+bench: build ## Measure hearthd idle RSS/CPU over BENCH_SECONDS (default 60) against the budget, then again with 20 automations on
 	./scripts/bench.sh bin/hearthd
+	BENCH_AUTOMATIONS=20 ./scripts/bench.sh bin/hearthd
 
 .PHONY: deb
 deb: build ## Build dist/hearth_<version>_amd64.deb with nfpm (unsigned for now)

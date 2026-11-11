@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -289,4 +290,18 @@ func (a *SleepAPI) Register(reg *actions.Registry) {
 			}
 			return res, nil
 		}})
+}
+
+// Sleeps lists the sleeps since the given time, oldest first as the
+// journal lists them; an unreadable or limited system journal is an error,
+// never "no sleeps" (the automations dry run replays resume triggers).
+func (a *SleepAPI) Sleeps(ctx context.Context, since time.Time) ([]Sleep, error) {
+	if a.cfg.CanReadSystem != nil && !a.cfg.CanReadSystem() {
+		return nil, errors.New("power: the system journal is not readable")
+	}
+	res, err := a.cfg.Run(ctx, "journalctl-sleep", safeexec.SleepArgs(since.Unix())...)
+	if err != nil && res.ExitCode != 1 {
+		return nil, fmt.Errorf("power: sleeps: %w", err)
+	}
+	return parseSleeps(res.Stdout), nil
 }

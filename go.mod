@@ -1,6 +1,6 @@
 module github.com/mohammed-w-mosabeh/hearth
 
-go 1.27.3
+go 1.27.4
 
 // npm packages can contain .go files; keep them out of ./...
 ignore ./web/node_modules

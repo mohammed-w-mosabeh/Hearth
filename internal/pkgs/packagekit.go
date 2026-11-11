@@ -14,6 +14,7 @@ import (
 	"github.com/godbus/dbus/v5"
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/dbusx"
+	"github.com/mohammed-w-mosabeh/hearth/internal/unattended"
 )
 
 const (
@@ -142,6 +143,8 @@ func (c *Client) transaction(ctx context.Context, interactive bool, method strin
 	if err != nil {
 		return nil, err
 	}
+	// Unattended work never lets PackageKit ask for a password (S15d).
+	interactive = interactive && !unattended.Is(ctx)
 	hints := []string{"locale=C.UTF-8", "background=false", "interactive=" + fmt.Sprint(interactive)}
 	if err := bus.Call(ctx, pkService, tx, pkTx+".SetHints", nil, hints); err != nil {
 		return nil, err

@@ -12,6 +12,7 @@
   import Games from './routes/Games.svelte';
   import Changes from './routes/Changes.svelte';
   import Modes from './routes/Modes.svelte';
+  import Automations from './routes/Automations.svelte';
   import Insight from './routes/Insight.svelte';
   import Journal from './routes/Journal.svelte';
   import Reports from './routes/Reports.svelte';
@@ -131,6 +132,8 @@
         <Reports />
       {:else if route?.id === 'modes'}
         {#if live}<Modes {live} />{/if}
+      {:else if route?.id === 'automations'}
+        <Automations />
       {:else if route?.id === 'hardware'}
         <Hardware />
       {:else if route?.id === 'space'}

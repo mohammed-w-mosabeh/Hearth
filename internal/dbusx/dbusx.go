@@ -7,9 +7,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/godbus/dbus/v5"
+
+	"github.com/mohammed-w-mosabeh/hearth/internal/unattended"
 )
 
 // CallTimeout bounds every D-Bus method call.
@@ -101,9 +104,12 @@ const InteractiveTimeout = 2 * time.Minute
 // privileged method, polkit asks the user to authenticate (through the
 // desktop's agent) instead of refusing at once.
 func (c *Conn) CallInteractive(ctx context.Context, dest string, path dbus.ObjectPath, method string, out []any, args ...any) error {
+	if unattended.Is(ctx) {
+		return unattended.ErrWouldPrompt
+	}
 	ctx, cancel := context.WithTimeout(ctx, InteractiveTimeout)
 	defer cancel()
-	call := c.c.Object(dest, path).CallWithContext(ctx, method, dbus.FlagAllowInteractiveAuthorization, args...)
+	call := <-c.c.SendWithContext(ctx, interactiveCall(dest, path, method, args...), make(chan *dbus.Call, 1)).Done
 	if call.Err != nil {
 		return fmt.Errorf("dbusx: %s %s: %w", dest, method, call.Err)
 	}
@@ -113,6 +119,35 @@ func (c *Conn) CallInteractive(ctx context.Context, dest string, path dbus.Objec
 		}
 	}
 	return nil
+}
+
+// interactiveCall is the method call CallInteractive sends. It is built
+// here because godbus's Object.Call keeps only the no-auto-start and
+// no-reply flags: the interactive flag never left the process through it,
+// so systemd asked polkit without interaction and nobody was ever asked
+// (found by Gate 12's recorder of polkit requests).
+func interactiveCall(dest string, path dbus.ObjectPath, method string, args ...any) *dbus.Message {
+	iface, member := "", method
+	if i := strings.LastIndex(method, "."); i >= 0 {
+		iface, member = method[:i], method[i+1:]
+	}
+	msg := &dbus.Message{
+		Type:  dbus.TypeMethodCall,
+		Flags: dbus.FlagAllowInteractiveAuthorization,
+		Headers: map[dbus.HeaderField]dbus.Variant{
+			dbus.FieldPath:        dbus.MakeVariant(path),
+			dbus.FieldDestination: dbus.MakeVariant(dest),
+			dbus.FieldMember:      dbus.MakeVariant(member),
+		},
+		Body: args,
+	}
+	if iface != "" {
+		msg.Headers[dbus.FieldInterface] = dbus.MakeVariant(iface)
+	}
+	if len(args) > 0 {
+		msg.Headers[dbus.FieldSignature] = dbus.MakeVariant(dbus.SignatureOf(args...))
+	}
+	return msg
 }
 
 func (c *Conn) Set(ctx context.Context, dest string, path dbus.ObjectPath, iface, prop string, value any) error {

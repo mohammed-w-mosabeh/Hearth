@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 
 	_ "modernc.org/sqlite" // registers the "sqlite" driver
 )
@@ -18,6 +19,9 @@ import (
 // DB wraps the Hearth database handle.
 type DB struct {
 	*sql.DB
+	// rules, once set, holds the alert rules instead of alert_rules (the
+	// automations, ROADMAP 12.7).
+	rules atomic.Pointer[AlertRuleStore]
 }
 
 // Open creates (if needed) and opens the database at path, enforcing mode
@@ -49,7 +53,7 @@ func Open(ctx context.Context, path string) (*DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("store: open %s: %w", path, err)
 	}
-	db := &DB{sqldb}
+	db := &DB{DB: sqldb}
 	if err := db.PingContext(ctx); err != nil {
 		_ = sqldb.Close()
 		return nil, fmt.Errorf("store: ping %s: %w", path, err)

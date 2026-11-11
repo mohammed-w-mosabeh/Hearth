@@ -35,6 +35,7 @@ import (
 	"github.com/mohammed-w-mosabeh/hearth/internal/alerts"
 	"github.com/mohammed-w-mosabeh/hearth/internal/api"
 	"github.com/mohammed-w-mosabeh/hearth/internal/auth"
+	"github.com/mohammed-w-mosabeh/hearth/internal/automations"
 	"github.com/mohammed-w-mosabeh/hearth/internal/backup"
 	"github.com/mohammed-w-mosabeh/hearth/internal/bootinfo"
 	"github.com/mohammed-w-mosabeh/hearth/internal/broker"
@@ -88,6 +89,7 @@ func main() {
 		log.Error(err.Error())
 		os.Exit(1)
 	}
+	safeexec.NoHugePages() // starts the process again: nothing above may have effects
 	paths, err := resolvePaths(os.Getenv)
 	if err != nil {
 		log.Error(err.Error())
@@ -190,7 +192,31 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	if err := channels.Load(); err != nil {
 		log.Warn("alerts: remote channels are off", "err", err)
 	}
+	// Alert rules are automations (ROADMAP 12.7): alert_rules rows move
+	// once, and from then on every reader and writer of rules goes through
+	// the automations. The alert engine keeps the incidents; an incident
+	// that opens runs its rule's automation.
+	if n, err := automations.MigrateAlertRules(ctx, db); err != nil {
+		return err
+	} else if n > 0 {
+		log.Info("automations: alert rules moved", "rules", n)
+	}
+	var autoRef atomic.Pointer[automations.Engine]
 	engine := alerts.NewEngine(db, alerts.Fanout{notifier, channels}, srv.Hub, log)
+	db.SetAlertRuleStore(automations.AlertRules{DB: db, Changed: func() {
+		_ = engine.Reload(context.Background())
+		if a := autoRef.Load(); a != nil {
+			_ = a.Load(context.Background())
+		}
+	}})
+	engine.Opened = func(ctx context.Context, ev store.AlertEvent, summary, body string) {
+		if a := autoRef.Load(); a != nil && a.FireAlert(ctx, ev.RuleID, ev.Instance, ev.Value, body) {
+			return
+		}
+		if ev.Notified { // the automations engine has not loaded the rule yet: as before
+			_ = alerts.Fanout{notifier, channels}.Notify(ctx, summary, body, ev.Severity)
+		}
+	}
 	if err := engine.Load(ctx); err != nil {
 		return err
 	}
@@ -549,10 +575,11 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	images := &docker.Images{B: brokerClient, Registry: docker.NewRegistry(), Run: safeexec.Run, CacheDir: filepath.Join(paths.DataDir, "trivy")}
 	docker.RegisterUpdate(reg, brokerClient, images.Registry, safeexec.Run)
 	appUpdates := &stacks.UpdateNotes{Settings: db}
-	stacks.Register(reg, brokerClient, images.Registry, appUpdates)
+	stackGrants := &stacks.GrantCache{B: brokerClient}
+	stacks.Register(reg, brokerClient, images.Registry, appUpdates, stackGrants)
 	// Unattended grants (ROADMAP 10.8): one password, then a trigger may
 	// stop (or start) that stack with nobody there, for 90 days.
-	stacks.RegisterGrants(reg, brokerClient)
+	stacks.RegisterGrants(reg, brokerClient, stackGrants)
 	srv.API.HandleFunc("GET /api/v1/stack-grants", stacks.HandleGrants(brokerClient))
 	srv.API.HandleFunc("GET /api/v1/app-health", stacks.HandleHealth(brokerClient, appUpdates))
 	// App names at http://<app>.localhost:<port>/ (9.13): off until the
@@ -727,6 +754,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 		Run: posture.Runner(safeexec.Run), Settings: db, Log: log,
 	})
 	security.Register(srv.API, db)
+	security.RegisterActions(reg)
 	lynisAudits := lynis.New(lynis.Config{Broker: brokerClient, Store: db, Audit: db, Log: log,
 		Observe: func(ctx context.Context, now time.Time, v map[string]float64) {
 			engine.Observe(ctx, now, lynis.Metric, v)
@@ -798,7 +826,15 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	// disarms its triggers (SECURITY S15b). Profiles are kept as modes
 	// (ROADMAP 10.2): the profile engine below reads and writes mode files.
 	var profileManager *profiles.Manager
+	// Armed triggers are automations (ROADMAP 12.7): modeSync keeps them
+	// matching what is armed for the current files.
+	var modeSync *modes.Syncer
 	modeSet := modes.NewSet(modes.Config{Dir: filepath.Join(paths.ConfigDir, "modes"), Store: db, Log: log,
+		Changed: func() {
+			if modeSync != nil {
+				modeSync.Now(ctx)
+			}
+		},
 		Check: func(items []modes.Item, game bool) error {
 			list := make([]profiles.Item, len(items))
 			for i, it := range items {
@@ -922,47 +958,203 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	approvalsDone := make(chan struct{})
 	go func() { approvals.Run(approvalsCtx, time.Minute); close(approvalsDone) }()
 	defer func() { stopApprovals(); <-approvalsDone }()
-	// Triggers (ROADMAP 10.6): armed only by a click (mode/arm) for the file
-	// shown, they switch a mode on when what they wait for changes:
-	// unattended items only, never a dialog.
-	modes.RegisterArming(reg, modeSet, db, nil)
-	triggers := modes.NewTriggers(modes.TriggerConfig{Set: modeSet, DB: db, Log: log,
-		Sources: modes.Sources{
-			Next: func(ctx context.Context, cal string) (time.Time, error) {
-				c := scheduler.CheckSchedule(ctx, safeexec.Run, scheduler.Schedule{Kind: scheduler.KindCalendar, Value: cal})
-				now := time.Now()
-				for _, ms := range c.Next {
-					if t := time.UnixMilli(ms); t.After(now) {
-						return t, nil
-					}
+	// Triggers (ROADMAP 10.6, 12.7): armed only by a click (mode/arm) for
+	// the file shown, each is an automation running mode/activate, which
+	// switches the mode on as 10.6 did: unattended items only, never a
+	// dialog. Arming, disarming, a changed file and a 15 s tick sync them.
+	modeSync = &modes.Syncer{DB: db, Set: modeSet, Log: log, Changed: func() {
+		if a := autoRef.Load(); a != nil {
+			_ = a.Load(context.Background())
+		}
+	}}
+	modes.RegisterArming(reg, modeSet, modeSync.Arming(db), nil)
+	modes.RegisterActivate(reg, modeSet, func(ctx context.Context, modeID, by, why string) error {
+		nums, err := db.ModeNumbers(ctx, []string{modeID})
+		if err != nil {
+			return err
+		}
+		return profileManager.AutoActivate(ctx, nums[modeID], by, why)
+	})
+	// Triggers armed before 12.7 become automations here, once: the set is
+	// read first, so a sync never sees an empty one.
+	modeSet.Load(ctx)
+	modeSync.Now(ctx)
+	// What mode triggers and automations watch (ROADMAP 10.6, 12.3).
+	trigSources := modes.Sources{
+		Next: func(ctx context.Context, cal string) (time.Time, error) {
+			c := scheduler.CheckSchedule(ctx, safeexec.Run, scheduler.Schedule{Kind: scheduler.KindCalendar, Value: cal})
+			now := time.Now()
+			for _, ms := range c.Next {
+				if t := time.UnixMilli(ms); t.After(now) {
+					return t, nil
 				}
-				return time.Time{}, fmt.Errorf("no next run for %q: %s", cal, c.Error)
-			},
-			Connections: sysSettings.ActiveConnections,
-			Battery: func() (float64, bool, bool) {
-				bats := pw.Snapshot().Batteries
-				if len(bats) == 0 {
-					return 0, false, false
-				}
-				return bats[0].Pct, bats[0].State == "discharging", true
-			},
-			Displays: func() (int, error) { return session.ConnectedDisplays("/sys") },
-		},
-		Activate: func(ctx context.Context, modeID, by, why string) error {
-			nums, err := db.ModeNumbers(ctx, []string{modeID})
-			if err != nil {
-				return err
 			}
-			return profileManager.AutoActivate(ctx, nums[modeID], by, why)
-		}})
-	triggersCtx, stopTriggers := context.WithCancel(ctx)
-	triggersDone := make(chan struct{})
-	go func() { triggers.Run(triggersCtx, 15*time.Second); close(triggersDone) }()
-	defer func() { stopTriggers(); <-triggersDone }()
+			return time.Time{}, fmt.Errorf("no next run for %q: %s", cal, c.Error)
+		},
+		Connections: sysSettings.ActiveConnections,
+		Battery: func() (float64, bool, bool) {
+			bats := pw.Snapshot().Batteries
+			if len(bats) == 0 {
+				return 0, false, false
+			}
+			return bats[0].Pct, bats[0].State == "discharging", true
+		},
+		Displays: func() (int, error) { return session.ConnectedDisplays("/sys") },
+	}
+	syncCtx, stopSync := context.WithCancel(ctx)
+	syncDone := make(chan struct{})
+	go func() { modeSync.Run(syncCtx, 15*time.Second); close(syncDone) }()
+	defer func() { stopSync(); <-syncDone }()
 	modesCtx, stopModes := context.WithCancel(ctx)
 	modesDone := make(chan struct{})
 	go func() { modeSet.Run(modesCtx); close(modesDone) }()
 	defer func() { stopModes(); <-modesDone }()
+	autoState := automations.State{
+		GameRunning: func() bool { g, err := games.Playing(); return err == nil && len(g) > 0 },
+		ContainerState: func(_ context.Context, name string) (string, error) {
+			st, ok := dockerMon.State(name)
+			if !ok {
+				return "", fmt.Errorf("no container %s", name)
+			}
+			return st, nil
+		},
+		ActiveModes: func(ctx context.Context) ([]string, error) {
+			act, err := db.ActiveModes(ctx)
+			var ids []string
+			for _, a := range act {
+				ids = append(ids, a.ModeID)
+			}
+			return ids, err
+		},
+		UnitState: func(_ context.Context, scope, name string) (string, error) {
+			active, _, ok := unitState(scope == "user", name)
+			if !ok {
+				return "", fmt.Errorf("%s is not loaded", name)
+			}
+			return active, nil
+		},
+	}
+	// Notify and check steps (ROADMAP 12.5): the alert channels, the
+	// busiest processes and the triggering unit's journal.
+	autoSteps := automations.Steps{
+		Desktop: func(ctx context.Context, summary, body, severity string) error {
+			return notifier.Notify(ctx, summary, body, severity)
+		},
+		Send: func(ctx context.Context, channel, summary, body, severity string) error {
+			return channels.Send(ctx, channel, summary, body, severity)
+		},
+		All: func(ctx context.Context, summary, body, severity string) error {
+			return alerts.Fanout{notifier, channels}.Notify(ctx, summary, body, severity)
+		},
+		Top:     topProcesses(apps.Name),
+		Journal: unitJournal,
+		State:   autoState,
+	}
+	autoSteps.RegisterActions(reg)
+	// kernelProtect: the running kernel and the two newest are never
+	// removed by an automation (S16c), on top of package/remove's checks.
+	kernelProtect := func(action, target string) string {
+		if action != "package/remove" {
+			return ""
+		}
+		name, _, err := pkgs.Target(target)
+		if err != nil {
+			return ""
+		}
+		list, err := dpkgDB.Packages()
+		if err != nil {
+			return "the package database could not be read"
+		}
+		b, _ := os.ReadFile("/proc/sys/kernel/osrelease")
+		if space.KeptKernel(list, strings.TrimSpace(string(b)), name) {
+			return "the running kernel or one of the two newest"
+		}
+		return ""
+	}
+	// Automations (ROADMAP Phase 12, SECURITY S15d): storage and the API;
+	// every save is checked against the action registry and systemd.
+	// What the dry run replays (ROADMAP 12.8): the stored history only.
+	autoHistory := automations.History{
+		Elapses: func(ctx context.Context, expr string, from, to time.Time) ([]time.Time, bool, error) {
+			return scheduler.PastElapses(ctx, safeexec.Run, expr, from, to)
+		},
+		Series: func(ctx context.Context, metric string, from, to time.Time) ([]store.Agg, error) {
+			return db.Series(ctx, store.Res1m, metric, from, to)
+		},
+		SeriesLike: db.SeriesLike,
+		Totals: func() automations.Totals {
+			s, _ := sampler.Ring().Last()
+			t := automations.Totals{Mem: float64(s.Mem.Total), Swap: float64(s.Mem.SwapTotal), Disks: map[string]float64{}}
+			for _, d := range s.Disks {
+				t.Disks[d.Mount] = float64(d.Used + d.Avail) // as the sampler's percent counts it
+			}
+			return t
+		},
+		Events:  db.AlertEventsBetween,
+		Outages: db.Outages,
+		Boots: func(ctx context.Context) ([]time.Time, error) {
+			list, err := services.Boots(ctx, safeexec.Run)
+			out := make([]time.Time, 0, len(list))
+			for _, b := range list {
+				out = append(out, time.UnixMilli(b.First))
+			}
+			return out, err
+		},
+		Resumes: func(ctx context.Context) ([]time.Time, error) {
+			list, err := sleepAPI.Sleeps(ctx, time.Now().Add(-(automations.DryRunDays+1)*24*time.Hour))
+			var out []time.Time
+			for _, sl := range list {
+				if sl.To > 0 {
+					out = append(out, time.UnixMilli(sl.To))
+				}
+			}
+			return out, err
+		},
+	}
+	autoEngine := automations.NewEngine(automations.Config{Store: db, Registry: reg, Sources: trigSources, Log: log, History: autoHistory,
+		Watch: automations.Watch{
+			Home:        appsCfg.Home,
+			IdleSeconds: idleSeconds,
+			Resumes:     resumes,
+			RunningApps: func() map[string]bool {
+				on := map[string]bool{}
+				for id := range apps.Running(running()) {
+					on[id] = true
+				}
+				return on
+			},
+			Games:           games.Playing,
+			SSHFailures:     sshFailures,
+			SecurityUpdates: securityUpdates(updates),
+			ImageUpdates:    imageUpdates(db),
+		},
+		State: autoState,
+		Steps: autoSteps, Protect: kernelProtect,
+		// The desktop, and ntfy when it is set: an approval waits, or the
+		// global limit paused everything. Words only, no action on click.
+		Notify: func(ctx context.Context, summary, body string) {
+			_ = notifier.Notify(ctx, summary, body, "warning")
+			_ = channels.Send(ctx, "ntfy", summary, body, "warning")
+		}})
+	autoEngine.RegisterApprovals(reg)
+	autoRef.Store(autoEngine)
+	engine.Tap = autoEngine.Observe
+	autoCtx, stopAuto := context.WithCancel(ctx)
+	autoDone := make(chan struct{})
+	go func() { autoEngine.Run(autoCtx); close(autoDone) }()
+	defer func() { stopAuto(); <-autoDone }()
+	(&automations.API{Store: db, Engine: autoEngine, Approvals: autoEngine, Tester: autoEngine, DryRun: autoEngine.DryRun,
+		Steps: autoEngine.CheckSteps, Next: autoEngine.NextRuns, Actions: func() []automations.ActionInfo { return automations.Offered(reg) },
+		ModeApprovals: func(ctx context.Context) (any, error) { return approvals.Pending(ctx) },
+		// An alert automation edited here changes the alert engine's rules too.
+		Changed: func() { _ = autoEngine.Load(context.Background()); _ = engine.Reload(context.Background()) }, Check: automations.NewChecker(automations.CheckDeps{
+			Registry: reg, Protect: kernelProtect,
+			Calendar: func(ctx context.Context, expr string) error {
+				if c := scheduler.CheckSchedule(ctx, safeexec.Run, scheduler.Schedule{Kind: scheduler.KindCalendar, Value: expr}); !c.Valid {
+					return errors.New(c.Error)
+				}
+				return nil
+			}})}).Register(srv.API)
 	// Uninstall completely (ROADMAP 11.7, SECURITY S16k).
 	uninstallSvc := setupUninstall(srv.API, reg, uninstallDeps{DB: db, Apps: apps, Tools: tools, Games: games, Dpkg: dpkgDB,
 		Extra: extraFind, UserRun: userRun, PK: pkgCfg.PK, Broker: brokerClient, Modes: modeSet, Home: appsCfg.Home, Log: log})
@@ -1019,6 +1211,7 @@ func run(ctx context.Context, paths Paths, log *slog.Logger, open func(context.C
 	go func() { weekly.Run(weeklyCtx, time.Hour); close(weeklyDone) }()
 	defer func() { stopWeekly(); <-weeklyDone }()
 	(&reports.API{B: reportBuilder, Weekly: weekly, Audit: db}).Register(srv.API)
+	weekly.RegisterActions(reg)
 
 	backups := backup.New(backup.Config{
 		DB: db, Dir: filepath.Join(paths.DataDir, "backups"), ValidateProfile: profileManager.ValidateImported, Profiles: modeProfiles,

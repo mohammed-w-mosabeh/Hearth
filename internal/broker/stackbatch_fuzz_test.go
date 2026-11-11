@@ -51,10 +51,12 @@ func FuzzStackBatchParams(f *testing.F) {
 }
 
 // The grants file is root's, but read as untrusted: a damaged one allows
-// nothing, and restart is never allowed unattended.
+// nothing, and restart is allowed unattended only by a grant that lists
+// restart and start (v1.8, S15b).
 func FuzzGrantsFile(f *testing.F) {
 	f.Add(`[{"name":"web","verbs":["stop"],"uid":1000,"granted":1,"until":9999999999999}]`, "web", "stop", uint32(1000))
 	f.Add(`[{"name":"web","verbs":["stop","restart"],"uid":1000,"until":9999999999999}]`, "web", "restart", uint32(1000))
+	f.Add(`[{"name":"web","verbs":["stop","start","restart"],"uid":1000,"until":9999999999999}]`, "web", "restart", uint32(1000))
 	f.Add(`[{"name":"web","verbs":["stop"],"uid":1000,"until":1}]`, "web", "stop", uint32(1000))
 	f.Add(`{"web/1000":{}}`, "web", "stop", uint32(0))
 	dir := filepath.Join(f.TempDir(), "stacks")
@@ -70,7 +72,7 @@ func FuzzGrantsFile(f *testing.F) {
 		if !g.allows(uid, []StackBatchItem{{Name: name, Verb: verb}}, now) {
 			return
 		}
-		if verb != "stop" && verb != "start" {
+		if verb != "stop" && verb != "start" && verb != "restart" {
 			t.Fatalf("allowed %q unattended", verb)
 		}
 		var list []StackGrant
@@ -79,6 +81,9 @@ func FuzzGrantsFile(f *testing.F) {
 		}
 		for _, gr := range list {
 			if gr.Name == name && gr.UID == uid && now.UnixMilli() < gr.Until && contains(gr.Verbs, verb) {
+				if verb == "restart" && !contains(gr.Verbs, "start") {
+					t.Fatalf("allowed restart without start: %s", file)
+				}
 				return
 			}
 		}

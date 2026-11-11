@@ -17,6 +17,7 @@ import (
 	"github.com/godbus/dbus/v5"
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/discovery"
+	"github.com/mohammed-w-mosabeh/hearth/internal/unattended"
 )
 
 // fakeManager plays the systemd user manager: a transient unit "runs" by
@@ -230,4 +231,18 @@ func FuzzRemoveTargets(f *testing.F) {
 			}
 		}
 	})
+}
+
+// Removing a snap or a system Flatpak asks polkit: unattended, it is
+// refused before anything runs (S15d).
+func TestUnattendedExtraRemovalsRefused(t *testing.T) {
+	ctx := unattended.With(context.Background())
+	for _, c := range [][2]string{{"flatpak", "system/app/org.x.Y/x86_64/stable"}} {
+		if err := RemoveExtra(ctx, ExtraConfig{}, c[0], c[1]); !errors.Is(err, unattended.ErrWouldPrompt) {
+			t.Errorf("%v: %v", c, err)
+		}
+	}
+	if err := removeSnap(ctx, ExtraConfig{}, "firefox"); !errors.Is(err, unattended.ErrWouldPrompt) {
+		t.Errorf("snap: %v", err)
+	}
 }

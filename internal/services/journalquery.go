@@ -217,3 +217,13 @@ func JournalTail(run Runner) func(ctx context.Context, cursor string) ([]string,
 		return out, next, nil
 	}
 }
+
+// Boots lists the machine's boots, oldest first as journalctl lists them
+// (the automations dry run replays a login trigger from them).
+func Boots(ctx context.Context, run Runner) ([]Boot, error) {
+	res, err := run(ctx, "journalctl-boots", "--list-boots", "--output=json", "--no-pager")
+	if err != nil {
+		return nil, err
+	}
+	return parseBoots(res.Stdout)
+}

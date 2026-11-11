@@ -18,6 +18,7 @@
     type FeedData,
     type Inputs,
     type Item,
+    type AutoApproval,
     type PendingApproval,
   } from '../lib/health';
   import { t, type MessageKey } from '../lib/i18n';
@@ -59,6 +60,7 @@
     void load('lynis', '/security/lynis', (r: LynisView) => r);
     void load('apps', '/app-health', (r: AppHealth[]) => r);
     void load('modes', '/modes', (r: { approvals: PendingApproval[] }) => r.approvals);
+    void load('automations', '/automations/approvals', (r: { automations: AutoApproval[] }) => r.automations);
   }
 
   $effect(() => {

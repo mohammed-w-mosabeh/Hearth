@@ -767,3 +767,20 @@ func TestGSettingsShapes(t *testing.T) {
 		}
 	}
 }
+
+func TestCalendarPast(t *testing.T) {
+	if err := Check("calendar-past", CalendarPastArgs(1762300000, "Mon..Fri 09:00")...); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range [][]string{
+		{"calendar", "--base-time=@1762300000", "--iterations=5000", "--", "daily"},
+		{"calendar", "--base-time=yesterday", "--iterations=1000", "--", "daily"},
+		{"calendar", "--base-time=@1;x", "--iterations=1000", "--", "daily"},
+		{"calendar", "--base-time=@1", "--iterations=1000", "--", "--help"},
+		{"calendar", "--base-time=@1", "--iterations=1000", "daily"},
+	} {
+		if Check("calendar-past", bad...) == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+}

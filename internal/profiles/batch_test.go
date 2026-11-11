@@ -87,7 +87,7 @@ func TestAutomaticSwitchDefersStacks(t *testing.T) {
 	feedsStart := Item{Kind: KindStack, Target: "feeds", Do: DoStart}
 	id := f.add(t, "Game", true, photos, feedsStart, dndOn)
 	f.h.games = []string{"steam.1"}
-	f.m.poll(context.Background())
+	f.tick(context.Background(), t)
 	if len(f.h.batches) != 0 {
 		t.Fatalf("an automatic switch ran stacks: %+v", f.h.batches)
 	}
@@ -110,8 +110,8 @@ func TestAutomaticSwitchDefersStacks(t *testing.T) {
 	}
 	// The game ends: the restore runs by itself, so its batch may not prompt.
 	f.h.games = nil
-	f.m.poll(context.Background())
-	f.m.poll(context.Background())
+	f.tick(context.Background(), t)
+	f.tick(context.Background(), t)
 	if len(f.h.batches) != 2 || f.h.batches[1].interactive {
 		t.Fatalf("%+v", f.h.batches)
 	}
@@ -172,7 +172,7 @@ func TestGrantedStacksRunUnattended(t *testing.T) {
 	f.h.grants = map[string][]string{"photos": {"stop"}, "notes": {"stop"}} // notes may not be started
 	id := f.add(t, "Game", true, photos, feeds, notes)
 	f.h.games = []string{"steam.1"}
-	f.m.poll(context.Background())
+	f.tick(context.Background(), t)
 	if len(f.h.batches) != 1 || f.h.batches[0].interactive || len(f.h.batches[0].items) != 1 || f.h.batches[0].items[0] != photos {
 		t.Fatalf("%+v", f.h.batches)
 	}

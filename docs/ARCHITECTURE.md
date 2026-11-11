@@ -60,6 +60,8 @@ hearth/
       spec/       # the stack spec: strict JSON decoding and the S12b rules, no I/O (imported by the broker)
     modes/        # v1.6: mode files, triggers, snapshots, approvals (extends profiles/)
     session/      # v1.6: session settings a mode sets: GNOME wallpaper and Do Not Disturb (gsettings), desktop detection, backlight choice
+    automations/  # v1.8: Automations: storage, API, from 12.3 the engine (SECURITY S15d)
+      spec/       # the spec and the one validator, no I/O (editor, templates, import, migrations)
     uninstall/    # v1.7: Uninstall completely: resolver, leftover path rules and matching, plan, run and undo (SECURITY S16k, S16l)
       rules/      # the leftover path rules, operation IDs, manifests and tar shapes, no I/O (shared with the broker)
       archive/    # the root side: jobs, the archive and restore steps its units run, dpkg's status as root reads it

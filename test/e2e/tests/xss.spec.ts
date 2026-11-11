@@ -57,6 +57,13 @@ test.beforeAll(async ({ browser }) => {
   expect(snap.ok(), await snap.text()).toBeTruthy();
   const profile = await post('profiles', { name: PAYLOAD, items: [{ kind: 'app', target: 'org.example.Probe', do: 'start' }] });
   expect(profile.ok(), await profile.text()).toBeTruthy();
+  // An automation's name, step label and notification text (ROADMAP 12.9).
+  const automation = await post('automations', {
+    name: PAYLOAD,
+    enabled: false,
+    spec: { trigger: { kind: 'login' }, then: [{ step: 'notify', channels: ['desktop'], text: PAYLOAD, label: PAYLOAD }], options: { cooldown_s: 300, max_per_hour: 6 } },
+  });
+  expect(automation.ok(), await automation.text()).toBeTruthy();
   await page.close();
 });
 
@@ -84,6 +91,7 @@ const pages: { name: string; hash: string; text: string }[] = [
   { name: 'Games name', hash: '#/games', text: PAYLOAD },
   { name: 'Settings autostart entry', hash: '#/settings', text: PAYLOAD },
   { name: 'Modes name', hash: '#/modes', text: PAYLOAD },
+  { name: 'Automations name', hash: '#/automations', text: PAYLOAD },
   { name: 'Space advisor cache folder', hash: '#/space', text: PAYLOAD },
   { name: 'Uninstall plan of a hostile game', hash: '#/removed?item=game:steam.9', text: PAYLOAD },
 ];
@@ -97,6 +105,19 @@ for (const p of pages) {
     await noScriptRan(page);
   });
 }
+
+test("an automation's notification text and step label show as text in the editor", async ({ page }) => {
+  await page.goto(`${origin}/#/automations`);
+  await page.reload();
+  // The alert rule of the same name is a row too: not that one.
+  const row = page.locator('tbody tr').filter({ hasText: PAYLOAD }).filter({ hasNotText: 'alert rule' }).first();
+  await row.getByRole('button', { name: 'Edit' }).click();
+  const editor = page.getByRole('dialog');
+  await expect(editor.locator('textarea')).toHaveValue(PAYLOAD, { timeout: 15_000 });
+  await expect(editor.getByLabel('Label (optional)')).toHaveValue(PAYLOAD);
+  await page.waitForTimeout(500);
+  await noScriptRan(page);
+});
 
 test('an import dry-run of a hostile project shows its name as text', async ({ page }) => {
   await page.goto(`${origin}/#/stacks`);

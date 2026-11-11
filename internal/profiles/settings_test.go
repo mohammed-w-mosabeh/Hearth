@@ -135,7 +135,7 @@ func TestGameMaySetSettings(t *testing.T) {
 	f.settingsRig()
 	f.add(t, "Game", true, dndOn, vpn)
 	f.h.games = []string{"steam.1"}
-	f.m.poll(context.Background())
+	f.tick(context.Background(), t)
 	if f.h.settings["dnd"] != "on" || !f.h.conns[vpn.Target] {
 		t.Fatalf("%v %v", f.h.settings, f.h.conns)
 	}

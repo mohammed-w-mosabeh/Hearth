@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/mohammed-w-mosabeh/hearth/internal/unattended"
 )
 
 // ErrUnavailable means the broker is not installed or not running.
@@ -40,7 +42,7 @@ func (c *Client) dial(ctx context.Context, method string, params any) (net.Conn,
 	case err != nil:
 		return nil, Request{}, fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}
-	req := Request{ID: c.ids.Add(1), Method: method}
+	req := Request{ID: c.ids.Add(1), Method: method, Unattended: unattended.Is(ctx)}
 	if params != nil {
 		if req.Params, err = json.Marshal(params); err != nil {
 			_ = conn.Close()

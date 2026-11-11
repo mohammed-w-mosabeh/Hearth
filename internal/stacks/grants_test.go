@@ -2,7 +2,9 @@ package stacks
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/mohammed-w-mosabeh/hearth/internal/actions"
 	"github.com/mohammed-w-mosabeh/hearth/internal/broker"
@@ -15,7 +17,7 @@ func TestGrants(t *testing.T) {
 		t.Fatal(got, err)
 	}
 	reg := actions.NewRegistry(nil)
-	RegisterGrants(reg, gb)
+	RegisterGrants(reg, gb, nil)
 	a, _ := reg.Lookup("stack/grant")
 	for _, bad := range []actions.Request{
 		{Target: "../x", Params: map[string]string{}},
@@ -41,4 +43,52 @@ func (g *grantBroker) Call(_ context.Context, method string, _, out any) error {
 		return remarshal(g.list, out)
 	}
 	return nil
+}
+
+type countingBroker struct {
+	n     int
+	verbs []string
+	err   error
+}
+
+func (c *countingBroker) Call(_ context.Context, method string, _, out any) error {
+	c.n++
+	if c.err != nil {
+		return c.err
+	}
+	return remarshal([]broker.StackGrant{{Name: "web", Verbs: c.verbs}}, out)
+}
+
+func TestGrantCache(t *testing.T) {
+	now := time.Unix(1000, 0)
+	b := &countingBroker{verbs: []string{"stop", "start", "restart"}}
+	g := &GrantCache{B: b, Now: func() time.Time { return now }}
+	if !g.Covers("web", "restart") || !g.Covers("web", "stop") || g.Covers("db", "stop") || g.Covers("web", "remove") {
+		t.Fatal("covers")
+	}
+	if b.n != 1 {
+		t.Fatalf("asked %d times within the cache's time", b.n)
+	}
+	b.verbs = []string{"stop", "restart"} // restart without start never counts
+	now = now.Add(grantCacheFor)
+	if g.Covers("web", "restart") || !g.Covers("web", "stop") || b.n != 2 {
+		t.Fatal("refresh")
+	}
+	b.err = errors.New("broker down")
+	g.Forget()
+	if g.Covers("web", "stop") {
+		t.Fatal("an error counts as no grant")
+	}
+	var none *GrantCache
+	if none.Covers("web", "stop") {
+		t.Fatal("nil cache")
+	}
+	reg := actions.NewRegistry(nopAudit{})
+	b.err, b.verbs = nil, []string{"stop", "start", "restart"}
+	g.Forget()
+	Register(reg, b, fakeTags{}, nil, g)
+	if reg.AuthorityOf("stack/restart", actions.Request{Target: "web"}) != actions.AuthorityNone ||
+		reg.AuthorityOf("stack/restart", actions.Request{Target: "db"}) != actions.AuthorityPolkit {
+		t.Fatal("a granted stack verb never asks; others may")
+	}
 }

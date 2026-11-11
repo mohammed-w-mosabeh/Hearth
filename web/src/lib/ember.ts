@@ -48,6 +48,7 @@ export const railGroups: RailGroup[] = [
       { id: 'scheduler', label: 'nav.scheduler', icon: 'calendar' },
       { id: 'alerts', label: 'nav.alerts', icon: 'bell' },
       { id: 'modes', label: 'nav.modes', icon: 'layers' },
+      { id: 'automations', label: 'nav.automations', icon: 'bolt' },
     ],
   },
   {

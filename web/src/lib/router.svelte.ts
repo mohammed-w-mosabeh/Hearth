@@ -32,6 +32,7 @@ export const routes: Route[] = [
   { id: 'security', label: 'nav.security', icon: 'shield' },
   { id: 'tokens', label: 'nav.tokens', icon: 'shield' },
   { id: 'modes', label: 'nav.modes', icon: 'layers' },
+  { id: 'automations', label: 'nav.automations', icon: 'bolt' },
   { id: 'changes', label: 'nav.changes', icon: 'history' },
   { id: 'reports', label: 'nav.reports', icon: 'report' },
   { id: 'settings', label: 'nav.settings', icon: 'sliders' },

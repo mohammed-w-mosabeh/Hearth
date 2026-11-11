@@ -1,0 +1,2 @@
+go test fuzz v1
+string("Next elapse:0 0001-01-01 0:00:00 UTC")

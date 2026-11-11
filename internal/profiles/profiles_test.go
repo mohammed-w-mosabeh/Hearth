@@ -167,11 +167,12 @@ type testStore interface {
 var newStore = func(_ *testing.T, db *store.DB) testStore { return db }
 
 type fixture struct {
-	h   *host
-	m   *Manager
-	db  testStore
-	reg *actions.Registry
-	mux *http.ServeMux
+	h    *host
+	m    *Manager
+	db   testStore
+	reg  *actions.Registry
+	mux  *http.ServeMux
+	game *gameTrigger
 }
 
 type muxer struct{ *http.ServeMux }
@@ -464,42 +465,42 @@ func TestGameAutoMode(t *testing.T) {
 	f.h.on["unit:user/syncnotes.service"] = true
 	id := f.add(t, "Gaming", true, userUnit)
 
-	f.m.poll(ctx)
+	f.tick(ctx, t)
 	if len(f.h.calls) != 0 {
 		t.Fatalf("no game: %v", f.h.calls)
 	}
 	f.h.games = []string{"steam.620"}
-	f.m.poll(ctx)
+	f.tick(ctx, t)
 	if p := f.profile(t, id); p.ActivatedBy != ByGame || f.h.on["unit:user/syncnotes.service"] {
 		t.Fatalf("%+v", p)
 	}
 
 	// The game goes on; the user changes their mind: it stays off.
 	f.deactivate(t, id)
-	f.m.poll(ctx)
+	f.tick(ctx, t)
 	if !f.profile(t, id).ActivatedAt.IsZero() {
 		t.Fatal("activated again during the same game")
 	}
 
 	// The next game activates again; one poll without it is not the end.
 	f.h.games = nil
-	f.m.poll(ctx)
-	f.m.poll(ctx)
+	f.tick(ctx, t)
+	f.tick(ctx, t)
 	f.h.games = []string{"lutris"}
-	f.m.poll(ctx)
+	f.tick(ctx, t)
 	if f.profile(t, id).ActivatedBy != ByGame {
 		t.Fatal("not activated for the next game")
 	}
 	f.h.games = nil
-	f.m.poll(ctx)
+	f.tick(ctx, t)
 	f.h.games = []string{"lutris"}
-	f.m.poll(ctx) // the launcher between stages
+	f.tick(ctx, t) // the launcher between stages
 	f.h.games = nil
-	f.m.poll(ctx)
+	f.tick(ctx, t)
 	if f.profile(t, id).ActivatedAt.IsZero() {
 		t.Fatal("restored on one missed poll")
 	}
-	f.m.poll(ctx)
+	f.tick(ctx, t)
 	if !f.profile(t, id).ActivatedAt.IsZero() || !f.h.on["unit:user/syncnotes.service"] {
 		t.Fatal("not restored after the game")
 	}
@@ -509,10 +510,10 @@ func TestGameAutoMode(t *testing.T) {
 
 	// Failing to look for games is not the game ending.
 	f.h.games = []string{"steam.1"}
-	f.m.poll(ctx)
+	f.tick(ctx, t)
 	f.h.games, f.h.gameErr = nil, errors.New("no /proc")
 	for range 4 {
-		f.m.poll(ctx)
+		f.tick(ctx, t)
 	}
 	if f.profile(t, id).ActivatedAt.IsZero() {
 		t.Fatal("restored on an error")
@@ -526,7 +527,7 @@ func TestGameLeavesManualActivationAlone(t *testing.T) {
 	id := f.add(t, "Gaming", true, userUnit)
 	f.activate(t, id)
 	for range 3 {
-		f.m.poll(context.Background())
+		f.tick(context.Background(), t)
 	}
 	if f.profile(t, id).ActivatedBy != ByUser {
 		t.Fatal("restored a profile the user activated")
@@ -540,7 +541,7 @@ func TestRestoresAfterRestart(t *testing.T) {
 	f.h.on["unit:user/syncnotes.service"] = true
 	id := f.add(t, "Gaming", true, userUnit)
 	f.h.games = []string{"steam.620"}
-	f.m.poll(ctx)
+	f.tick(ctx, t)
 	if f.h.on["unit:user/syncnotes.service"] {
 		t.Fatal("not stopped")
 	}
@@ -560,12 +561,12 @@ func TestAutoRestoreFailureStaysForTheUser(t *testing.T) {
 	f.h.on["unit:user/syncnotes.service"] = true
 	id := f.add(t, "Gaming", true, userUnit)
 	f.h.games = []string{"steam.620"}
-	f.m.poll(ctx)
+	f.tick(ctx, t)
 	f.h.games = nil
 	f.h.failOn["unit/start user/syncnotes.service"] = true
 	f.h.calls = nil
 	for range 6 {
-		f.m.poll(ctx)
+		f.tick(ctx, t)
 	}
 	if len(f.h.calls) != 1 {
 		t.Fatalf("%v", f.h.calls)
@@ -584,7 +585,7 @@ func TestAutoRefusesPasswordItems(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.h.games = []string{"steam.1"}
-	f.m.poll(context.Background())
+	f.tick(context.Background(), t)
 	if len(f.h.calls) != 0 {
 		t.Fatalf("%v", f.h.calls)
 	}

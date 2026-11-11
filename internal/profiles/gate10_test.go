@@ -130,7 +130,7 @@ func TestGate10HostileModeFiles(t *testing.T) {
 	}
 	f.h.batches, f.h.calls = nil, nil
 	f.h.games = []string{"steam.1"}
-	f.m.poll(ctx)
+	f.tick(ctx, t)
 	if len(f.h.batches) != 0 {
 		t.Fatalf("an automatic switch reached the broker: %+v", f.h.batches)
 	}
@@ -143,8 +143,8 @@ func TestGate10HostileModeFiles(t *testing.T) {
 		}
 	}
 	f.h.games = nil
-	f.m.poll(ctx)
-	f.m.poll(ctx)
+	f.tick(ctx, t)
+	f.tick(ctx, t)
 	checkBatches("web", "photos")
 
 	// With a grant for web's stop, the automatic batch holds web alone and
@@ -153,7 +153,7 @@ func TestGate10HostileModeFiles(t *testing.T) {
 	f.h.on["stack:web"], f.h.on["unit:user/syncnotes.service"] = true, true
 	f.h.batches, f.h.deferred = nil, nil
 	f.h.games = []string{"steam.2"}
-	f.m.poll(ctx)
+	f.tick(ctx, t)
 	checkBatches("web")
 	if len(f.h.batches) != 1 || f.h.batches[0].interactive || len(f.h.batches[0].items) != 1 {
 		t.Fatalf("%+v", f.h.batches)
@@ -162,8 +162,8 @@ func TestGate10HostileModeFiles(t *testing.T) {
 		t.Fatalf("%+v", f.h.deferred)
 	}
 	f.h.games = nil
-	f.m.poll(ctx)
-	f.m.poll(ctx)
+	f.tick(ctx, t)
+	f.tick(ctx, t)
 	checkBatches("web", "photos")
 	for _, b := range f.h.batches {
 		if b.interactive {
