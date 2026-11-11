@@ -238,7 +238,7 @@ Publish Hearth as an open-source project with its full history, cleaned of priva
 - [x] R.4 `LICENSE` and a generated `THIRD_PARTY_NOTICES` (Go modules, npm packages, fonts, icons).
 - [x] R.5 Root `SECURITY.md` (reporting policy, supported versions); the invariants move to `docs/SECURITY-INVARIANTS.md`, every link fixed.
 - [ ] R.6 README, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `CHANGELOG.md`, issue and PR templates.
-- [ ] R.7 `.github`: Dependabot (Go, npm, actions), scheduled govulncheck and CodeQL, actions pinned by SHA.
+- [x] R.7 `.github`: Dependabot (Go, npm, actions), scheduled govulncheck and CodeQL, actions pinned by SHA.
 - [x] R.8 Screenshots regenerated from the invented fixtures, metadata stripped.
 - [ ] R.9 Full QA, `docs/release/qa-report.md`.
 - [ ] R.10 `scripts/release/clean-history.sh` and `scripts/release/publish.sh`, rehearsed on a throwaway clone.

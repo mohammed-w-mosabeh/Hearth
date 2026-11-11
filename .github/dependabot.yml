@@ -1,0 +1,21 @@
+# Dependency updates: Go modules, the UI's and the browser tests' npm
+# packages, and the pinned GitHub Actions. A new Go module or npm package
+# still needs its one-line justification in the commit body (CONTRIBUTING.md).
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /test/e2e
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
