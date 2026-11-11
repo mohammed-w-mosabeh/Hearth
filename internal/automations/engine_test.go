@@ -129,14 +129,17 @@ func (m *memStore) states() []string {
 }
 
 type engineRig struct {
-	t     *testing.T
-	st    *memStore
-	reg   *actions.Registry
-	e     *Engine
-	now   time.Time
-	ran   []string
-	mu    sync.Mutex
-	notes []string
+	t   *testing.T
+	st  *memStore
+	reg *actions.Registry
+	e   *Engine
+	now time.Time
+	// clockMu guards now where a background source (fsnotify, logind)
+	// reads the clock while the test moves it: see advance.
+	clockMu sync.Mutex
+	ran     []string
+	mu      sync.Mutex
+	notes   []string
 }
 
 func newEngineRig(t *testing.T) *engineRig {
@@ -168,7 +171,7 @@ func newEngineRig(t *testing.T) *engineRig {
 	add("image", "remove", actions.Destructive, actions.AuthorityNone, false)
 	add("x", "flaky", actions.Safe, actions.AuthorityNone, true)
 	add("x", "flakyrev", actions.Reversible, actions.AuthorityNone, true)
-	g.e = NewEngine(Config{Store: g.st, Registry: g.reg, Clock: func() time.Time { return g.now },
+	g.e = NewEngine(Config{Store: g.st, Registry: g.reg, Clock: func() time.Time { g.clockMu.Lock(); defer g.clockMu.Unlock(); return g.now },
 		Sources: modes.Sources{
 			Next:        func(context.Context, string) (time.Time, error) { return g.now.Add(time.Minute), nil },
 			Connections: func(context.Context) (map[string]bool, error) { return g.conns(), nil },

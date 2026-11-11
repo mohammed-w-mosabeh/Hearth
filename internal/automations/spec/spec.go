@@ -648,3 +648,13 @@ func (s Spec) Steps(fn func(Step)) {
 		}
 	}
 }
+
+// TriggerKinds lists every trigger kind the validator accepts, sorted.
+func TriggerKinds() []string {
+	out := make([]string, 0, len(triggerFields))
+	for k := range triggerFields {
+		out = append(out, k)
+	}
+	slices.Sort(out)
+	return out
+}

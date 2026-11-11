@@ -89,3 +89,29 @@ func TestPastElapsesPages(t *testing.T) {
 		t.Fatal("pages ran out without saying so")
 	}
 }
+
+// FuzzParseElapses: whatever systemd-analyze prints, the parser returns
+// one time for each elapse it counted or an error, never fewer.
+func FuzzParseElapses(f *testing.F) {
+	f.Add(pastLocal)
+	f.Add(pastUTC)
+	f.Add("    Next elapse: never\n")
+	f.Add("Iteration #2: Thu 2025-11-06 09:00:00 EET\n(in UTC): x\n")
+	f.Fuzz(func(t *testing.T, out string) {
+		times, listed, err := parseElapses([]byte(out))
+		if err != nil {
+			if times != nil {
+				t.Fatalf("times beside an error: %v", times)
+			}
+			return
+		}
+		if len(times) != listed {
+			t.Fatalf("%d times for %d elapses", len(times), listed)
+		}
+		for _, x := range times {
+			if x.Location() != time.UTC {
+				t.Fatalf("not a UTC time: %v", x)
+			}
+		}
+	})
+}

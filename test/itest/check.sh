@@ -1403,6 +1403,271 @@ check "and reached /auth" wait_until 5 stub_saw 4
 check "still one hearthd" test "$(hearthds)" = 1
 pkill -f hearth-stub-browser || true
 
+echo "== automations (12.10)"
+# Gate 12 through the real daemon, systemd, polkit and PackageKit. Every
+# trigger kind on a simulated clock is internal/automations/gate12_test.go;
+# here real events fire real automations.
+key=$(api_key)
+home=/home/$user
+hearth_db=$home/.local/share/hearth/hearth.db
+code() { # code METHOD path [body] -> the status
+	curl -s -o /dev/null -w '%{http_code}' -X "$1" -H "Authorization: Bearer $key" -H "Origin: http://127.0.0.1:$port" \
+		-H 'Content-Type: application/json' --data-binary @- "http://127.0.0.1:$port/api/v1/$2" <<<"${3:-}"
+}
+act() { # act kind/name target -> the result; previews first and passes the token when one is given
+	local tok
+	tok=$(post "actions/$1" "{\"target\":\"$2\",\"preview\":true}" | jq -r '.token // empty')
+	post "actions/$1" "$(jq -nc --arg t "$2" --arg k "$tok" '{target:$t} + (if $k == "" then {} else {token:$k} end)')"
+}
+ftrig() { printf '{"kind":"files","folder":"~/%s","event":"new","depth":0,"pattern":"*"}' "$1"; }
+step() { printf '{"step":"action","action":"%s","target":"%s"}' "$1" "$2"; }
+aspec() { printf '{"trigger":%s,"then":[%s],"options":{"cooldown_s":60,"max_per_hour":60}}' "$1" "$2"; }
+abody() { jq -nc --arg n "$1" --argjson s "$2" '{name:$n,enabled:true,spec:$s}'; }
+mk() { # mk name spec -> id
+	local out
+	out=$(post automations "$(abody "$1" "$2")")
+	jq -e '.id' <<<"$out" 2>/dev/null || echo "  save of $1 refused: $(cut -c1-200 <<<"$out")" >&2
+}
+runs_of() { pkgs_api "automations/$1/runs" | jq -r '[.runs[] | .state + (if .record.reason then "(" + .record.reason + ")" else "" end)] | sort | join(" ")'; }
+runs_are() { test "$(runs_of "$1")" = "$2"; }
+runs_have() { grep -q -- "$2" <<<"$(runs_of "$1")"; }
+steps_of() { pkgs_api "automations/$1/runs" | jq -c '[.runs[].record.steps[] | .result + ":" + (.detail // "")]'; }
+ran() { find /tmp/itest-auto -name 'ran.*' | wc -l; }
+ran_is() { test "$(ran)" = "$1"; }
+sys_pid() { systemctl show -p MainPID --value itest-auto-sys.service; }
+approval_of() { pkgs_api automations/approvals | jq -r --argjson a "$1" '[.. | objects | select(.automation_id? == $a) | .id][0] // empty'; }
+# "action flags" of each CheckAuthorization dbus-monitor printed: the
+# call's own arguments are indented by three spaces.
+polkit_calls() {
+	awk '/^method call/ { a = "" } /^   string "/ { if (a == "") a = $2 } /^   uint32 / { gsub(/"/, "", a); print a, $2 }' /run/itest-polkit.txt
+}
+polkit_has() { grep -q -- "$1" <<<"$(polkit_calls)"; }
+count_of() { sqlite3 "$hearth_db" "SELECT count(*) FROM $1"; }
+
+asuser mkdir -p "$home/Inbox" "$home/Priv" "$home/Drop" "$home/Junk" "$home/Prot" "$home/Loop" "$home/Flood" /tmp/itest-auto
+printf '[Service]\nType=oneshot\nExecStart=/usr/bin/mktemp /tmp/itest-auto/ran.XXXXXX\n' >/etc/systemd/user/itest-auto.service
+printf '[Service]\nType=oneshot\nExecStart=/usr/bin/mktemp %s/Loop/loop.XXXXXX\n' "$home" >/etc/systemd/user/itest-loop.service
+for n in 1 2; do
+	printf '[Service]\nType=oneshot\nExecStart=/bin/true\n' >/etc/systemd/user/itest-noop$n.service
+done
+printf '[Service]\nExecStart=/bin/sleep 600\n' >/etc/systemd/system/itest-auto-sys.service
+systemctl daemon-reload
+asuser systemctl --user daemon-reload
+systemctl start itest-auto-sys.service
+# Every CheckAuthorization on the system bus is recorded with its flags (1
+# is "the user may be asked"), which sees more than an agent would. The
+# control comes first: a click in the UI does ask, and is refused here,
+# where nobody can answer.
+systemd-run --quiet --unit=itest-polkit-mon -p StandardOutput=file:/run/itest-polkit.txt \
+	/usr/bin/dbus-monitor --system "type='method_call',interface='org.freedesktop.PolicyKit1.Authority',member='CheckAuthorization'"
+sleep 1
+interactive() { polkit_calls | grep -c ' 1$' || true; }
+pid0=$(sys_pid)
+out=$(post actions/unit/restart '{"target":"system/itest-auto-sys.service"}')
+echo "  attended restart, nobody to answer: $(cut -c1-160 <<<"$out")"
+check "an attended restart of a system unit asks polkit interactively" wait_until 5 polkit_has 'manage-units 1$'
+check "and is refused without an answer" test "$(sys_pid)" = "$pid0"
+asked=$(interactive)
+units_asked=$(polkit_calls | grep -c manage-units || true)
+# From here polkit would let the test user manage units without a
+# password, and says when it is asked: an unattended run must not even ask.
+cat >/etc/polkit-1/rules.d/54-hearth-itest-auto.rules <<'RULES'
+polkit.addRule(function(action, subject) {
+	if (action.id == "org.freedesktop.systemd1.manage-units" && subject.user == "tester") {
+		polkit.spawn(["/usr/bin/logger", "-t", "hearth-itest", "auto " + action.id + " unit=" + action.lookup("unit")]);
+		return polkit.Result.YES;
+	}
+});
+RULES
+systemd-run --quiet --unit=itest-notify-mon --uid="$user" -p StandardOutput=file:/run/itest-notify.jsonl \
+	/usr/bin/stdbuf -oL /usr/bin/busctl monitor --address="unix:path=/run/user/$uid/bus" --json=short \
+	--match "type='method_call',interface='org.freedesktop.Notifications',member='Notify'"
+sleep 2 # polkitd reloads its rules; the monitors attach
+check "the pause switch is off" grep -q '"paused":false' <<<"$(pkgs_api automations/pause)"
+
+# A real trigger, and its cooldown.
+a1=$(mk "itest inbox" "$(aspec "$(ftrig Inbox)" "$(step unit/start user/itest-auto.service)")")
+check "an automation saves" test -n "$a1"
+sleep 1
+asuser touch "$home/Inbox/a"
+check "a new file runs it: the unit started" wait_until 10 ran_is 1
+check "the run is recorded as done" wait_until 5 runs_are "$a1" "done"
+asuser touch "$home/Inbox/b"
+check "a second file within the cooldown is seen and skipped" wait_until 10 runs_are "$a1" "done skipped(cooldown)"
+check "and starts nothing" ran_is 1
+echo "  runs: $(runs_of "$a1")"
+
+# A privileged step and a destructive step wait; nothing after them runs.
+pid0=$(sys_pid)
+a2=$(mk "itest privileged" "$(aspec "$(ftrig Priv)" "$(step unit/restart system/itest-auto-sys.service),$(step unit/start user/itest-auto.service)")")
+asuser touch "$home/Junk/old.iso"
+a3=$(mk "itest destructive" "$(aspec "$(ftrig Drop)" '{"step":"action","action":"files/trash","target":"~/Junk","params":{"pattern":"*.iso","days":"0"}},'"$(step unit/start user/itest-auto.service)")")
+check "both save" test -n "$a2" -a -n "$a3"
+sleep 1
+asuser touch "$home/Priv/a" "$home/Drop/a"
+check "a privileged step waits for approval" wait_until 10 runs_are "$a2" "waiting"
+check "a destructive step waits for approval" wait_until 10 runs_are "$a3" "waiting"
+sleep 2
+check "the system unit was not restarted" test "$(sys_pid)" = "$pid0"
+check "the file was not trashed" test -f "$home/Junk/old.iso"
+check "no step after a waiting one ran" ran_is 1
+ap2=$(approval_of "$a2")
+ap3=$(approval_of "$a3")
+check "both approvals are listed" test -n "$ap2" -a -n "$ap3"
+echo "  waiting: $(steps_of "$a2") $(steps_of "$a3")"
+
+# Protected targets and the deny list, at save.
+refused_save() { # refused_save step-json
+	local out
+	out=$(post automations "$(abody "itest refused" "$(aspec "$(ftrig Inbox)" "$1")")")
+	echo "    $(jq -c '.error // .' <<<"$out" | cut -c1-140)" >>/run/itest-refusals.txt
+	grep -q '"error"' <<<"$out"
+}
+for s in "unit/stop system/dbus.service" "unit/restart system/polkit.service" "unit/stop user/hearthd.service" \
+	"unit/mask system/hearth-broker.service" "package/remove bash" "package/remove hearth" \
+	"uninstall/remove pkg:bash" "hearth/import x" "package/update-all all" "automation/approve 1" "sh/c id"; do
+	check "refused at save: $s" refused_save "$(step ${s% *} "${s#* }")"
+done
+cat /run/itest-refusals.txt
+check "refused at save: continue on a step that may ask" refused_save '{"step":"action","action":"unit/restart","target":"system/itest-auto-sys.service","continue":true}'
+
+# A target that becomes protected after the save is refused at the run,
+# from live data: it fails, it does not wait for an approval.
+pdeb() { # pdeb version [control line]
+	rm -rf /tmp/pdeb && mkdir -p /tmp/pdeb/DEBIAN
+	printf 'Package: itest-auto-pkg\nVersion: %s\nArchitecture: all\nMaintainer: itest <itest@example.invalid>\n%sDescription: itest automation sample\n' "$1" "${2:-}" >/tmp/pdeb/DEBIAN/control
+	dpkg-deb --build /tmp/pdeb "/tmp/itest-auto-pkg_$1.deb" >/dev/null && dpkg -i "/tmp/itest-auto-pkg_$1.deb" >/dev/null 2>&1
+}
+pdeb 1.0
+a4=$(mk "itest package" "$(aspec "$(ftrig Prot)" "$(step package/remove itest-auto-pkg)")")
+check "removing an ordinary package saves" test -n "$a4"
+pdeb 1.1 $'Protected: yes\n'
+check "the package is now Protected" grep -q yes <<<"$(dpkg-query -W -f '${Protected}' itest-auto-pkg)"
+sleep 1
+asuser touch "$home/Prot/a"
+check "refused at run: the run fails" wait_until 20 runs_are "$a4" "failed"
+echo "  $(steps_of "$a4")"
+check "the step says refused" grep -q '"failed:refused: ' <<<"$(steps_of "$a4")"
+check "it does not wait for an approval" test -z "$(approval_of "$a4")"
+check "the package is still installed" dpkg -s itest-auto-pkg
+
+# So far every run was unattended, and every save was checked.
+echo "  polkit was asked: $(polkit_calls | sort | uniq -c | tr '\n' ';')"
+check "the recorder is running" systemctl is-active itest-polkit-mon.service
+check "no unattended run or save asked polkit interactively" test "$(interactive)" = "$asked"
+check "polkit was not asked about units again at all" test "$(polkit_calls | grep -c manage-units || true)" = "$units_asked"
+check "its rule saw nothing either" not polkit_logged 'auto org.freedesktop.systemd1.manage-units'
+
+# Dismissing runs nothing; approving runs the rest, with the user there.
+out=$(act automation/dismiss "$ap3")
+echo "  dismiss: $(cut -c1-160 <<<"$out")"
+check "dismiss" grep -q '"done":[1-9]' <<<"$out"
+check "the dismissed run is skipped" wait_until 5 runs_have "$a3" skipped
+check "the file is still there" test -f "$home/Junk/old.iso"
+out=$(act automation/approve "$ap2")
+echo "  approve: $(cut -c1-160 <<<"$out")"
+check "approve" grep -q '"done":[1-9]' <<<"$out"
+restarted() { test "$(sys_pid)" != "$pid0" && test "$(sys_pid)" != 0; }
+check "the approved step restarts the system unit" wait_until 15 restarted
+check "and the step after it runs" wait_until 10 ran_is 2
+check "the run is done" wait_until 5 runs_are "$a2" "done"
+check "a second approve is refused" not grep -q '"done":[1-9]' <<<"$(act automation/approve "$ap2")"
+# The control: the same recorder does see an attended request.
+# The user is there now: the approved run may ask, and does.
+asked_again() { test "$(interactive)" -gt "$asked"; }
+check "the approved run asked polkit, interactively" wait_until 5 asked_again
+attended=$(interactive)
+echo "  polkit was asked: $(polkit_calls | sort | uniq -c | tr '\n' ';')"
+check "and polkit's rule saw it" wait_until 5 polkit_logged 'auto org.freedesktop.systemd1.manage-units unit=itest-auto-sys.service'
+
+# The dry run reports and executes nothing.
+runs_n=$(count_of automation_runs)
+audit_n=$(count_of audit_log)
+dry=$(post automations/dry-run "{\"spec\":$(aspec '{"kind":"schedule","calendar":"hourly"}' "$(step unit/start user/itest-auto.service),$(step unit/restart system/itest-auto-sys.service)")}")
+echo "  dry run: $(jq -c '{total, runs, trigger, steps: [.steps[] | .outcome]}' <<<"$dry" | cut -c1-200)"
+check "an hourly schedule fired 167 or 168 times in 7 days" jq -e '.total >= 167 and .total <= 168 and .runs == .total' <<<"$dry"
+check "its steps: one runs by itself, one would wait" jq -e '[.steps[].outcome] == ["unattended", "approval"]' <<<"$dry"
+check "a dry run records no run" test "$(count_of automation_runs)" = "$runs_n"
+check "and audits nothing" test "$(count_of audit_log)" = "$audit_n"
+check "and starts nothing" ran_is 2
+
+# A loop stops at its cooldown: the unit it starts makes the next file.
+a5=$(mk "itest loop" "$(aspec "$(ftrig Loop)" "$(step unit/start user/itest-loop.service)")")
+sleep 1
+asuser touch "$home/Loop/seed"
+# Its file arrives while the run goes on, or just after: skipped either way.
+loop_stopped() { grep -Eq '^done skipped\((cooldown|a run is still going)\)$' <<<"$(runs_of "$a5")"; }
+check "the loop's own file is seen and skipped" wait_until 10 loop_stopped
+sleep 3
+echo "  runs: $(runs_of "$a5")"
+check "and the loop ends there" test "$(ls "$home/Loop" | wc -l)" = 2
+check "with no further run" loop_stopped
+asuser touch "$home/Loop/more"
+check "another file within the cooldown is skipped by it" wait_until 10 runs_have "$a5" 'skipped(cooldown)'
+
+# Hostile imports store nothing.
+list_n() { pkgs_api automations | jq '.automations | length'; }
+before=$(list_n)
+imp() { printf '{"version":1,"automations":[{"name":"x","spec":%s}]}' "$1"; }
+wait1='[{"step":"wait","seconds":1}]'
+check "import: an unknown action" test "$(code POST automations/import "$(imp '{"trigger":{"kind":"login"},"then":[{"step":"action","action":"sh/c","target":"rm -rf ~"}]}')")" = 400
+check "import: a denied action" test "$(code POST automations/import "$(imp '{"trigger":{"kind":"login"},"then":[{"step":"action","action":"uninstall/remove","target":"pkg:bash"}]}')")" = 400
+check "import: a command in a trigger" test "$(code POST automations/import "$(imp "{\"trigger\":{\"kind\":\"login\",\"exec\":\"/bin/sh -c id\"},\"then\":$wait1}")")" = 400
+check "import: a schedule that is a command" test "$(code POST automations/import "$(imp "{\"trigger\":{\"kind\":\"schedule\",\"calendar\":\"daily; reboot\"},\"then\":$wait1}")")" = 400
+check "import: a target that is a command" test "$(code POST automations/import "$(imp '{"trigger":{"kind":"login"},"then":[{"step":"action","action":"unit/start","target":"user/x.service; reboot"}]}')")" = 400
+check "import: an option as a target" test "$(code POST automations/import "$(imp '{"trigger":{"kind":"login"},"then":[{"step":"action","action":"unit/start","target":"--no-block"}]}')")" = 400
+check "import: a folder outside the home" test "$(code POST automations/import "$(imp "{\"trigger\":{\"kind\":\"files\",\"folder\":\"~/../../etc\",\"event\":\"new\",\"depth\":0,\"pattern\":\"*\"},\"then\":$wait1}")")" = 400
+check "import: a script field" test "$(code POST automations/import "$(imp "{\"trigger\":{\"kind\":\"login\"},\"then\":$wait1,\"script\":\"curl x | sh\"}")")" = 400
+check "import: a check inside a check" test "$(code POST automations/import "$(imp '{"trigger":{"kind":"login"},"then":[{"step":"check","what":"unit_state","target":"x.service","expect":"active","then":[{"step":"check","what":"unit_state","target":"x.service","expect":"active","then":[{"step":"wait","seconds":1}]}]}]}')")" = 400
+deep=$(printf '{"step":"check","what":"unit_state","target":"x","expect":"active","then":[%.0s' $(seq 200))
+check "import: 200 levels deep" test "$(code POST automations/import "$(imp "{\"trigger\":{\"kind\":\"login\"},\"then\":[$deep]}")")" = 400
+check "import: 100,000 brackets" test "$(code POST automations/import "$(head -c 100000 /dev/zero | tr '\0' '[')")" = 400
+big=$(head -c 70000 /dev/zero | tr '\0' 'a')
+check "import: oversized" test "$(code POST automations/import "$(imp "{\"trigger\":{\"kind\":\"login\"},\"then\":$wait1,\"pad\":\"$big\"}")")" = 400
+check "import: another version" test "$(code POST automations/import '{"version":2,"automations":[]}')" = 400
+check "the refused imports stored nothing" test "$(list_n)" = "$before"
+exported=$(pkgs_api automations/export)
+check "an export imports" test "$(code POST automations/import "$(jq -c '.automations |= (map(select(.name == "itest inbox")) | map(.enabled = true))' <<<"$exported")")" = 200
+check "and every imported automation starts turned off" jq -e '[.automations[] | select(.origin == "import")] | length > 0 and all(.enabled == false)' <<<"$(pkgs_api automations)"
+
+# The global limit pauses everything and says so; nothing runs while paused.
+noops() { for _ in $(seq 16); do step unit/start "user/itest-noop$1.service"; done | sed 's/}{/},{/g'; }
+a6=$(mk "itest flood 1" "$(aspec "$(ftrig Flood)" "$(noops 1)")")
+a7=$(mk "itest flood 2" "$(aspec "$(ftrig Flood)" "$(noops 2)")")
+check "two automations of 16 steps save" test -n "$a6" -a -n "$a7"
+sleep 1
+asuser touch "$home/Flood/a"
+paused() { grep -q '"paused":true' <<<"$(pkgs_api automations/pause)"; }
+check "more than 30 actions in a minute pause every automation" wait_until 30 paused
+echo "  runs: $(runs_of "$a6") | $(runs_of "$a7")"
+check "one of the runs was stopped by the limit" grep -q 'limited' <<<"$(runs_of "$a6") $(runs_of "$a7")"
+check "the pause is in the audit log, with its reason" grep -q 'paused=true by global limit' <<<"$(sqlite3 "$hearth_db" "SELECT result FROM audit_log WHERE action='automations.pause'")"
+check "and the desktop is told" wait_until 5 grep -q 'Automations paused' /run/itest-notify.jsonl
+asuser touch "$home/Inbox/c" "$home/Loop/again"
+check "while paused a trigger is seen and skipped" wait_until 10 runs_have "$a1" 'skipped(all automations are paused)'
+sleep 2
+check "and starts nothing" ran_is 2
+check "nor does the loop" test "$(ls "$home/Loop" | wc -l)" = 4
+check "the pause is the user's to lift" test "$(code PUT automations/pause '{"paused":false}')" = 200
+check "it is off again" not paused
+check "the kill switch turns on" test "$(code PUT automations/pause '{"paused":true}')" = 200
+asuser touch "$home/Prot/b"
+check "and stops a run" wait_until 10 runs_have "$a4" 'skipped(all automations are paused)'
+check "and turns off" test "$(code PUT automations/pause '{"paused":false}')" = 200
+check "no interactive polkit request since the approved run" test "$(interactive)" = "$attended"
+
+for id in $(pkgs_api automations | jq -r '.automations[] | select(.name | startswith("itest ")) | .id'); do
+	code DELETE "automations/$id" >/dev/null
+done
+check "the test's automations are deleted" test "$(pkgs_api automations | jq '[.automations[] | select(.name | startswith("itest "))] | length')" = 0
+systemctl stop itest-polkit-mon.service itest-notify-mon.service itest-auto-sys.service 2>/dev/null || true
+dpkg --purge --force-remove-protected itest-auto-pkg >/dev/null 2>&1 || true
+rm -f /etc/polkit-1/rules.d/54-hearth-itest-auto.rules /etc/systemd/user/itest-auto.service /etc/systemd/user/itest-loop.service \
+	/etc/systemd/user/itest-noop1.service /etc/systemd/user/itest-noop2.service /etc/systemd/system/itest-auto-sys.service /run/itest-polkit.txt /run/itest-notify.jsonl /run/itest-refusals.txt
+rm -rf "$home/Inbox" "$home/Priv" "$home/Drop" "$home/Junk" "$home/Prot" "$home/Loop" "$home/Flood" /tmp/itest-auto /tmp/pdeb /tmp/itest-auto-pkg_*.deb
+systemctl daemon-reload
+asuser systemctl --user daemon-reload
+
 echo "== purge"
 # A schedule's timer (9.11), as the broker would leave it: purge removes it.
 printf '[Timer]\nOnCalendar=daily\nUnit=hearth-backup-scheduled@probe.service\n' >/etc/systemd/system/hearth-backup-probe.timer

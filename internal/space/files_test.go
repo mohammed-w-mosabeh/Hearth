@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -164,4 +165,35 @@ func TestSpacePreview(t *testing.T) {
 	if a.Validate(actions.Request{Target: "trash", Params: map[string]string{}}) == nil {
 		t.Fatal("target must be space")
 	}
+}
+
+// FuzzCheckFiles: an accepted files/trash request names a visible folder
+// strictly inside the home and a pattern that matches names, never paths.
+func FuzzCheckFiles(f *testing.F) {
+	f.Add("~/Downloads", "*.iso", "30")
+	f.Add("~/a/../b", "*", "0")
+	f.Add("~/.ssh", "id_*", "1")
+	f.Add("~/a", "../*", "-1")
+	f.Fuzz(func(t *testing.T, target, pattern, days string) {
+		if checkFiles(actions.Request{Target: target, Params: map[string]string{"pattern": pattern, "days": days}}) != nil {
+			return
+		}
+		const home = "/home/u"
+		dir := filepath.Join(home, strings.TrimPrefix(target, "~/"))
+		rel, err := filepath.Rel(home, dir)
+		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, "../") {
+			t.Fatalf("%q leaves the home: %q", target, dir)
+		}
+		for _, part := range strings.Split(rel, "/") {
+			if part == "" || strings.HasPrefix(part, ".") {
+				t.Fatalf("%q has a hidden or empty part", target)
+			}
+		}
+		if strings.ContainsAny(target+pattern, "\x00\n\r") || strings.ContainsAny(pattern, `/\[`) {
+			t.Fatalf("pattern %q or target %q holds a separator or control character", pattern, target)
+		}
+		if n, err := strconv.Atoi(days); err != nil || n < 0 || n > MaxDays {
+			t.Fatalf("days %q", days)
+		}
+	})
 }

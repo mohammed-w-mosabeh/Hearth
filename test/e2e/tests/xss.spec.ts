@@ -109,7 +109,8 @@ for (const p of pages) {
 test("an automation's notification text and step label show as text in the editor", async ({ page }) => {
   await page.goto(`${origin}/#/automations`);
   await page.reload();
-  const row = page.locator('tbody tr').filter({ hasText: PAYLOAD }).first();
+  // The alert rule of the same name is a row too: not that one.
+  const row = page.locator('tbody tr').filter({ hasText: PAYLOAD }).filter({ hasNotText: 'alert rule' }).first();
   await row.getByRole('button', { name: 'Edit' }).click();
   const editor = page.getByRole('dialog');
   await expect(editor.locator('textarea')).toHaveValue(PAYLOAD, { timeout: 15_000 });
