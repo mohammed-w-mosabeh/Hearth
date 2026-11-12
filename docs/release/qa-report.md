@@ -17,7 +17,8 @@ host mounted.
 | `make bench` (idle budgets) | passed |
 | Frontend bundle and binary size | inside the budget, measured by hand |
 
-No run failed, so no fix was needed in this task. What these runs do not
+No run failed in this task; one flaky test found afterwards is described
+under `make check`. What these runs do not
 cover is listed at the end.
 
 ## `make check`
@@ -27,6 +28,12 @@ cover is listed at the end.
   `desktop-file-validate`, `go vet`, `golangci-lint`, `gosec`,
   `svelte-check` and `eslint`: clean.
 - Go tests: 63 packages, all `ok`.
+  Found afterwards, while repeating `make check` on the cleaned history:
+  `TestOtherFolderCancelsJob` in `internal/diskusage` failed once. It was
+  a race in the test, not in the scanner (the scan it meant to cancel could
+  finish first; about 1 run in 400 under stress, in either tree). The test
+  now holds the scan open until the cancelling request was made, and
+  passed 1,000 repeats and 20 under the race detector.
 - Frontend tests (vitest): 60 files, 307 tests, all passed.
 - `govulncheck ./...`: no vulnerabilities found.
 - `npm audit --audit-level=high`: passes. It reports 12 findings below that

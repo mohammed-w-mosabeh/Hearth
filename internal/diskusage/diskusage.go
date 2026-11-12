@@ -67,6 +67,9 @@ type Result struct {
 
 var ErrOutside = errors.New("diskusage: not inside a folder you own")
 
+// readDir is os.ReadDir; a test holds a walk open through it.
+var readDir = os.ReadDir
+
 // Config configures a Scanner.
 type Config struct {
 	// Roots lists the folders that may be explored (the home, user-owned
@@ -306,7 +309,7 @@ func (w *walker) size(st *syscall.Stat_t) int64 {
 // list reads a folder's entries, files before folders, so a file
 // hard-linked again further down keeps its size where the user looks.
 func list(path string) ([]os.DirEntry, error) {
-	entries, err := os.ReadDir(path)
+	entries, err := readDir(path)
 	sort.SliceStable(entries, func(i, j int) bool { return !entries[i].IsDir() && entries[j].IsDir() })
 	return entries, err
 }

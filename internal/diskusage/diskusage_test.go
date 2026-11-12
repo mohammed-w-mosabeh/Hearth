@@ -196,17 +196,31 @@ func TestIdleJobStops(t *testing.T) {
 
 func TestOtherFolderCancelsJob(t *testing.T) {
 	home, _ := tree(t)
-	many(t, home, 20000)
+	held := many(t, home, 100)
+	// The first job's walk of "many" waits until the other folder was asked
+	// for, so it can never finish before it is cancelled.
+	release := make(chan struct{})
+	readDir = func(p string) ([]os.DirEntry, error) {
+		if strings.HasPrefix(p, held) {
+			<-release
+		}
+		return os.ReadDir(p)
+	}
+	t.Cleanup(func() { readDir = os.ReadDir })
 	s := New(Config{Roots: func() []string { return []string{home} }, Workers: 1})
 	first, _ := s.Get(home, false)
 	s.mu.Lock()
 	j := s.job
 	s.mu.Unlock()
 	r := done(t, s, filepath.Join(home, "Documents"), false)
+	close(release)
 	if r.Path != filepath.Join(home, "Documents") || len(r.Items) != 1 {
 		t.Fatalf("%+v", r)
 	}
-	if first.Running && j != nil {
+	if !first.Running || j == nil {
+		t.Fatalf("the first job was not running: %+v", first)
+	}
+	{
 		j.mu.Lock()
 		fin, partial := j.finished, j.partial
 		j.mu.Unlock()
