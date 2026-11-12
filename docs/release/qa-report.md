@@ -41,6 +41,31 @@ cover is listed at the end.
   `@typescript-eslint`, `minimatch`), which is used at development time
   and is not part of the bundle that ships.
 
+## Found by the plain-container run
+
+`make check` was also run in a plain Debian 13 container, as the release
+gate asks. Three Go tests failed there and nowhere else:
+
+- **A leftover swapped for a link was not refused** (`internal/broker`,
+  `internal/uninstall/archive`). The privileged side of "Uninstall
+  completely" identified a previewed system leftover by device and inode
+  only. On ext4 a removed folder's inode number is given at once to a link
+  made in its place, so the swap passed; the development machine's
+  temporary folder is a tmpfs, which never reuses a number that fast, and
+  hid it. The plan and the archive job now also carry the kind of file
+  (folder, file, link), required and from a closed list, and both the
+  broker's check before polkit and the mover compare it, as the user-side
+  trash check already did. New tests give a link's own device and inode
+  with another kind, so they fail on any filesystem without the check.
+  How far it reached: the swap needs write access to a folder only root can
+  write, the link itself (never its target) would have been archived, and
+  it could be restored for 7 days. Still open, for the owner to judge: a
+  folder replaced by another folder that gets the same inode number is not
+  told apart.
+- **`TestCollectRealSystem` expected `/` among the disks.** In a container
+  `/` is an overlay, which the collector leaves out on purpose; the test
+  now accepts that case only.
+
 ## `make itest`
 
 The package is installed, used and removed in the container through the

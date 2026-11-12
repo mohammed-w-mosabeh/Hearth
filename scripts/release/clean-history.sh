@@ -55,7 +55,8 @@ touch .git/hearth-not-clean
 # address already. Built here, so no old address is written in this script.
 mailmap=$(mktemp)
 work=$(mktemp)
-trap 'rm -f "$mailmap" "$work"' EXIT
+strip=
+trap 'rm -f "$mailmap" "$work" "$strip"' EXIT
 {
 	git log --all --format='%ae%n%ce'
 	git for-each-ref refs/tags --format='%(taggeremail)' | tr -d '<>'
@@ -65,6 +66,27 @@ while IFS= read -r old; do
 done <"$work" >"$mailmap"
 echo "== $(wc -l <"$mailmap") address(es) to rewrite"
 
+# Binary files (screenshots, fonts) cannot be searched for private text, and
+# the replacement rules do not reach them: only the versions in the branch's
+# own tree, which were made from invented data, enter the public history.
+# old_binaries prints the blob IDs of every other version.
+old_binaries() {
+	local tip=$1 paths ids
+	paths=$(mktemp) ids=$(mktemp)
+	git log --all -m --no-renames --numstat --format= | awk -F'\t' '$1 == "-" { print $3 }' | sort -u >"$paths"
+	git ls-tree -r "$tip" | awk '{ print $3 }' | sort -u >"$ids"
+	git rev-list --all --objects | awk -v paths="$paths" -v ids="$ids" '
+		BEGIN {
+			while ((getline l < paths) > 0) binary[l] = 1
+			while ((getline l < ids) > 0) kept[l] = 1
+		}
+		{ id = $1; sub(/^[0-9a-f]+ ?/, ""); if (($0 in binary) && !(id in kept)) print id }'
+	rm -f "$paths" "$ids"
+}
+strip=$(mktemp)
+old_binaries "$branch" >"$strip"
+echo "== $(wc -l <"$strip") old version(s) of binary files to leave out"
+
 echo "== rewrite"
 paths=()
 for p in "${drop[@]}"; do paths+=(--path "$p"); done
@@ -72,6 +94,7 @@ git filter-repo --quiet \
 	--invert-paths "${paths[@]}" \
 	--replace-text "$src/.private-replacements" \
 	--replace-message "$src/.private-replacements" \
+	--strip-blobs-with-ids "$strip" \
 	--mailmap "$mailmap"
 # Renamed only now: a rename before the rewrite adds a reflog entry, and
 # git filter-repo then refuses the clone as not fresh.
@@ -80,6 +103,10 @@ git filter-repo --quiet \
 echo "== check: dropped paths"
 left=$(git log --all --format= --name-only -- "${drop[@]}" | sort -u)
 [[ -z $left ]] || die "dropped paths are still in the history"
+
+echo "== check: binary files"
+old_binaries main >"$work"
+[[ ! -s $work ]] || die "$(wc -l <"$work") old version(s) of binary files are still in the history"
 
 echo "== check: commit and tag metadata"
 {
