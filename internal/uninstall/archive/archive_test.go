@@ -150,7 +150,7 @@ func (g rig) move(t *testing.T, p string) Move {
 		t.Fatal(err)
 	}
 	st := fi.Sys().(*syscall.Stat_t)
-	return Move{Path: p, Dev: st.Dev, Ino: st.Ino}
+	return Move{Path: p, Dev: st.Dev, Ino: st.Ino, Kind: Kind(fi.Mode())}
 }
 
 func TestArchiveAndRestore(t *testing.T) {
@@ -235,6 +235,32 @@ func writeStatus(t *testing.T, r Roots, s string) {
 	t.Helper()
 	if err := os.WriteFile(r.DpkgStatus, []byte(s), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A link that has the previewed folder's device and inode, as on a
+// filesystem that reuses inode numbers at once, is still not the folder.
+func TestArchiveRefusesAnotherKind(t *testing.T) {
+	g := newRig(t)
+	if err := os.Symlink("/etc", filepath.Join(g.sys, "opt/Link")); err != nil {
+		t.Fatal(err)
+	}
+	mv := g.move(t, "/opt/Link")
+	if mv.Kind != rules.EntryLink {
+		t.Fatalf("kind %q", mv.Kind)
+	}
+	for _, kind := range []string{rules.EntryDir, rules.EntryFile, "", "socket"} {
+		mv.Kind = kind
+		err := WriteJob(g.r, Job{Op: op, UID: 1, Item: "x", Moves: []Move{mv}})
+		if err == nil {
+			err = RunArchive(context.Background(), g.r, op, fakeTar(t, ""))
+		}
+		if err == nil {
+			t.Fatalf("a link was archived as %q", kind)
+		}
+		if l, err := os.Readlink(filepath.Join(g.sys, "opt/Link")); err != nil || l != "/etc" {
+			t.Fatalf("kind %q: the link was touched", kind)
+		}
 	}
 }
 

@@ -68,10 +68,36 @@ func (r Roots) OpDir(op string) string { return filepath.Join(r.uninstall(), op)
 func (r Roots) RemovedOp(op string) string { return filepath.Join(r.removed(), op) }
 
 // Move is a leftover to move into the archive, as previewed.
+//
+// Kind is the file type previewed (rules.EntryDir, EntryFile or EntryLink).
+// Device and inode alone do not identify a path: a filesystem can give a
+// removed folder's inode number at once to a link made in its place.
 type Move struct {
 	Path string `json:"path"`
 	Dev  uint64 `json:"dev"`
 	Ino  uint64 `json:"ino"`
+	Kind string `json:"kind"`
+}
+
+// Kind is the kind of leftover a file of this mode is, or "" for what is
+// never archived (devices, sockets, pipes).
+func Kind(m fs.FileMode) string {
+	switch m.Type() {
+	case fs.ModeDir:
+		return rules.EntryDir
+	case 0:
+		return rules.EntryFile
+	case fs.ModeSymlink:
+		return rules.EntryLink
+	}
+	return ""
+}
+
+// Same reports whether fi is still the leftover mv describes: the same
+// device, inode and kind of file.
+func (mv Move) Same(fi fs.FileInfo) bool {
+	st, ok := stat(fi)
+	return ok && mv.Kind != "" && st.Dev == mv.Dev && st.Ino == mv.Ino && Kind(fi.Mode()) == mv.Kind
 }
 
 // Conffile is a package's configuration file to copy.
@@ -196,6 +222,9 @@ func readJob(r Roots, op string) (Job, error) {
 	for _, m := range j.Moves {
 		if _, _, err := rules.CheckSystem(m.Path); err != nil {
 			return j, err
+		}
+		if m.Kind != rules.EntryDir && m.Kind != rules.EntryFile && m.Kind != rules.EntryLink {
+			return j, fmt.Errorf("job: bad kind for %q", m.Path)
 		}
 	}
 	for _, c := range j.Conffiles {
@@ -394,8 +423,7 @@ func move(ctx context.Context, r Roots, m *rules.Manifest, mv Move, tar Tar) err
 		if err != nil {
 			return nil, err
 		}
-		st, ok := stat(fi)
-		if !ok || st.Dev != mv.Dev || st.Ino != mv.Ino {
+		if !mv.Same(fi) {
 			return nil, fmt.Errorf("%s changed since the preview", mv.Path)
 		}
 		return fi, nil

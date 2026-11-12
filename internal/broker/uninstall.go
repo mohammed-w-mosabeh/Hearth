@@ -14,7 +14,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 	"unicode/utf8"
 
@@ -230,6 +229,9 @@ func (u *uninstaller) checkAuthorize(p json.RawMessage) (UninstallAuthorizeParam
 		if _, _, err := rules.CheckSystem(a.Path); err != nil {
 			return v, badParam("archive entry %d is not a leftover an uninstall may archive", i)
 		}
+		if a.Kind != rules.EntryDir && a.Kind != rules.EntryFile && a.Kind != rules.EntryLink {
+			return v, badParam("archive entry %d has no known kind", i)
+		}
 		paths = append(paths, a.Path)
 	}
 	for i, n := range v.Units {
@@ -260,8 +262,7 @@ func (u *uninstaller) checkAuthorize(p json.RawMessage) (UninstallAuthorizeParam
 		if err != nil {
 			return v, badParam("archive entry %d is not there", i)
 		}
-		st, ok := fi.Sys().(*syscall.Stat_t)
-		if !ok || st.Dev != a.Dev || st.Ino != a.Ino {
+		if !a.Same(fi) {
 			return v, badParam("archive entry %d changed since the preview", i)
 		}
 		if archive.SafeParent(u.sys(filepath.Dir(a.Path))) != nil {
