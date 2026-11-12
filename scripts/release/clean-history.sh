@@ -49,7 +49,6 @@ echo "== clone $branch and its tags (the private repository is only read)"
 git clone --quiet --no-local --single-branch --branch "$branch" "$src" "$dest"
 dest=$(realpath "$dest")
 cd "$dest"
-[[ $branch == main ]] || git branch --quiet -m "$branch" main
 touch .git/hearth-not-clean
 
 # Every address in author, committer and tagger lines that is not a noreply
@@ -74,6 +73,9 @@ git filter-repo --quiet \
 	--replace-text "$src/.private-replacements" \
 	--replace-message "$src/.private-replacements" \
 	--mailmap "$mailmap"
+# Renamed only now: a rename before the rewrite adds a reflog entry, and
+# git filter-repo then refuses the clone as not fresh.
+[[ $branch == main ]] || git branch --quiet -m "$branch" main
 
 echo "== check: dropped paths"
 left=$(git log --all --format= --name-only -- "${drop[@]}" | sort -u)
