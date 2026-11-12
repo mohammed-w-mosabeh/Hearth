@@ -1148,6 +1148,7 @@ fi
 check "e2e XSS: every page shows the strings as text, nothing ran" grep -qE '^ *[0-9]+ passed' <<<"$e2e"
 check "e2e XSS: no test failed" not grep -qE '[0-9]+ failed' <<<"$e2e"
 check "e2e a11y: axe finds nothing serious on any page, both themes, LTR and RTL" grep -qE '✓.*a11y\.spec\.ts.*axe: every page, light, right to left' <<<"$e2e"
+check "e2e a11y: axe finds nothing serious on any page at the compact density" grep -qE '✓.*a11y\.spec\.ts.*axe: every page, compact, light, right to left' <<<"$e2e"
 check "e2e a11y: focus rings, palette, shortcuts and a confirmation work by keyboard" grep -qE '✓.*a11y\.spec\.ts.*a confirmation is keyboard operable' <<<"$e2e"
 check "e2e: a managed app's drawer shows its spec as text" grep -qE "✓.*xss\.spec\.ts.*a managed app's drawer" <<<"$e2e"
 check "e2e a11y: axe finds nothing serious in an app's drawer" grep -qE "✓.*a11y\.spec\.ts.*axe: an app's drawer, light, right to left" <<<"$e2e"

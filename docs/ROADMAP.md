@@ -240,7 +240,7 @@ Publish Hearth as an open-source project with its full history, cleaned of priva
 - [x] R.6 README, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `CHANGELOG.md`, issue and PR templates.
 - [x] R.7 `.github`: Dependabot (Go, npm, actions), scheduled govulncheck and CodeQL, actions pinned by SHA.
 - [x] R.8 Screenshots regenerated from the invented fixtures, metadata stripped.
-- [ ] R.9 Full QA, `docs/release/qa-report.md`.
+- [x] R.9 Full QA, `docs/release/qa-report.md`. (`make check`, `make itest` (761 checks, with axe now also at the compact density), `test/release/run.sh` (39 checks: upgrade from 1.0.0, restarts, Docker and polkit going away, a full disk) and `make bench` all pass on 2026-11-12; the report lists what they do not cover: the budget with the UI open, a real desktop session and Docker engine, visual and screen-reader checks, other browsers)
 - [ ] R.10 `scripts/release/clean-history.sh` and `scripts/release/publish.sh`, rehearsed on a throwaway clone.
 
 **Release gate:** the rewritten history holds no private pattern and no gitleaks finding, in files, messages or commit and tag metadata; `make check`, `make itest` and `make bench` pass on the cleaned tree; every command in README and CONTRIBUTING works on a clean Debian 13 container.
