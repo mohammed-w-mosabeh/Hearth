@@ -30,6 +30,9 @@ tmp=$(mktemp)
 trap 'rm -f "$tmp"' EXIT
 if [[ $mode == history ]]; then
 	git log --all -p --no-color --format='commit %H%nauthor %an <%ae>%ncommitter %cn <%ce>%n%B' -- . "${exclude[@]}" >"$tmp"
+	# Without a pathspec, so no commit is left out: the one above prunes a
+	# commit that touches only an excluded file, and its message with it.
+	git log --all --no-color --format='commit %H%nauthor %an <%ae>%ncommitter %cn <%ce>%n%B' >>"$tmp"
 	git for-each-ref refs/tags --format='tag %(refname:short)%0atagger %(taggername) %(taggeremail)%0a%(contents)' >>"$tmp"
 fi
 
