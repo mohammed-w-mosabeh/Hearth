@@ -139,7 +139,9 @@ have=$(git ls-tree -r main | sha256sum)
 [[ $want == "$have" ]] || die "the rewritten tree differs from $branch without the dropped paths; a replacement rule and the cleaned tree disagree (compare with: git diff --no-index)"
 
 rm -f .git/hearth-not-clean
-git rev-parse main >.git/hearth-clean-ok
+# Every ref, not main alone: publish.sh refuses a clone in which main or a
+# tag moved, or a tag was added, after these checks.
+git for-each-ref --format='%(objectname) %(refname)' >.git/hearth-clean-ok
 echo
 echo "clean-history: passed. $(git rev-list --count main) commits, $(git tag | wc -l) tags in $dest"
 echo "Next: scripts/release/publish.sh $dest"

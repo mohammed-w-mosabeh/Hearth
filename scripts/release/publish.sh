@@ -29,7 +29,7 @@ cd "$top"
 
 [[ ! -e .git/hearth-not-clean ]] || die "this clone did not pass clean-history.sh"
 [[ -f .git/hearth-clean-ok ]] || die "this clone was not made by clean-history.sh"
-[[ $(cat .git/hearth-clean-ok) == "$(git rev-parse main)" ]] || die "main changed since clean-history.sh passed"
+[[ $(cat .git/hearth-clean-ok) == "$(git for-each-ref --format='%(objectname) %(refname)')" ]] || die "main or a tag changed since clean-history.sh passed"
 [[ -z $(git status --porcelain) ]] || die "the working tree is not clean"
 [[ -z $(git remote) ]] || die "the clone has a remote already: $(git remote -v | head -n 1)"
 others=$(git for-each-ref --format='%(refname)' | grep -v -e '^refs/heads/main$' -e '^refs/tags/' || true)
