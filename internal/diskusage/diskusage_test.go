@@ -196,8 +196,14 @@ func TestIdleJobStops(t *testing.T) {
 
 func TestOtherFolderCancelsJob(t *testing.T) {
 	home, _ := tree(t)
-	held := many(t, home, 100)
-	// The first job's walk of "many" waits until the other folder was asked
+	// Folders are measured in name order. The held folder must come before
+	// "Documents": a Documents measured first is cached, and asking for it
+	// then answers from the cache without cancelling the first job.
+	held := filepath.Join(home, "0held")
+	if err := os.Rename(many(t, home, 100), held); err != nil {
+		t.Fatal(err)
+	}
+	// The first job's walk of it waits until the other folder was asked
 	// for, so it can never finish before it is cancelled.
 	release := make(chan struct{})
 	readDir = func(p string) ([]os.DirEntry, error) {
