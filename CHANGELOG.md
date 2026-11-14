@@ -2,7 +2,7 @@
 
 Every release of Hearth, newest first. Versions follow the git tags. The detail of each change is in [`docs/ROADMAP.md`](docs/ROADMAP.md), phase by phase.
 
-## Unreleased
+## 1.9.0 — 2026-11-14
 - First public release under Apache-2.0: licence and third-party notices, security policy, contributing guide, reproducible release build with `SHA256SUMS`.
 - `hearthd` turns transparent huge pages off for itself, which keeps idle memory under the 40 MB budget.
 
