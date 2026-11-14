@@ -178,7 +178,7 @@ func (g *uninstallRig) move(p string) archive.Move {
 		g.t.Fatal(err)
 	}
 	st := fi.Sys().(*syscall.Stat_t)
-	return archive.Move{Path: p, Dev: st.Dev, Ino: st.Ino}
+	return archive.Move{Path: p, Dev: st.Dev, Ino: st.Ino, Kind: archive.Kind(fi.Mode())}
 }
 
 // call runs a method as the server does: Check, which refuses before
@@ -324,25 +324,30 @@ func TestUninstallRefusedBeforePolkit(t *testing.T) {
 	swapped := g.move("/var/lib/foo")
 	swapped.Ino++
 	cases := map[string]func(*UninstallAuthorizeParams){
-		"nothing":        func(p *UninstallAuthorizeParams) { p.Purge, p.Archive = nil, nil },
-		"no item":        func(p *UninstallAuthorizeParams) { p.Item = "\x01" },
-		"long item":      func(p *UninstallAuthorizeParams) { p.Item = strings.Repeat("x", 81) },
-		"essential":      func(p *UninstallAuthorizeParams) { p.Purge = []string{"bash"} },
-		"hearth":         func(p *UninstallAuthorizeParams) { p.Purge = []string{"hearth:amd64"} },
-		"unknown":        func(p *UninstallAuthorizeParams) { p.Purge = []string{"nope"} },
-		"dash":           func(p *UninstallAuthorizeParams) { p.Purge = []string{"-rf"} },
-		"slash":          func(p *UninstallAuthorizeParams) { p.Purge = []string{"a/b"} },
-		"dots":           func(p *UninstallAuthorizeParams) { p.Purge = []string{".."} },
-		"twice":          func(p *UninstallAuthorizeParams) { p.Purge = []string{"foo:amd64", "foo:amd64"} },
-		"traversal":      func(p *UninstallAuthorizeParams) { p.Archive[0].Path = "/opt/../etc" },
-		"usr":            func(p *UninstallAuthorizeParams) { p.Archive[0].Path = "/usr/bin" },
-		"deep":           func(p *UninstallAuthorizeParams) { p.Archive[0].Path = "/opt/Foo/bin" },
-		"etc itself":     func(p *UninstallAuthorizeParams) { p.Archive[0].Path = "/etc" },
-		"shared":         func(p *UninstallAuthorizeParams) { p.Archive[0].Path = "/etc/systemd" },
-		"owned":          func(p *UninstallAuthorizeParams) { p.Archive = []archive.Move{g.move("/var/lib/shared")} },
-		"owned by foo":   func(p *UninstallAuthorizeParams) { p.Archive = []archive.Move{g.move("/etc/foo")} },
-		"swapped":        func(p *UninstallAuthorizeParams) { p.Archive = []archive.Move{swapped} },
-		"missing":        func(p *UninstallAuthorizeParams) { p.Archive[0].Path = "/opt/Gone" },
+		"nothing":      func(p *UninstallAuthorizeParams) { p.Purge, p.Archive = nil, nil },
+		"no item":      func(p *UninstallAuthorizeParams) { p.Item = "\x01" },
+		"long item":    func(p *UninstallAuthorizeParams) { p.Item = strings.Repeat("x", 81) },
+		"essential":    func(p *UninstallAuthorizeParams) { p.Purge = []string{"bash"} },
+		"hearth":       func(p *UninstallAuthorizeParams) { p.Purge = []string{"hearth:amd64"} },
+		"unknown":      func(p *UninstallAuthorizeParams) { p.Purge = []string{"nope"} },
+		"dash":         func(p *UninstallAuthorizeParams) { p.Purge = []string{"-rf"} },
+		"slash":        func(p *UninstallAuthorizeParams) { p.Purge = []string{"a/b"} },
+		"dots":         func(p *UninstallAuthorizeParams) { p.Purge = []string{".."} },
+		"twice":        func(p *UninstallAuthorizeParams) { p.Purge = []string{"foo:amd64", "foo:amd64"} },
+		"traversal":    func(p *UninstallAuthorizeParams) { p.Archive[0].Path = "/opt/../etc" },
+		"usr":          func(p *UninstallAuthorizeParams) { p.Archive[0].Path = "/usr/bin" },
+		"deep":         func(p *UninstallAuthorizeParams) { p.Archive[0].Path = "/opt/Foo/bin" },
+		"etc itself":   func(p *UninstallAuthorizeParams) { p.Archive[0].Path = "/etc" },
+		"shared":       func(p *UninstallAuthorizeParams) { p.Archive[0].Path = "/etc/systemd" },
+		"owned":        func(p *UninstallAuthorizeParams) { p.Archive = []archive.Move{g.move("/var/lib/shared")} },
+		"owned by foo": func(p *UninstallAuthorizeParams) { p.Archive = []archive.Move{g.move("/etc/foo")} },
+		"swapped":      func(p *UninstallAuthorizeParams) { p.Archive = []archive.Move{swapped} },
+		"missing":      func(p *UninstallAuthorizeParams) { p.Archive[0].Path = "/opt/Gone" },
+		"no kind":      func(p *UninstallAuthorizeParams) { p.Archive[0].Kind = "" },
+		"unknown kind": func(p *UninstallAuthorizeParams) { p.Archive[0].Kind = "socket" },
+		// The folder's own device and inode, as a filesystem that reuses
+		// inode numbers gives them to what replaces it.
+		"another kind":   func(p *UninstallAuthorizeParams) { p.Archive[0].Kind = "link" },
 		"unit unrelated": func(p *UninstallAuthorizeParams) { p.Units = []string{"evil.service"} },
 		"unit sshd":      func(p *UninstallAuthorizeParams) { p.Units = []string{"ssh.service"} },
 		"unit hearth":    func(p *UninstallAuthorizeParams) { p.Units = []string{"hearth-broker.service"} },

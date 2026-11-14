@@ -16,7 +16,7 @@ TimeoutStartSec=6h
 Nice=10
 IOSchedulingClass=idle
 
-# --- Hardening (SECURITY.md "systemd hardening") ---
+# --- Hardening (docs/SECURITY-INVARIANTS.md "systemd hardening") ---
 # Restoring keeps each file's owner and mode: tar --same-owner needs
 # CAP_CHOWN, setting modes and times on others' files CAP_FOWNER and
 # CAP_FSETID, writing into others' folders CAP_DAC_OVERRIDE.

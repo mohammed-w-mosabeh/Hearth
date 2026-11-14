@@ -14,7 +14,7 @@ StateDirectory=hearth
 StateDirectoryMode=0700
 UMask=0077
 
-# --- Hardening (SECURITY.md "systemd hardening") ---
+# --- Hardening (docs/SECURITY-INVARIANTS.md "systemd hardening") ---
 # It runs as root and needs no capabilities for most of what it does
 # (answering on its socket, asking polkit over the system bus, writing its
 # StateDirectory). Docker needs none either: /run/docker.sock is root's

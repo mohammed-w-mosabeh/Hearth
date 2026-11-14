@@ -303,7 +303,7 @@ func brokerPlan(p Plan, rows []Candidate) broker.UninstallAuthorizeParams {
 	}
 	for _, c := range rows {
 		if c.Kind == KindArchive {
-			v.Archive = append(v.Archive, archive.Move{Path: c.ID, Dev: c.Dev, Ino: c.Ino})
+			v.Archive = append(v.Archive, archive.Move{Path: c.ID, Dev: c.Dev, Ino: c.Ino, Kind: archive.Kind(c.Type)})
 		}
 	}
 	return v

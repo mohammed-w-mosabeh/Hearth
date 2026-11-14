@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -381,7 +382,11 @@ func TestCollectRealSystem(t *testing.T) {
 		t.Logf("disk %-20s %-6s %5.1f%% of %d GiB (%s)", d.Mount, d.FSType, d.Pct, d.Total>>30, d.Device)
 		hasRoot = hasRoot || d.Mount == "/"
 	}
-	if !hasRoot {
+	// In a container / is an overlay, which the collector leaves out on
+	// purpose (0x794c7630 is overlayfs).
+	var root syscall.Statfs_t
+	overlay := syscall.Statfs("/", &root) == nil && root.Type == 0x794c7630
+	if !hasRoot && !overlay {
 		t.Error("/ not among disks")
 	}
 	for _, d := range got.DiskIO {

@@ -32,3 +32,8 @@ token
 
 # Claude Code local settings (shared settings.json is tracked)
 /.claude/settings.local.json
+
+# Private patterns and history replacements (scripts/check-private.sh,
+# scripts/release/clean-history.sh): local only, never published
+/.private-patterns
+/.private-replacements

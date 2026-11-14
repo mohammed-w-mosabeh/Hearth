@@ -1,12 +1,12 @@
-// Screenshots for docs/design/screens (ROADMAP 8.1, 8.11), from the Vite dev
-// server on fixtures only: a request with no fixture stops the run. Not part
-// of `make itest`. The old UI is gone since 8.11, so a before-and-after pair
-// takes its start side from a second dev server on a worktree of 9c3b245, the
-// last commit with it (BEFORE_URL); without one, each page is Ember alone.
+// Screenshots for docs/design/screens, from the Vite dev server on invented
+// fixtures only (fixtures.mjs): a request with no fixture fails the run, so
+// nothing from the machine it runs on can reach an image. Not part of
+// `make itest`. `make screenshots` starts the dev server, runs this and
+// strips the images' metadata.
 //   cd web && npx vite --port 5199
-//   git worktree add /tmp/before 9c3b245 && ln -s "$PWD/web/node_modules" /tmp/before/web/
-//   cd /tmp/before/web && npx vite --port 5198
-//   cd test/e2e && BEFORE_URL=http://127.0.0.1:5198 BROWSER=/usr/bin/brave-browser node design/capture.mjs <outdir>
+//   cd test/e2e && BROWSER=/usr/bin/chromium node design/capture.mjs <outdir>
+// BEFORE_URL, a second dev server on an older commit, puts that UI beside
+// each page; the published images are taken without it.
 import { chromium } from 'playwright-core';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';

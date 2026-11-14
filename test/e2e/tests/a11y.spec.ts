@@ -33,19 +33,20 @@ test.beforeAll(async ({ browser }) => {
   await page.close();
 });
 
-async function start(page: Page, theme: string, lang: string): Promise<void> {
+async function start(page: Page, theme: string, lang: string, density = 'comfortable'): Promise<void> {
   page.on('dialog', (d) => {
     throw new Error(`a dialog opened: ${d.message()}`);
   });
   await page.goto(`${origin}/#/`);
   await page.evaluate(
-    ([k, th, l]) => {
+    ([k, th, l, d]) => {
       for (const name of Object.keys(localStorage)) localStorage.removeItem(name);
       localStorage.setItem('hearth.session', k);
       localStorage.setItem('hearth.theme', th);
       localStorage.setItem('hearth.lang', l);
+      localStorage.setItem('hearth.density', d);
     },
-    [key, theme, lang],
+    [key, theme, lang, density],
   );
 }
 
@@ -92,6 +93,24 @@ for (const theme of ['dark', 'light'])
       }
       expect(found).toEqual([]);
     });
+
+// The compact density changes sizes and spacing only; one pass in each
+// theme, one of them right to left, is enough to catch a target or a
+// contrast that the smaller rows break.
+for (const [theme, lang] of [['dark', 'en'], ['light', 'ar']])
+  test(`axe: every page, compact, ${theme}, ${lang === 'ar' ? 'right to left' : 'left to right'}`, async ({ page }) => {
+    test.setTimeout(240_000);
+    await start(page, theme, lang, 'compact');
+    const found: string[] = [];
+    for (const r of routes) {
+      await page.goto(`${origin}/#/${r}`);
+      await page.reload();
+      await expect(page.locator('html')).toHaveAttribute('data-density', 'compact');
+      await page.waitForTimeout(800);
+      for (const v of await violations(page)) found.push(`#/${r}: ${v}`);
+    }
+    expect(found).toEqual([]);
+  });
 
 for (const theme of ['dark', 'light'])
   for (const lang of ['en', 'ar'])

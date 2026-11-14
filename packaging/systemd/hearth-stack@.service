@@ -24,7 +24,7 @@ Environment=HOME=/nonexistent DOCKER_CONFIG=/tmp/docker
 UMask=0077
 TimeoutStartSec=30min
 
-# --- Hardening (SECURITY.md "systemd hardening") ---
+# --- Hardening (docs/SECURITY-INVARIANTS.md "systemd hardening") ---
 # None: /run/docker.sock is root's, and connecting needs no capability. The
 # Docker daemon mounts binds and pulls images; this unit only talks to it.
 CapabilityBoundingSet=

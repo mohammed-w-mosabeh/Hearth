@@ -1,0 +1,13 @@
+# gitleaks configuration: the default rules, minus two test lines that look
+# like keys and are not: a fixed fake session token, and the sample nonce of
+# RFC 6455 in a WebSocket handshake.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "fixed test values"
+regexTarget = "line"
+regexes = [
+  '''token = "0123456789abcdef"''',
+  '''Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==''',
+]

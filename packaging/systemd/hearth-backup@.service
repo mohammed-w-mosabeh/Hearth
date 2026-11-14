@@ -19,7 +19,7 @@ TimeoutStartSec=6h
 Nice=10
 IOSchedulingClass=idle
 
-# --- Hardening (SECURITY.md "systemd hardening") ---
+# --- Hardening (docs/SECURITY-INVARIANTS.md "systemd hardening") ---
 # Reading every file of a volume or a bind, whoever owns it, needs
 # CAP_DAC_READ_SEARCH and nothing more; writing is only to the stack's own
 # backup folder, root's.

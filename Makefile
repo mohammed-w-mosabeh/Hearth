@@ -28,7 +28,7 @@ DEB      = dist/hearth_$(VERSION)_amd64.deb
 
 # Reproducible, static builds (SECURITY S25).
 export CGO_ENABLED := 0
-GO_BUILD_FLAGS = -trimpath -buildvcs=true -ldflags '-s -w -X main.buildVersion=$(VERSION)'
+GO_BUILD_FLAGS = -trimpath -buildvcs=true -ldflags '-s -w -buildid= -X main.buildVersion=$(VERSION)'
 
 GO_PKGS = $(shell $(GO) list ./... 2>/dev/null)
 
@@ -96,14 +96,24 @@ fuzz: web ## Run every Fuzz* target for FUZZTIME each (default 60s)
 	done
 
 .PHONY: lint
-lint: web ## golangci-lint (incl. gosec, depguard), gosec, forbidden patterns, svelte-check, eslint
+lint: web ## golangci-lint (incl. gosec, depguard), gosec, forbidden and private patterns, svelte-check, eslint
 	@out=$$(git ls-files -z '*.go' | xargs -0 -r gofmt -l); if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
 	./scripts/check-forbidden.sh
+	./scripts/check-private.sh
+	./scripts/third-party-notices.sh --check
 	desktop-file-validate packaging/desktop/hearth.desktop
 	$(GO) vet ./...
 	$(GOLANGCI_LINT) run ./...
 	$(GOSEC) -quiet -exclude-dir=web/node_modules ./...
 	cd web && npm run -s check && npm run -s lint
+
+.PHONY: screenshots
+screenshots: web ## Regenerate docs/design/screens from invented fixtures and strip image metadata
+	./scripts/screenshots.sh
+
+.PHONY: notices
+notices: web ## Regenerate THIRD_PARTY_NOTICES.md from the module cache and node_modules
+	./scripts/third-party-notices.sh
 
 .PHONY: vuln
 vuln: web ## govulncheck + npm audit

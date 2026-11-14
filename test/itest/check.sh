@@ -86,6 +86,9 @@ check "not running as root" test "$(stat -c %u /proc/"$pid")" = $uid
 # hearthd opts out of transparent huge pages, which made a 5 MB heap cost
 # 14 MB where the kernel's setting is "always" (Gate 12).
 check "huge pages are off for hearthd" grep -Eq '^THP_enabled:[[:space:]]*0$' "/proc/$pid/status"
+# Started again from /proc/self/exe, it must still be called hearthd.
+check "the process is named hearthd" test "$(cat "/proc/$pid/comm")" = hearthd
+check "and pgrep finds it by name" pgrep -u "$user" -x hearthd
 
 echo "== first-run browser launch (no display here, so it may fail; it must not be refused by safeexec)"
 sleep 1
@@ -1145,6 +1148,7 @@ fi
 check "e2e XSS: every page shows the strings as text, nothing ran" grep -qE '^ *[0-9]+ passed' <<<"$e2e"
 check "e2e XSS: no test failed" not grep -qE '[0-9]+ failed' <<<"$e2e"
 check "e2e a11y: axe finds nothing serious on any page, both themes, LTR and RTL" grep -qE '✓.*a11y\.spec\.ts.*axe: every page, light, right to left' <<<"$e2e"
+check "e2e a11y: axe finds nothing serious on any page at the compact density" grep -qE '✓.*a11y\.spec\.ts.*axe: every page, compact, light, right to left' <<<"$e2e"
 check "e2e a11y: focus rings, palette, shortcuts and a confirmation work by keyboard" grep -qE '✓.*a11y\.spec\.ts.*a confirmation is keyboard operable' <<<"$e2e"
 check "e2e: a managed app's drawer shows its spec as text" grep -qE "✓.*xss\.spec\.ts.*a managed app's drawer" <<<"$e2e"
 check "e2e a11y: axe finds nothing serious in an app's drawer" grep -qE "✓.*a11y\.spec\.ts.*axe: an app's drawer, light, right to left" <<<"$e2e"

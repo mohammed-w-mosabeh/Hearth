@@ -18,7 +18,7 @@ Environment=LC_ALL=C
 UMask=0022
 TimeoutStartSec=60s
 
-# --- Hardening (SECURITY.md "systemd hardening") ---
+# --- Hardening (docs/SECURITY-INVARIANTS.md "systemd hardening") ---
 # CAP_NET_ADMIN and CAP_NET_RAW: changing netfilter rules, the whole job.
 # This is why it is a unit of its own: the broker stays without them.
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW

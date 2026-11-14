@@ -3,6 +3,7 @@ package safeexec
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 
 	"golang.org/x/sys/unix"
@@ -41,6 +42,7 @@ var (
 func NoHugePages() {
 	if os.Getenv(thpMark) != "" {
 		_ = os.Unsetenv(thpMark)
+		restoreName()
 		off, err := unix.PrctlRetInt(unix.PR_GET_THP_DISABLE, 0, 0, 0, 0)
 		setTHPOff(err == nil && off != 0)
 		return
@@ -55,6 +57,17 @@ func NoHugePages() {
 	_ = unix.Exec("/proc/self/exe", os.Args, append(os.Environ(), thpMark+"=1"))
 	// Still the old image: its huge pages stay, new memory has none.
 	setTHPOff(true)
+}
+
+// restoreName gives the process its name back: started from
+// /proc/self/exe, the kernel names it "exe", which is what ps, top and
+// pgrep show. Writing comm of the process sets the main thread's name
+// whichever thread writes; the kernel keeps 15 bytes.
+func restoreName() {
+	if len(os.Args) == 0 || os.Args[0] == "" {
+		return
+	}
+	_ = os.WriteFile("/proc/self/comm", []byte(filepath.Base(os.Args[0])), 0) // #nosec G306 -- an existing proc file; the mode is not used
 }
 
 func setTHPOff(off bool) {
