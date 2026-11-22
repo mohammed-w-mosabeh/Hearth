@@ -77,6 +77,7 @@ func New(cfg Config) *Server {
 	if cfg.Max == 0 {
 		cfg.Max = 8
 	}
+	ptmxPath() // now, before any child could inherit the descriptor
 	return &Server{cfg: cfg}
 }
 

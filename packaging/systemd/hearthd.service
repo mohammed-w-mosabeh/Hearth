@@ -35,6 +35,9 @@ ProtectKernelLogs=yes
 # nvidia-smi, which needs /dev/nvidia*: on NVIDIA machines add a drop-in with
 # PrivateDevices=no, or GPU cards show identity only (untested: no hardware).
 PrivateDevices=yes
+# The private /dev/ptmx is a bind mount that cannot be opened, so the
+# manager passes the host's node for terminals (internal/terminal/pty.go).
+OpenFile=/dev/ptmx:ptmx
 KeyringMode=private
 RemoveIPC=yes
 MemoryDenyWriteExecute=yes
@@ -53,8 +56,8 @@ CPUQuota=10%
 # Relaxation: anything hearthd launches for the user (apps, terminals) would
 # inherit this sandbox, so the user manager starts it in its own unit, and
 # the browser comes from the desktop portal (needs AF_UNIX to the user bus).
-# Terminal shells: hearthd opens the pty (/dev/ptmx exists in the private
-# /dev) and hands only the terminal's fd to a transient user unit over D-Bus.
+# Terminal shells: hearthd opens the pty (through OpenFile= above)
+# and hands only the terminal's fd to a transient user unit over D-Bus.
 
 [Install]
 WantedBy=default.target

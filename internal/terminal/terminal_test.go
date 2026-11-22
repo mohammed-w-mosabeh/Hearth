@@ -241,6 +241,40 @@ func TestShellRefused(t *testing.T) {
 	}
 }
 
+// An idle shell writes nothing, so only closing the pty can end the read of
+// its output: its unit and its slot must go when the browser does.
+func TestIdleShellEndsWithBrowser(t *testing.T) {
+	bus := &fakeBus{shell: make(chan *os.File, 1)}
+	s := New(Config{Max: 1, Bus: func(context.Context) (Bus, error) { return bus, nil }})
+	srv := httptest.NewServer(http.HandlerFunc(s.HandleShell))
+	conn, _, err := dial(t, srv, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, msg, err := conn.Read(context.Background()); err != nil || string(msg) != `{"state":"ready"}` {
+		t.Fatalf("%s %v", msg, err)
+	}
+	shell := <-bus.shell
+	defer srv.Close()
+	defer func() { _ = shell.Close() }() // first: it releases a stuck read
+	time.Sleep(200 * time.Millisecond)   // the server is waiting for output
+	_ = conn.CloseNow()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		bus.mu.Lock()
+		stopped := len(bus.stopped) == 1
+		bus.mu.Unlock()
+		if stopped && s.open.Load() == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the idle shell outlived its browser")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func FuzzDir(f *testing.F) {
 	for _, s := range []string{"", "/", "/home/me", "rel", "/a/../b", "/a\nb", "/a/"} {
 		f.Add(s)
